@@ -1,256 +1,291 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { 
-  FlaskConical,
-  Plus,
-  Search,
-  Filter,
+  Plus, 
+  Search, 
+  FlaskConical, 
+  Thermometer, 
   Calendar,
-  Clock,
-  AlertTriangle,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
-  FileText
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { getReadyMedia } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
-import type { ReadyMedium } from '@/types'
+  AlertTriangle
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { getReadyMedia, activateReadyMedium, disposeReadyMedium } from "@/lib/api"
+import { format, differenceInDays } from "date-fns"
+import { ru } from "date-fns/locale"
+
+const STATUS_COLORS: Record<string, string> = {
+  QUARANTINE: "bg-yellow-500",
+  ACTIVE: "bg-green-500",
+  EXPIRED: "bg-red-500",
+  DISPOSE: "bg-gray-500",
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  QUARANTINE: "Карантин",
+  ACTIVE: "Активна",
+  EXPIRED: "Просрочена",
+  DISPOSE: "Утилизирована",
+}
+
+const STERILIZATION_LABELS: Record<string, string> = {
+  FILTRATION: "Фильтрация",
+  AUTOCLAVE: "Автоклавирование",
+}
 
 export default function ReadyMediaPage() {
-  const [readyMedia, setReadyMedia] = useState<ReadyMedium[]>([])
+  const router = useRouter()
+  const [media, setMedia] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [filter, setFilter] = useState("all")
+  const [search, setSearch] = useState("")
 
   useEffect(() => {
-    loadReadyMedia()
+    loadMedia()
   }, [])
 
-  const loadReadyMedia = async () => {
-    setLoading(true)
+  const loadMedia = async () => {
     try {
-      const data = await getReadyMedia({
-        status: statusFilter || undefined
-      })
-      setReadyMedia(data || [])
-    } catch (error) {
-      console.error('Error loading ready media:', error)
+      const data = await getReadyMedia()
+      setMedia(data || [])
+    } catch (err) {
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredMedia = readyMedia.filter(rm => 
-    rm.name.toLowerCase().includes(search.toLowerCase()) ||
-    rm.code.toLowerCase().includes(search.toLowerCase())
-  )
+  const handleActivate = async (id: string) => {
+    try {
+      await activateReadyMedium(id)
+      loadMedia()
+    } catch (err) {
+      console.error(err)
+    }
+  }
 
-  const statusCounts = {
-    QUARANTINE: readyMedia.filter(rm => rm.status === 'QUARANTINE').length,
-    ACTIVE: readyMedia.filter(rm => rm.status === 'ACTIVE').length,
-    EXPIRED: readyMedia.filter(rm => rm.status === 'EXPIRED').length,
-    DISPOSE: readyMedia.filter(rm => rm.status === 'DISPOSE').length,
+  const handleDispose = async (id: string) => {
+    if (!confirm("Вы уверены, что хотите утилизировать эту среду?")) return
+    
+    try {
+      await disposeReadyMedium(id)
+      loadMedia()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const getDaysUntilExpiry = (date: string) => {
+    return differenceInDays(new Date(date), new Date())
+  }
+
+  const filteredMedia = media.filter(item => {
+    const matchesFilter = filter === "all" || item.status === filter
+    const matchesSearch = !search || 
+      item.name?.toLowerCase().includes(search.toLowerCase()) ||
+      item.code?.toLowerCase().includes(search.toLowerCase())
+    return matchesFilter && matchesSearch
+  })
+
+  const quarantineMedia = filteredMedia.filter(m => m.status === "QUARANTINE")
+  const activeMedia = filteredMedia.filter(m => m.status === "ACTIVE")
+  const expiredMedia = filteredMedia.filter(m => m.status === "EXPIRED")
+
+  if (loading) {
+    return (
+      <div className="container mx-auto py-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 bg-muted rounded w-1/4"></div>
+          <div className="h-64 bg-muted rounded"></div>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="container mx-auto py-6 max-w-6xl">
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Готовые среды</h1>
-          <p className="text-muted-foreground">
-            Управление готовыми культуральными средами
-          </p>
+          <h1 className="text-2xl font-bold">Готовые среды</h1>
+          <p className="text-muted-foreground">Учёт приготовленных питательных сред</p>
         </div>
-        <Button>
+        <Button onClick={() => router.push("/ready-media/new")}>
           <Plus className="mr-2 h-4 w-4" />
-          Приготовить среду
+          Новая среда
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-4 mb-6">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Всего сред
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{readyMedia.length}</div>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <AlertTriangle className="h-5 w-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Карантин</p>
+                <p className="text-2xl font-bold">{quarantineMedia.length}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Clock className="h-4 w-4 text-yellow-500" />
-              Карантин
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{statusCounts.QUARANTINE}</div>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Активны</p>
+                <p className="text-2xl font-bold">{activeMedia.length}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-500" />
-              Готовы к использованию
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{statusCounts.ACTIVE}</div>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <XCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Просрочено</p>
+                <p className="text-2xl font-bold">{expiredMedia.length}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              Просрочено/Утилизировано
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {statusCounts.EXPIRED + statusCounts.DISPOSE}
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <FlaskConical className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Всего</p>
+                <p className="text-2xl font-bold">{filteredMedia.length}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center">
-        <div className="relative flex-1">
+      {/* Filters & Search */}
+      <div className="flex gap-4 mb-6">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Поиск по названию или коду..."
-            className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
           />
         </div>
-        <select
-          className="px-3 py-2 border rounded-md"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">Все статусы</option>
-          <option value="QUARANTINE">Карантин</option>
-          <option value="ACTIVE">Готовы</option>
-          <option value="EXPIRED">Просрочено</option>
-          <option value="DISPOSE">Утилизированы</option>
-        </select>
+        <Tabs value={filter} onValueChange={setFilter}>
+          <TabsList>
+            <TabsTrigger value="all">Все</TabsTrigger>
+            <TabsTrigger value="QUARANTINE">Карантин</TabsTrigger>
+            <TabsTrigger value="ACTIVE">Активны</TabsTrigger>
+            <TabsTrigger value="EXPIRED">Просрочено</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      {/* Media Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Список готовых сред</CardTitle>
-          <CardDescription>
-            {filteredMedia.length} записей
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <FlaskConical className="h-8 w-8 animate-pulse text-muted-foreground" />
-            </div>
-          ) : filteredMedia.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Код</TableHead>
-                  <TableHead>Название</TableHead>
-                  <TableHead>Объем</TableHead>
-                  <TableHead>Стерилизация</TableHead>
-                  <TableHead>Годен до</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead>Создано</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredMedia.map((rm) => (
-                  <TableRow key={rm.id}>
-                    <TableCell className="font-mono">{rm.code}</TableCell>
-                    <TableCell>
-                      <Link href={`/ready-media/${rm.id}`} className="font-medium hover:underline">
-                        {rm.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{rm.volume_ml} мл</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {getSterilizationLabel(rm.sterilization_method)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className={isExpired(rm.expiration_date) ? 'text-red-500' : ''}>
-                        {formatDate(rm.expiration_date)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(rm.status)}>
-                        {getStatusLabel(rm.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{formatDate(rm.created_at)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              Готовые среды не найдены
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Media List */}
+      <div className="space-y-4">
+        {filteredMedia.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              Среды не найдены
+            </CardContent>
+          </Card>
+        ) : (
+          filteredMedia.map(item => {
+            const daysLeft = getDaysUntilExpiry(item.expiration_date)
+            const isCritical = daysLeft <= 7 && daysLeft > 0
+            
+            return (
+              <Card key={item.id} className="hover:bg-muted/50 transition-colors">
+                <CardContent className="py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-muted rounded-lg">
+                        <FlaskConical className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold">{item.name}</p>
+                          <Badge className={STATUS_COLORS[item.status]}>
+                            {STATUS_LABELS[item.status]}
+                          </Badge>
+                          {isCritical && (
+                            <Badge variant="destructive">Истекает</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                          <span>Код: {item.code}</span>
+                          <span>Объём: {item.volume_ml} мл</span>
+                          <span>Стерилизация: {STERILIZATION_LABELS[item.sterilization_method]}</span>
+                        </div>
+                        {item.storage_position && (
+                          <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
+                            <Thermometer className="h-3 w-3" />
+                            {item.storage_position.path}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        <span className={isCritical ? "text-red-600 font-semibold" : ""}>
+                          Срок: {format(new Date(item.expiration_date), "dd MMM yyyy", { locale: ru })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {daysLeft > 0 ? `Осталось ${daysLeft} дней` : daysLeft === 0 ? "Истекает сегодня" : `Просрочено на ${Math.abs(daysLeft)} дней`}
+                      </p>
+                      <div className="flex gap-2 mt-3">
+                        {item.status === "QUARANTINE" && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleActivate(item.id)}
+                          >
+                            Активировать
+                          </Button>
+                        )}
+                        {item.status !== "DISPOSE" && item.status !== "EXPIRED" && (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            className="text-red-600"
+                            onClick={() => handleDispose(item.id)}
+                          >
+                            Утилизировать
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })
+        )}
+      </div>
     </div>
   )
-}
-
-function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    QUARANTINE: 'bg-yellow-100 text-yellow-800',
-    ACTIVE: 'bg-green-100 text-green-800',
-    EXPIRED: 'bg-red-100 text-red-800',
-    DISPOSE: 'bg-gray-100 text-gray-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
-}
-
-function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    QUARANTINE: 'Карантин',
-    ACTIVE: 'Готов',
-    EXPIRED: 'Просрочен',
-    DISPOSE: 'Утилизирован',
-  }
-  return labels[status] || status
-}
-
-function getSterilizationLabel(method: string): string {
-  const labels: Record<string, string> = {
-    FILTRATION: 'Фильтрация',
-    AUTOCLAVE: 'Автоклавирование',
-  }
-  return labels[method] || method
-}
-
-function isExpired(expirationDate: string): boolean {
-  return new Date(expirationDate) < new Date()
 }

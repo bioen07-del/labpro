@@ -1,285 +1,351 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { 
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
-} from '@/components/ui/table'
-import { Plus, Search, Filter, FlaskConical } from 'lucide-react'
-import Link from 'next/link'
+  Plus, 
+  Search, 
+  Filter, 
+  FlaskConical, 
+  Clock, 
+  CheckCircle2, 
+  XCircle,
+  AlertCircle
+} from "lucide-react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { getQCTests, submitQCResult } from "@/lib/api"
+import { format } from "date-fns"
+import { ru } from "date-fns/locale"
 
-// Mock QC tests data
-const mockQCTests = [
-  {
-    id: '1',
-    target_type: 'BANK',
-    target_id: 'bank-1',
-    test_type: 'MYCOPLASMA',
-    status: 'PENDING',
-    created_at: '2026-01-28T10:00:00Z',
-    culture: { name: 'MSC-001' }
-  },
-  {
-    id: '2',
-    target_type: 'BANK',
-    target_id: 'bank-1',
-    test_type: 'STERILITY',
-    status: 'IN_PROGRESS',
-    created_at: '2026-01-26T10:00:00Z',
-    culture: { name: 'MSC-001' }
-  },
-  {
-    id: '3',
-    target_type: 'BANK',
-    target_id: 'bank-2',
-    test_type: 'LAL',
-    status: 'COMPLETED',
-    result: 'PASSED',
-    created_at: '2026-01-20T10:00:00Z',
-    culture: { name: 'CHONDRO-001' }
+const STATUS_COLORS: Record<string, string> = {
+  PENDING: "bg-yellow-500",
+  IN_PROGRESS: "bg-blue-500",
+  COMPLETED: "bg-green-500",
+  CANCELLED: "bg-gray-500",
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  PENDING: "Ожидает",
+  IN_PROGRESS: "В процессе",
+  COMPLETED: "Завершён",
+  CANCELLED: "Отменён",
+}
+
+const RESULT_LABELS: Record<string, string> = {
+  PASSED: "Пройден",
+  FAILED: "Не пройден",
+}
+
+const TEST_TYPE_LABELS: Record<string, string> = {
+  MYCOPLASMA: "Микоплазма",
+  STERILITY: "Стерильность",
+  LAL: "LAL-тест",
+  VIA: "VIA",
+}
+
+export default function QCPage() {
+  const router = useRouter()
+  const [tests, setTests] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState("all")
+  const [search, setSearch] = useState("")
+  const [selectedTest, setSelectedTest] = useState<any>(null)
+  const [showResultModal, setShowResultModal] = useState(false)
+  const [result, setResult] = useState<"PASSED" | "FAILED">("PASSED")
+  const [resultNotes, setResultNotes] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    loadTests()
+  }, [])
+
+  const loadTests = async () => {
+    try {
+      const data = await getQCTests()
+      setTests(data || [])
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
-]
 
-export default function QCTestsPage() {
-  const pendingTests = mockQCTests.filter(t => t.status === 'PENDING')
-  const inProgressTests = mockQCTests.filter(t => t.status === 'IN_PROGRESS')
-  const completedTests = mockQCTests.filter(t => t.status === 'COMPLETED')
-
-  const getTestTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      MYCOPLASMA: 'Микоплазма',
-      STERILITY: 'Стерильность',
-      LAL: 'LAL-тест',
-      VIA: 'VIA'
+  const handleSubmitResult = async () => {
+    if (!selectedTest) return
+    
+    setIsSubmitting(true)
+    try {
+      await submitQCResult(selectedTest.id, result, resultNotes)
+      setShowResultModal(false)
+      setSelectedTest(null)
+      setResultNotes("")
+      loadTests()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsSubmitting(false)
     }
-    return labels[type] || type
   }
 
-  const getStatusBadge = (status: string, result?: string) => {
-    if (status === 'COMPLETED') {
-      return result === 'PASSED' 
-        ? <Badge variant="default">Пройден</Badge>
-        : <Badge variant="destructive">Не пройден</Badge>
-    }
-    if (status === 'IN_PROGRESS') {
-      return <Badge variant="secondary">В процессе</Badge>
-    }
-    return <Badge variant="outline">Ожидает</Badge>
+  const filteredTests = tests.filter(test => {
+    const matchesFilter = filter === "all" || test.status === filter
+    const matchesSearch = !search || 
+      test.id.toLowerCase().includes(search.toLowerCase()) ||
+      TEST_TYPE_LABELS[test.test_type]?.toLowerCase().includes(search.toLowerCase())
+    return matchesFilter && matchesSearch
+  })
+
+  const pendingTests = filteredTests.filter(t => t.status === "PENDING")
+  const inProgressTests = filteredTests.filter(t => t.status === "IN_PROGRESS")
+  const completedTests = filteredTests.filter(t => t.status === "COMPLETED")
+
+  if (loading) {
+    return (
+      <div className="container mx-auto py-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 bg-muted rounded w-1/4"></div>
+          <div className="h-64 bg-muted rounded"></div>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="container mx-auto py-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="container mx-auto py-6 max-w-6xl">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold">QC-тесты</h1>
+          <h1 className="text-2xl font-bold">QC-тесты</h1>
           <p className="text-muted-foreground">Контроль качества культур и материалов</p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Назначить тест
-        </Button>
+        <Link href="/qc/new">
+          <Button>
+            <Plus className="mr-2 h-4 w-4" />
+            Новый тест
+          </Button>
+        </Link>
       </div>
 
-      <Tabs defaultValue="pending" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="pending">Ожидают ({pendingTests.length})</TabsTrigger>
-          <TabsTrigger value="in_progress">В процессе ({inProgressTests.length})</TabsTrigger>
-          <TabsTrigger value="completed">Завершённые ({completedTests.length})</TabsTrigger>
-          <TabsTrigger value="all">Все</TabsTrigger>
-        </TabsList>
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-4 mb-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Clock className="h-5 w-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Ожидают</p>
+                <p className="text-2xl font-bold">{pendingTests.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        <TabsContent value="pending">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <FlaskConical className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">В процессе</p>
+                <p className="text-2xl font-bold">{inProgressTests.length}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Пройдено</p>
+                <p className="text-2xl font-bold">
+                  {completedTests.filter(t => t.result === "PASSED").length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <XCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Не пройдено</p>
+                <p className="text-2xl font-bold">
+                  {completedTests.filter(t => t.result === "FAILED").length}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filters & Search */}
+      <div className="flex gap-4 mb-6">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Поиск..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Tabs value={filter} onValueChange={setFilter}>
+          <TabsList>
+            <TabsTrigger value="all">Все</TabsTrigger>
+            <TabsTrigger value="PENDING">Ожидают</TabsTrigger>
+            <TabsTrigger value="IN_PROGRESS">В процессе</TabsTrigger>
+            <TabsTrigger value="COMPLETED">Завершены</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Tests List */}
+      <div className="space-y-4">
+        {filteredTests.length === 0 ? (
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FlaskConical className="h-5 w-5" />
-                Тесты, ожидающие выполнения
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Тип теста</TableHead>
-                    <TableHead>Объект</TableHead>
-                    <TableHead>Дата создания</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pendingTests.map(test => (
-                    <TableRow key={test.id}>
-                      <TableCell className="font-medium">
-                        {getTestTypeLabel(test.test_type)}
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/banks/${test.target_id}`} className="hover:underline">
-                          {test.culture?.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(test.created_at).toLocaleDateString('ru-RU')}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(test.status)}</TableCell>
-                      <TableCell>
-                        <Button variant="outline" size="sm">Начать</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {pendingTests.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Нет тестов, ожидающих выполнения
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              Тесты не найдены
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="in_progress">
-          <Card>
-            <CardHeader>
-              <CardTitle>Тесты в процессе выполнения</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Тип теста</TableHead>
-                    <TableHead>Объект</TableHead>
-                    <TableHead>Дата начала</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {inProgressTests.map(test => (
-                    <TableRow key={test.id}>
-                      <TableCell className="font-medium">
-                        {getTestTypeLabel(test.test_type)}
-                      </TableCell>
-                      <TableCell>{test.culture?.name}</TableCell>
-                      <TableCell>
-                        {new Date(test.created_at).toLocaleDateString('ru-RU')}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(test.status)}</TableCell>
-                      <TableCell>
-                        <Button size="sm">Внести результат</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {inProgressTests.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Нет тестов в процессе
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="completed">
-          <Card>
-            <CardHeader>
-              <CardTitle>Завершённые тесты</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Тип теста</TableHead>
-                    <TableHead>Объект</TableHead>
-                    <TableHead>Дата завершения</TableHead>
-                    <TableHead>Результат</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {completedTests.map(test => (
-                    <TableRow key={test.id}>
-                      <TableCell className="font-medium">
-                        {getTestTypeLabel(test.test_type)}
-                      </TableCell>
-                      <TableCell>{test.culture?.name}</TableCell>
-                      <TableCell>
-                        {new Date(test.created_at).toLocaleDateString('ru-RU')}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(test.status, test.result)}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="sm">Детали</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {completedTests.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        Нет завершённых тестов
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="all">
-          <Card>
-            <CardHeader>
-              <div className="flex gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input placeholder="Поиск..." className="pl-9" />
+        ) : (
+          filteredTests.map(test => (
+            <Card key={test.id} className="hover:bg-muted/50 transition-colors">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-muted rounded-lg">
+                      <FlaskConical className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold">
+                          {TEST_TYPE_LABELS[test.test_type] || test.test_type}
+                        </p>
+                        <Badge className={STATUS_COLORS[test.status]}>
+                          {STATUS_LABELS[test.status]}
+                        </Badge>
+                        {test.result && (
+                          <Badge variant={test.result === "PASSED" ? "default" : "destructive"}>
+                            {RESULT_LABELS[test.result]}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Объект: {test.target_type} → {test.target_id.slice(0, 8)}...
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">
+                      Создан: {format(new Date(test.created_at), "dd MMM yyyy", { locale: ru })}
+                    </p>
+                    {test.completed_at && (
+                      <p className="text-sm text-muted-foreground">
+                        Завершён: {format(new Date(test.completed_at), "dd MMM yyyy", { locale: ru })}
+                      </p>
+                    )}
+                    {test.status === "PENDING" && (
+                      <Button 
+                        size="sm" 
+                        className="mt-2"
+                        onClick={() => {
+                          setSelectedTest(test)
+                          setShowResultModal(true)
+                        }}
+                      >
+                        Внести результат
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <Button variant="outline">
-                  <Filter className="mr-2 h-4 w-4" />
-                  Фильтр
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Result Modal */}
+      {showResultModal && selectedTest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md mx-4">
+            <CardHeader>
+              <CardTitle>Результат теста</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="font-medium">{TEST_TYPE_LABELS[selectedTest.test_type]}</p>
+                <p className="text-sm text-muted-foreground">
+                  Объект: {selectedTest.target_type}
+                </p>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium mb-2">Результат *</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant={result === "PASSED" ? "default" : "outline"}
+                    className="flex-1"
+                    onClick={() => setResult("PASSED")}
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Пройден
+                  </Button>
+                  <Button
+                    variant={result === "FAILED" ? "destructive" : "outline"}
+                    className="flex-1"
+                    onClick={() => setResult("FAILED")}
+                  >
+                    <XCircle className="mr-2 h-4 w-4" />
+                    Не пройден
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Примечания</label>
+                <textarea
+                  value={resultNotes}
+                  onChange={(e) => setResultNotes(e.target.value)}
+                  className="w-full mt-1 p-3 border rounded-lg"
+                  rows={3}
+                  placeholder="Дополнительные заметки..."
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowResultModal(false)
+                    setSelectedTest(null)
+                  }}
+                >
+                  Отмена
+                </Button>
+                <Button onClick={handleSubmitResult} disabled={isSubmitting}>
+                  {isSubmitting ? "Сохранение..." : "Сохранить"}
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Тип теста</TableHead>
-                    <TableHead>Объект</TableHead>
-                    <TableHead>Тип объекта</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Дата</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mockQCTests.map(test => (
-                    <TableRow key={test.id}>
-                      <TableCell className="font-medium">
-                        {getTestTypeLabel(test.test_type)}
-                      </TableCell>
-                      <TableCell>{test.culture?.name}</TableCell>
-                      <TableCell>{test.target_type}</TableCell>
-                      <TableCell>{getStatusBadge(test.status, test.result)}</TableCell>
-                      <TableCell>
-                        {new Date(test.created_at).toLocaleDateString('ru-RU')}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="sm">Открыть</Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   )
 }

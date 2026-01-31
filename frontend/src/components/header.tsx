@@ -49,6 +49,7 @@ export function Header() {
             <NavLink href="/inventory" pathname={pathname}>Склад</NavLink>
             <NavLink href="/orders" pathname={pathname}>Заявки</NavLink>
             <NavLink href="/tasks" pathname={pathname}>Задачи</NavLink>
+            <NavLink href="/audit" pathname={pathname}>Аудит</NavLink>
             <NavLink href="/scan" pathname={pathname}>QR</NavLink>
           </nav>
         </div>

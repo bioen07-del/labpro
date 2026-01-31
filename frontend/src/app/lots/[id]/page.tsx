@@ -1,578 +1,339 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useEffect, useState } from "react"
+import { useRouter, useParams } from "next/navigation"
 import { 
-  ArrowLeft,
-  FlaskConical,
-  Box,
-  Layers,
-  Calendar,
-  User,
-  Clock,
-  AlertTriangle,
-  FileText,
-  Edit,
+  ArrowLeft, 
+  Eye, 
+  Utensils, 
+  RefreshCw, 
+  Snowflake, 
+  Thermometer, 
+  Trash2, 
   Plus,
-  Beaker
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { getLotById, getContainers, getOperations } from '@/lib/api'
-import { formatDate, getStatusLabel } from '@/lib/utils'
-import type { Lot, Container, Operation } from '@/types'
+  MapPin,
+  Calendar,
+  Activity,
+  FlaskConical
+} from "lucide-react"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { Separator } from "@/components/ui/separator"
+import { getLotById, getContainersByLot } from "@/lib/api"
+
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE: "bg-green-500",
+  DISPOSE: "bg-red-500",
+  CLOSED: "bg-gray-500",
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Активен",
+  DISPOSE: "Утилизирован",
+  CLOSED: "Закрыт",
+}
 
 export default function LotDetailPage() {
+  const router = useRouter()
   const params = useParams()
   const lotId = params.id as string
-  
-  const [lot, setLot] = useState<Lot | null>(null)
-  const [containers, setContainers] = useState<Container[]>([])
-  const [operations, setOperations] = useState<Operation[]>([])
+
+  const [lot, setLot] = useState<any>(null)
+  const [containers, setContainers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    loadData()
-  }, [lotId])
-
-  const loadData = async () => {
-    setLoading(true)
-    try {
-      const [lotData, containersData, operationsData] = await Promise.all([
-        getLotById(lotId),
-        getContainers({}),
-        getOperations({})
-      ])
-      
-      setLot(lotData)
-      
-      // Filter containers for this lot
-      const filteredContainers = (containersData || []).filter((c: Container) => c.lot_id === lotId)
-      setContainers(filteredContainers)
-      
-      // Filter operations for this lot
-      const filteredOperations = (operationsData || []).filter((o: Operation) => o.lot_id === lotId)
-      setOperations(filteredOperations)
-    } catch (error) {
-      console.error('Error loading lot:', error)
-    } finally {
-      setLoading(false)
+    async function loadData() {
+      try {
+        const [lotData, containersData] = await Promise.all([
+          getLotById(lotId),
+          getContainersByLot(lotId)
+        ])
+        setLot(lotData)
+        setContainers(containersData || [])
+      } catch (err: any) {
+        setError(err.message || "Ошибка загрузки данных")
+      } finally {
+        setLoading(false)
+      }
     }
-  }
+    
+    if (lotId) {
+      loadData()
+    }
+  }, [lotId])
 
   if (loading) {
     return (
-      <div className="container py-6">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <Layers className="h-12 w-12 animate-pulse mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">Загрузка...</p>
-          </div>
+      <div className="container mx-auto py-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-muted rounded w-1/3"></div>
+          <div className="h-32 bg-muted rounded"></div>
+          <div className="h-64 bg-muted rounded"></div>
         </div>
       </div>
     )
   }
 
-  if (!lot) {
+  if (error || !lot) {
     return (
-      <div className="container py-6">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-500" />
-            <p className="text-lg font-medium">Лот не найден</p>
-            <Link href="/cultures">
-              <Button variant="outline" className="mt-4">
-                Вернуться к культурам
-              </Button>
-            </Link>
-          </div>
-        </div>
+      <div className="container mx-auto py-6">
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="py-8 text-center text-red-600">
+            {error || "Лот не найден"}
+          </CardContent>
+        </Card>
       </div>
     )
   }
+
+  const culture = lot.culture
+  const activeContainers = containers.filter(c => c.status === "ACTIVE")
+  const avgConfluent = activeContainers.length > 0
+    ? Math.round(activeContainers.reduce((sum, c) => sum + (c.confluent_percent || 0), 0) / activeContainers.length)
+    : 0
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="container mx-auto py-6 max-w-6xl">
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex items-start gap-4">
-          <Link href={`/cultures/${lot.culture_id}`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold tracking-tight">
-                {lot.culture?.name || 'Лот'}
-              </h1>
-              <Badge className="bg-blue-100 text-blue-800">
-                P{lot.passage_number}
-              </Badge>
-              <Badge className={getLotStatusColor(lot.status)}>
-                {getLotStatusLabel(lot.status)}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground mt-1">
-              ID лота: {lot.id} • Создан {formatDate(lot.created_at)}
-            </p>
+      <div className="flex items-center gap-4 mb-6">
+        <Button variant="ghost" size="icon" onClick={() => router.push("/cultures")}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="flex-1">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">{lot.code || `L${lot.passage_number}`}</h1>
+            <Badge className={STATUS_COLORS[lot.status] || "bg-gray-500"}>
+              {STATUS_LABELS[lot.status] || lot.status}
+            </Badge>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <Edit className="mr-2 h-4 w-4" />
-            Редактировать
-          </Button>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Добавить контейнер
-          </Button>
+          {culture && (
+            <p className="text-muted-foreground">
+              {culture.name || culture.culture_type?.name}
+            </p>
+          )}
         </div>
       </div>
 
       {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-4 mb-6">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Box className="h-4 w-4" />
-              Контейнеры
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{containers.length}</div>
-            <p className="text-xs text-muted-foreground">в работе</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <FlaskConical className="h-4 w-4" />
-              Культура
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold truncate">
-              {lot.culture?.name || '-'}
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <FlaskConical className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Контейнеры</p>
+                <p className="text-2xl font-bold">{containers.length}</p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {lot.culture?.culture_type?.code || 'Не указана'}
-            </p>
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Дата начала
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatDate(lot.start_date)}</div>
-            <p className="text-xs text-muted-foreground">
-              {lot.end_date ? `до ${formatDate(lot.end_date)}` : 'В работе'}
-            </p>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Activity className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Активны</p>
+                <p className="text-2xl font-bold">{activeContainers.length}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Beaker className="h-4 w-4" />
-              Операции
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{operations.length}</div>
-            <p className="text-xs text-muted-foreground">выполнено</p>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Activity className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Конфлюэнтность</p>
+                <p className="text-2xl font-bold">{avgConfluent}%</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <RefreshCw className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Пассаж</p>
+                <p className="text-2xl font-bold">P{lot.passage_number}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="overview">Обзор</TabsTrigger>
-          <TabsTrigger value="containers">Контейнеры ({containers.length})</TabsTrigger>
-          <TabsTrigger value="operations">Операции ({operations.length})</TabsTrigger>
-          <TabsTrigger value="history">История</TabsTrigger>
-        </TabsList>
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2 mb-6">
+        <Link href={`/operations/observe?lot_id=${lotId}`}>
+          <Button variant="outline">
+            <Eye className="mr-2 h-4 w-4" />
+            Осмотр
+          </Button>
+        </Link>
+        <Link href={`/operations/new?lot_id=${lotId}&type=feed`}>
+          <Button variant="outline">
+            <Utensils className="mr-2 h-4 w-4" />
+            Подкормка
+          </Button>
+        </Link>
+        <Link href={`/operations/new?lot_id=${lotId}&type=passage`}>
+          <Button variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Пассаж
+          </Button>
+        </Link>
+        <Link href={`/operations/new?lot_id=${lotId}&type=freeze`}>
+          <Button variant="outline">
+            <Snowflake className="mr-2 h-4 w-4" />
+            Заморозка
+          </Button>
+        </Link>
+        <Link href={`/operations/new?lot_id=${lotId}&type=thaw`}>
+          <Button variant="outline">
+            <Thermometer className="mr-2 h-4 w-4" />
+            Разморозка
+          </Button>
+        </Link>
+        <Separator orientation="vertical" className="h-8 mx-2" />
+        <Link href={`/operations/dispose?type=lot&id=${lotId}`}>
+          <Button variant="outline" className="text-red-600">
+            <Trash2 className="mr-2 h-4 w-4" />
+            Утилизировать
+          </Button>
+        </Link>
+      </div>
 
-        {/* Overview Tab */}
-        <TabsContent value="overview" className="space-y-6 mt-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Basic Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Информация о лоте</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Лот ID</label>
-                    <p className="font-medium">{lot.id}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Пассаж</label>
-                    <p className="font-medium">P{lot.passage_number}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Статус</label>
-                    <p className="font-medium">
-                      <Badge className={getLotStatusColor(lot.status)}>
-                        {getLotStatusLabel(lot.status)}
-                      </Badge>
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Дата начала</label>
-                    <p className="font-medium">{formatDate(lot.start_date)}</p>
-                  </div>
-                  {lot.parent_lot_id && (
-                    <div className="col-span-2">
-                      <label className="text-sm font-medium text-muted-foreground">Родительский лот</label>
-                      <p className="font-medium">
-                        <Link href={`/lots/${lot.parent_lot_id}`} className="text-blue-600 hover:underline">
-                          {lot.parent_lot_id.slice(0, 8)}...
-                        </Link>
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {lot.notes && (
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Примечания</label>
-                    <p className="mt-1">{lot.notes}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Culture Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Культура</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {lot.culture ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Название</label>
-                        <p className="font-medium">{lot.culture.name}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Тип</label>
-                        <p className="font-medium">
-                          {lot.culture.culture_type?.name || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Коэффициент</label>
-                        <p className="font-medium">
-                          {lot.culture.coefficient?.toLocaleString() || '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Статус</label>
-                        <p className="font-medium">
-                          <Badge className={getCultureStatusColor(lot.culture.status)}>
-                            {getStatusLabel(lot.culture.status)}
-                          </Badge>
-                        </p>
-                      </div>
-                    </div>
-                    <Link href={`/cultures/${lot.culture.id}`}>
-                      <Button variant="outline" size="sm" className="w-full">
-                        Открыть культуру
-                      </Button>
-                    </Link>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground">Информация о культуре недоступна</p>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Parent Container Info */}
-            {lot.source_container_id && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Исходный контейнер</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <p className="font-medium">{lot.source_container_id}</p>
-                      <p className="text-sm text-muted-foreground">ID контейнера</p>
-                    </div>
-                    <Link href={`/containers/${lot.source_container_id}`}>
-                      <Button variant="outline" size="sm">
-                        Открыть
-                      </Button>
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Audit Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Информация о записи</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      Создал
-                    </label>
-                    <p className="font-medium">
-                      {lot.culture?.created_by_user?.full_name || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Clock className="h-4 w-4" />
-                      Создано
-                    </label>
-                    <p className="font-medium">{formatDate(lot.created_at)}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Containers Tab */}
-        <TabsContent value="containers" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Контейнеры лота</CardTitle>
-              <CardDescription>
-                Контейнеры, принадлежащие этому лоту
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {containers.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Код</TableHead>
-                      <TableHead>Тип</TableHead>
-                      <TableHead>Позиция</TableHead>
-                      <TableHead>Конфлюэнтность</TableHead>
-                      <TableHead>Морфология</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead>Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {containers.map((container) => (
-                      <TableRow key={container.id}>
-                        <TableCell>
-                          <Link href={`/containers/${container.id}`} className="font-medium hover:underline">
-                            {container.code}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{container.type?.name || '-'}</TableCell>
-                        <TableCell>
-                          {container.position?.path || '-'}
-                        </TableCell>
-                        <TableCell>
-                          {container.confluent_percent ? `${container.confluent_percent}%` : '-'}
-                        </TableCell>
-                        <TableCell>{container.morphology || '-'}</TableCell>
-                        <TableCell>
-                          <Badge className={getContainerStatusColor(container.status)}>
-                            {getContainerStatusLabel(container.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Link href={`/containers/${container.id}`}>
-                            <Button variant="ghost" size="sm">
-                              Открыть
-                            </Button>
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  Контейнеры не добавлены
-                  <div className="mt-4">
-                    <Button>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Добавить контейнер
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Operations Tab */}
-        <TabsContent value="operations" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>История операций</CardTitle>
-              <CardDescription>
-                Все операции, выполненные с этим лотом
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {operations.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID операции</TableHead>
-                      <TableHead>Тип</TableHead>
-                      <TableHead>Дата начала</TableHead>
-                      <TableHead>Дата завершения</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead>Действия</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {operations.map((operation) => (
-                      <TableRow key={operation.id}>
-                        <TableCell className="font-mono text-sm">
-                          {operation.id.slice(0, 8)}...
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {getOperationTypeLabel(operation.operation_type)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{formatDate(operation.started_at)}</TableCell>
-                        <TableCell>
-                          {operation.completed_at ? formatDate(operation.completed_at) : '-'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getOperationStatusColor(operation.status)}>
-                            {getOperationStatusLabel(operation.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="sm">
-                            Подробнее
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  Операции не проводились
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* History Tab */}
-        <TabsContent value="history" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>История изменений</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                История будет доступна после интеграции с audit_logs
+      {/* Info & Containers */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Lot Info */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Информация о лоте</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Культура</p>
+              <p className="font-medium">{culture?.name || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Тип культуры</p>
+              <p className="font-medium">{culture?.culture_type?.name || "—"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Пассаж</p>
+              <p className="font-medium">P{lot.passage_number}</p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Дата создания</p>
+              <p className="font-medium">
+                {lot.created_at ? new Date(lot.created_at).toLocaleDateString("ru-RU") : "—"}
+              </p>
+            </div>
+            {lot.parent_lot_id && (
+              <div>
+                <p className="text-sm text-muted-foreground">Родительский лот</p>
+                <p className="font-medium">L{lot.passage_number - 1}</p>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Containers */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Контейнеры</CardTitle>
+              <Link href={`/operations/new?lot_id=${lotId}&type=passage`}>
+                <Button variant="outline" size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Добавить
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {containers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Контейнеры не добавлены
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {containers.map(container => (
+                  <div
+                    key={container.id}
+                    className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-muted rounded flex items-center justify-center text-xs font-medium">
+                        {container.type?.name?.substring(0, 2) || "CT"}
+                      </div>
+                      <div>
+                        <p className="font-medium">{container.code}</p>
+                        {container.position && (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1">
+                            <MapPin className="h-3 w-3" />
+                            {container.position.path}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="flex items-center gap-2">
+                          <Progress value={container.confluent_percent || 0} className="w-20 h-2" />
+                          <span className="text-sm">{container.confluent_percent || 0}%</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{container.morphology}</p>
+                      </div>
+                      <Badge className={STATUS_COLORS[container.status]}>
+                        {STATUS_LABELS[container.status] || container.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Progress Bar */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Прогресс культивирования</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex justify-between text-sm">
+              <span>Конфлюэнтность (цель: 85%)</span>
+              <span>{avgConfluent}%</span>
+            </div>
+            <Progress value={avgConfluent} className="h-3" />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>0%</span>
+              <span>50%</span>
+              <span>85%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
-}
-
-function getLotStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    ACTIVE: 'bg-green-100 text-green-800',
-    CLOSED: 'bg-gray-100 text-gray-800',
-    DISPOSE: 'bg-red-100 text-red-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
-}
-
-function getLotStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    ACTIVE: 'Активен',
-    CLOSED: 'Закрыт',
-    DISPOSE: 'Утилизирован',
-  }
-  return labels[status] || status
-}
-
-function getCultureStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    ACTIVE: 'bg-green-100 text-green-800',
-    ARCHIVED: 'bg-gray-100 text-gray-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
-}
-
-function getContainerStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    ACTIVE: 'bg-green-100 text-green-800',
-    IN_BANK: 'bg-blue-100 text-blue-800',
-    DISPOSE: 'bg-red-100 text-red-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
-}
-
-function getContainerStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    ACTIVE: 'В работе',
-    IN_BANK: 'В банке',
-    DISPOSE: 'Утилизирован',
-  }
-  return labels[status] || status
-}
-
-function getOperationTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    FEED: 'Кормление',
-    PASSAGE: 'Пассаж',
-    FREEZE: 'Заморозка',
-    THAW: 'Разморозка',
-    OBSERVE: 'Осмотр',
-    DISPOSE: 'Утилизация',
-    QCREG: 'QC регистрация',
-  }
-  return labels[type] || type
-}
-
-function getOperationStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
-    COMPLETED: 'bg-green-100 text-green-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
-}
-
-function getOperationStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    IN_PROGRESS: 'В процессе',
-    COMPLETED: 'Завершена',
-  }
-  return labels[status] || status
 }

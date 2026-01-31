@@ -285,6 +285,149 @@ export async function createOperation(operation: Record<string, unknown>) {
   return data
 }
 
+// ==================== OBSERVE OPERATION ====================
+
+export interface ObserveContainerData {
+  container_id: string
+  confluent_percent: number
+  morphology: string
+  contaminated: boolean
+}
+
+export async function createOperationObserve(data: {
+  lot_id: string
+  containers: ObserveContainerData[]
+  notes?: string
+}) {
+  // Создаем операцию OBSERVE
+  const { data: operation, error: opError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id: data.lot_id,
+      operation_type: 'OBSERVE',
+      status: 'COMPLETED',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      notes: data.notes
+    })
+    .select()
+    .single()
+  
+  if (opError) throw opError
+  
+  // Создаем записи operation_container и обновляем контейнеры
+  const operationContainers = data.containers.map(container => ({
+    operation_id: operation.id,
+    container_id: container.container_id,
+    confluent_percent: container.confluent_percent,
+    morphology: container.morphology,
+    contaminated: container.contaminated
+  }))
+  
+  const { error: ocError } = await supabase
+    .from('operation_containers')
+    .insert(operationContainers)
+  
+  if (ocError) throw ocError
+  
+  // Обновляем контейнеры
+  for (const container of data.containers) {
+    const { error: updateError } = await supabase
+      .from('containers')
+      .update({
+        confluent_percent: container.confluent_percent,
+        morphology: container.morphology,
+        contaminated: container.contaminated
+      })
+      .eq('id', container.container_id)
+    
+    if (updateError) throw updateError
+  }
+  
+  return operation
+}
+
+// ==================== DISPOSE OPERATION ====================
+
+export interface DisposeData {
+  target_type: 'container' | 'batch' | 'ready_medium'
+  target_id: string
+  reason: string
+  notes?: string
+}
+
+export async function createOperationDispose(data: DisposeData) {
+  // Определяем lot_id в зависимости от типа объекта
+  let lot_id: string | null = null
+  
+  if (data.target_type === 'container') {
+    const container = await getContainerById(data.target_id)
+    lot_id = container?.lot_id
+  }
+  
+  // Создаем операцию DISPOSE
+  const { data: operation, error: opError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id,
+      operation_type: 'DISPOSE',
+      status: 'COMPLETED',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      notes: `${data.reason}${data.notes ? '. ' + data.notes : ''}`
+    })
+    .select()
+    .single()
+  
+  if (opError) throw opError
+  
+  // Обновляем статус объекта
+  let tableName: string
+  let statusValue: string
+  
+  switch (data.target_type) {
+    case 'container':
+      tableName = 'containers'
+      statusValue = 'DISPOSE'
+      break
+    case 'batch':
+      tableName = 'batches'
+      statusValue = 'DISPOSE'
+      break
+    case 'ready_medium':
+      tableName = 'ready_media'
+      statusValue = 'DISPOSE'
+      break
+    default:
+      throw new Error('Unknown target_type')
+  }
+  
+  const { error: updateError } = await supabase
+    .from(tableName)
+    .update({ status: statusValue })
+    .eq('id', data.target_id)
+  
+  if (updateError) throw updateError
+  
+  // Если все контейнеры лота утилизированы - закрываем лот
+  if (data.target_type === 'container' && lot_id) {
+    const { data: remainingContainers } = await supabase
+      .from('containers')
+      .select('id')
+      .eq('lot_id', lot_id)
+      .neq('status', 'DISPOSE')
+    
+    if (!remainingContainers || remainingContainers.length === 0) {
+      await supabase
+        .from('lots')
+        .update({ status: 'DISPOSE' })
+        .eq('id', lot_id)
+    }
+  }
+  
+  return operation
+}
+
 export async function completeOperation(id: string) {
   const { data, error } = await supabase
     .from('operations')
@@ -824,6 +967,44 @@ export async function updateEquipment(id: string, updates: Record<string, unknow
   return data
 }
 
+export async function createEquipmentLog(equipmentId: string, log: { temperature: number; notes?: string }) {
+  // Создаем запись лога
+  const { data: logData, error: logError } = await supabase
+    .from('equipment_logs')
+    .insert({
+      equipment_id: equipmentId,
+      temperature: log.temperature,
+      notes: log.notes,
+      logged_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+  
+  if (logError) throw logError
+  
+  // Обновляем текущую температуру оборудования
+  const { error: updateError } = await supabase
+    .from('equipment')
+    .update({ current_temperature: log.temperature })
+    .eq('id', equipmentId)
+  
+  if (updateError) throw updateError
+  
+  return logData
+}
+
+export async function getEquipmentLogs(equipmentId: string, limit = 100) {
+  const { data, error } = await supabase
+    .from('equipment_logs')
+    .select('*')
+    .eq('equipment_id', equipmentId)
+    .order('logged_at', { ascending: false })
+    .limit(limit)
+  
+  if (error) throw error
+  return data
+}
+
 // ==================== POSITIONS ====================
 
 export async function getPositions(filters?: { equipment_id?: string; is_active?: boolean }) {
@@ -1099,6 +1280,108 @@ export function subscribeToBanks(callback: (payload: unknown) => void) {
     )
     .subscribe()
 }
+
+// ==================== AUDIT LOGS ====================
+
+export async function getAuditLogs(filters?: { 
+  action?: string; 
+  entity_type?: string; 
+  user_id?: string;
+  date_from?: string;
+  date_to?: string;
+}) {
+  let query = supabase
+    .from('audit_logs')
+    .select('*, user:users(*)')
+    .order('created_at', { ascending: false })
+  
+  if (filters?.action) {
+    query = query.eq('action', filters.action)
+  }
+  if (filters?.entity_type) {
+    query = query.eq('entity_type', filters.entity_type)
+  }
+  if (filters?.user_id) {
+    query = query.eq('user_id', filters.user_id)
+  }
+  if (filters?.date_from) {
+    query = query.gte('created_at', filters.date_from)
+  }
+  if (filters?.date_to) {
+    query = query.lte('created_at', filters.date_to)
+  }
+  
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
+
+export async function getAuditLogById(id: string) {
+  const { data, error } = await supabase
+    .from('audit_logs')
+    .select('*, user:users(*)')
+    .eq('id', id)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+// ==================== USERS ====================
+
+export async function getUsers(filters?: { role?: string; is_active?: boolean }) {
+  let query = supabase
+    .from('users')
+    .select('*')
+    .order('full_name')
+  
+  if (filters?.role) {
+    query = query.eq('role', filters.role)
+  }
+  if (filters?.is_active !== undefined) {
+    query = query.eq('is_active', filters.is_active)
+  }
+  
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
+
+export async function getUserById(id: string) {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function createUser(user: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('users')
+    .insert(user)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function updateUser(id: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+// ==================== REAL-TIME SUBSCRIPTIONS ====================
 
 export function subscribeToQCTests(callback: (payload: unknown) => void) {
   return supabase
