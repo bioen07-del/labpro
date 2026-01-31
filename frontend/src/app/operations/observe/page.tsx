@@ -31,6 +31,7 @@ interface ObserveFormProps {
 }
 
 export default function ObservePage({ lotId, lotCode, cultureName, containers }: ObserveFormProps) {
+  const containerList = containers || []
   const router = useRouter()
   const [selectedContainers, setSelectedContainers] = useState<string[]>([])
   const [observations, setObservations] = useState<Record<string, {
@@ -132,7 +133,7 @@ export default function ObservePage({ lotId, lotCode, cultureName, containers }:
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {containers.map(container => (
+              {containerList.map(container => (
                 <div
                   key={container.id}
                   onClick={() => toggleContainer(container.id)}
@@ -177,7 +178,7 @@ export default function ObservePage({ lotId, lotCode, cultureName, containers }:
             </CardHeader>
             <CardContent className="space-y-6">
               {selectedContainers.map(id => {
-                const container = containers.find(c => c.id === id)
+                const container = containerList.find(c => c.id === id)
                 const obs = observations[id] || { confluent_percent: 70, morphology: "spindle", contaminated: false, notes: "" }
                 
                 return (
