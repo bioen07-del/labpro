@@ -11,15 +11,7 @@ const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3Mi
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY
 
-// Проверка что URL и ключ заданы корректно
-if (!supabaseUrl || supabaseUrl === 'https://your-project.supabase.co') {
-  throw new Error('NEXT_PUBLIC_SUPABASE_URL is not configured. Please set it in Vercel Dashboard.')
-}
-
-if (!supabaseAnonKey || supabaseAnonKey === 'your-anon-key') {
-  throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not configured. Please set it in Vercel Dashboard.')
-}
-
+// Создаём клиента - fallback значения уже заданы выше
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 export default supabase
