@@ -23,9 +23,7 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased bg-gray-50`}>
         <Header />
         <main className="min-h-screen">
-          <div className="container mx-auto py-6 px-4">
-            {children}
-          </div>
+          {children}
         </main>
       </body>
     </html>
