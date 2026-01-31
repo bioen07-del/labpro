@@ -10,8 +10,8 @@ export type CultureStatus = 'ACTIVE' | 'ARCHIVED'
 export interface Culture {
   id: string
   name: string
-  type_id: string
-  type?: CultureType
+  type_id?: string
+  culture_type?: CultureType
   donor_id?: string
   donor?: Donor
   tissue_id?: string
@@ -20,6 +20,8 @@ export interface Culture {
   description?: string
   coefficient?: number
   coefficient_updated_at?: string
+  received_date?: string
+  source?: string
   created_by?: string
   created_by_user?: User
   created_at: string
@@ -114,6 +116,7 @@ export interface ContainerType {
   volume_ml?: number
   is_cryo: boolean
   is_active: boolean
+  optimal_confluent?: number
   created_at: string
 }
 

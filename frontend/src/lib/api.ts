@@ -178,8 +178,13 @@ export async function getBankById(id: string) {
     .from('banks')
     .select(`
       *,
-      culture:cultures(*),
-      containers:containers(*)
+      culture:cultures(
+        *,
+        culture_type:culture_types(*)
+      ),
+      lot:lots(*),
+      cryo_vials:cryo_vials(*),
+      qc_tests:qc_tests(*)
     `)
     .eq('id', id)
     .single()
