@@ -40,6 +40,7 @@ export function Header() {
           <nav className="hidden md:flex items-center gap-1">
             <NavLink href="/" pathname={pathname}>Дашборд</NavLink>
             <NavLink href="/cultures" pathname={pathname}>Культуры</NavLink>
+            <NavLink href="/containers" pathname={pathname}>Контейнеры</NavLink>
             <NavLink href="/banks" pathname={pathname}>Банки</NavLink>
             <NavLink href="/operations" pathname={pathname}>Операции</NavLink>
             <NavLink href="/inventory" pathname={pathname}>Склад</NavLink>
