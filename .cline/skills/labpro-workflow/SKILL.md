@@ -5,7 +5,7 @@ description: Рабочий процесс LabPro: Git, Vercel, Supabase
 
 # labpro-workflow
 
-Instructions for the AI agent...
+github update and deploy
 
 ## Usage
 

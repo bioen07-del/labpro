@@ -5,7 +5,7 @@ description: Процесс взаимодействия с пользовате
 
 # labpro-collaboration
 
-Instructions for the AI agent...
+Accepting user request
 
 ## Usage
 
