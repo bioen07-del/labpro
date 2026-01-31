@@ -155,10 +155,10 @@ export default function TasksPage() {
                           <>Контейнер: <Link href={`/containers/${task.target_id}`} className="hover:underline font-mono">{task.container.code}</Link></>
                         )}
                         {task.type === 'FEED' && task.culture && (
-                          <>Культура: <Link href={`/cultures/${task.culture_id}`} className="hover:underline">{task.culture.name}</Link> (Лот P{task.lot?.passage_number})</>
+                          <>Культура: <Link href={`/cultures/${task.culture.id}`} className="hover:underline">{task.culture.name}</Link> (Лот P{task.lot?.passage_number})</>
                         )}
                         {task.type === 'QC_DUE' && task.culture && (
-                          <>Банк {task.bank?.bank_type} для <Link href={`/cultures/${task.culture_id}`} className="hover:underline">{task.culture.name}</Link></>
+                          <>Банк {task.bank?.bank_type} для <Link href={`/cultures/${task.culture.id}`} className="hover:underline">{task.culture.name}</Link></>
                         )}
                         {task.type === 'FEFO' && task.nomenclature && (
                           <>Партия: {task.nomenclature.name}</>
