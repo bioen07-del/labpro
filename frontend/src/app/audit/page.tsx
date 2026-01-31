@@ -90,11 +90,12 @@ export default function AuditPage() {
   }
 
   const filteredLogs = logs.filter(log => {
-    const matchesFilter = filter === "all" || log.action_type === filter
+    const matchesFilter = filter === "all" || log.action === filter
     const matchesSearch = !search || 
-      log.user_email?.toLowerCase().includes(search.toLowerCase()) ||
+      log.user?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      log.user?.email?.toLowerCase().includes(search.toLowerCase()) ||
       log.entity_type?.toLowerCase().includes(search.toLowerCase()) ||
-      log.entity_id?.toLowerCase().includes(search.toLowerCase())
+      (log.entity_id && log.entity_id.toLowerCase().includes(search.toLowerCase()))
     
     let matchesDate = true
     if (dateFrom) {
@@ -109,9 +110,9 @@ export default function AuditPage() {
 
   const actionStats = {
     total: logs.length,
-    creates: logs.filter(l => l.action_type === "CREATE").length,
-    updates: logs.filter(l => l.action_type === "UPDATE").length,
-    deletes: logs.filter(l => l.action_type === "DELETE").length,
+    creates: logs.filter(l => l.action === "CREATE").length,
+    updates: logs.filter(l => l.action === "UPDATE").length,
+    deletes: logs.filter(l => l.action === "DELETE").length,
   }
 
   if (loading) {
@@ -259,12 +260,12 @@ export default function AuditPage() {
                   className="flex items-start gap-4 p-4 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
                 >
                   <div className="flex-shrink-0">
-                    <div className={`p-2 rounded-full ${ACTION_COLORS[log.action_type] || "bg-gray-500"}`}>
+                    <div className={`p-2 rounded-full ${ACTION_COLORS[log.action] || "bg-gray-500"}`}>
                       {(() => {
-                        const Icon = log.action_type === "CREATE" ? FileText :
-                                    log.action_type === "UPDATE" ? Edit :
-                                    log.action_type === "DELETE" ? Trash2 :
-                                    log.action_type === "LOGIN" || log.action_type === "LOGOUT" ? User :
+                        const Icon = log.action === "CREATE" ? FileText :
+                                    log.action === "UPDATE" ? Edit :
+                                    log.action === "DELETE" ? Trash2 :
+                                    log.action === "LOGIN" || log.action === "LOGOUT" ? User :
                                     Database
                         return <Icon className="h-4 w-4 text-white" />
                       })()}
@@ -272,8 +273,8 @@ export default function AuditPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <Badge className={ACTION_COLORS[log.action_type] || "bg-gray-500"}>
-                        {ACTION_LABELS[log.action_type] || log.action_type}
+                      <Badge className={ACTION_COLORS[log.action] || "bg-gray-500"}>
+                        {ACTION_LABELS[log.action] || log.action}
                       </Badge>
                       <Badge variant="outline">
                         {ENTITY_LABELS[log.entity_type] || log.entity_type}
@@ -285,22 +286,22 @@ export default function AuditPage() {
                           {log.entity_id.slice(0, 8)}...
                         </span>
                       )}
-                      {log.details && (
+                      {log.description && (
                         <span className="ml-2 text-muted-foreground">
-                          {log.details}
+                          {log.description}
                         </span>
                       )}
                     </p>
-                    {log.changes && (
+                    {log.new_value && (
                       <div className="mt-2 text-xs text-muted-foreground bg-muted p-2 rounded">
-                        <pre className="whitespace-pre-wrap">{JSON.stringify(log.changes, null, 2)}</pre>
+                        <pre className="whitespace-pre-wrap">{JSON.stringify(log.new_value, null, 2)}</pre>
                       </div>
                     )}
                   </div>
                   <div className="flex-shrink-0 text-right">
                     <div className="flex items-center gap-1 text-sm text-muted-foreground">
                       <User className="h-3 w-3" />
-                      <span>{log.user_email || "Система"}</span>
+                      <span>{log.user?.full_name || log.user?.email || "Система"}</span>
                     </div>
                     <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
                       <Calendar className="h-3 w-3" />

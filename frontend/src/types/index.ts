@@ -86,7 +86,7 @@ export interface Lot {
 }
 
 // Container
-export type ContainerStatus = 'ACTIVE' | 'IN_BANK' | 'DISPOSE'
+export type ContainerStatus = 'IN_CULTURE' | 'IN_BANK' | 'ISSUED' | 'DISPOSE' | 'QUARANTINE'
 
 export interface Container {
   id: string

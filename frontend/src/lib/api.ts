@@ -199,7 +199,7 @@ export async function getBankById(id: string) {
 
 // ==================== CONTAINERS ====================
 
-export async function getContainers(filters?: { bank_id?: string; status?: string }) {
+export async function getContainers(filters?: { lot_id?: string; status?: string }) {
   let query = supabase
     .from('containers')
     .select(`
@@ -210,12 +210,14 @@ export async function getContainers(filters?: { bank_id?: string; status?: strin
           *,
           culture_type:culture_types(*)
         )
-      )
+      ),
+      position:positions(*),
+      container_type:container_types(*)
     `)
     .order('code')
   
-  if (filters?.bank_id) {
-    query = query.eq('bank_id', filters.bank_id)
+  if (filters?.lot_id) {
+    query = query.eq('lot_id', filters.lot_id)
   }
   if (filters?.status) {
     query = query.eq('status', filters.status)
@@ -244,29 +246,33 @@ export async function getContainerById(id: string) {
 
 // ==================== OPERATIONS ====================
 
-export async function getOperations(filters?: { container_id?: string; type?: string }) {
+export async function getOperations(filters?: { lot_id?: string; type?: string; status?: string }) {
   let query = supabase
     .from('operations')
     .select(`
       *,
-      container:containers(
+      lot:lots(
         *,
-        lot:lots(
+        culture:cultures(
           *,
-          culture:cultures(
-            *,
-            culture_type:culture_types(*)
-          )
+          culture_type:culture_types(*)
         )
+      ),
+      operation_containers:operation_containers(
+        *,
+        container:containers(*)
       )
     `)
     .order('started_at', { ascending: false })
   
-  if (filters?.container_id) {
-    query = query.eq('container_id', filters.container_id)
+  if (filters?.lot_id) {
+    query = query.eq('lot_id', filters.lot_id)
   }
   if (filters?.type) {
-    query = query.eq('type', filters.type)
+    query = query.eq('operation_type', filters.type)
+  }
+  if (filters?.status) {
+    query = query.eq('status', filters.status)
   }
   
   const { data, error } = await query
@@ -1289,10 +1295,14 @@ export async function getAuditLogs(filters?: {
   user_id?: string;
   date_from?: string;
   date_to?: string;
+  limit?: number;
 }) {
   let query = supabase
     .from('audit_logs')
-    .select('*, user:users(*)')
+    .select(`
+      *,
+      user:users(id, full_name, email)
+    `)
     .order('created_at', { ascending: false })
   
   if (filters?.action) {
@@ -1310,16 +1320,26 @@ export async function getAuditLogs(filters?: {
   if (filters?.date_to) {
     query = query.lte('created_at', filters.date_to)
   }
+  if (filters?.limit) {
+    query = query.limit(filters.limit)
+  }
   
   const { data, error } = await query
-  if (error) throw error
-  return data
+  if (error) {
+    console.warn('getAuditLogs error:', error.message)
+    // Return empty array if table doesn't exist or other error
+    return []
+  }
+  return data || []
 }
 
 export async function getAuditLogById(id: string) {
   const { data, error } = await supabase
     .from('audit_logs')
-    .select('*, user:users(*)')
+    .select(`
+      *,
+      user:users(id, full_name, email)
+    `)
     .eq('id', id)
     .single()
   
