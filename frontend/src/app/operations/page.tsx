@@ -1,50 +1,80 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { 
-  FlaskConical, 
+  Activity, 
   Plus, 
   Search,
-  Play,
-  CheckCircle,
+  MoreHorizontal,
+  Eye,
+  CheckCircle2,
   Clock,
-  ClipboardList
+  Loader2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { mockLots, mockContainers, mockCultures } from '@/lib/mock-data'
-import { formatDate, getOperationTypeLabel, getStatusLabel } from '@/lib/utils'
+import { getOperations } from '@/lib/api'
+import { formatDate, formatDateTime, getOperationTypeLabel } from '@/lib/utils'
 
 export default function OperationsPage() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedType, setSelectedType] = useState<string>('all')
+  const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [operations, setOperations] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // Create mock operations from containers
-  const mockOperations = mockContainers.map((container, index) => ({
-    id: `op-${index + 1}`,
-    container_code: container.code,
-    culture: mockCultures.find(c => c.id === container.lot_id)?.name || '-',
-    operation_type: index % 2 === 0 ? 'FEED' : 'PASSAGE' as const,
-    status: index % 3 === 0 ? 'COMPLETED' : 'IN_PROGRESS' as const,
-    started_at: new Date(Date.now() - index * 86400000).toISOString(),
-    completed_at: index % 3 === 0 ? new Date(Date.now() - index * 43200000).toISOString() : undefined,
-  }))
+  useEffect(() => {
+    loadOperations()
+  }, [selectedStatus])
 
-  const filteredOperations = mockOperations.filter(op => {
-    const matchesSearch = op.container_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      op.culture.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesType = selectedType === 'all' || op.operation_type === selectedType
-    return matchesSearch && matchesType
+  const loadOperations = async () => {
+    setLoading(true)
+    try {
+      const filters: any = {}
+      if (selectedStatus !== 'all') {
+        filters.status = selectedStatus
+      }
+      const data = await getOperations(filters)
+      setOperations(data || [])
+    } catch (error) {
+      console.error('Error loading operations:', error)
+      setOperations([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredOperations = operations.filter(op => {
+    const matchesSearch = searchQuery === '' || 
+      op.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      op.container?.lot?.culture?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesSearch
   })
 
   const stats = {
-    total: mockOperations.length,
-    inProgress: mockOperations.filter(o => o.status === 'IN_PROGRESS').length,
-    completed: mockOperations.filter(o => o.status === 'COMPLETED').length,
-    containers: mockContainers.length,
+    total: operations.length,
+    inProgress: operations.filter(o => o.status === 'IN_PROGRESS').length,
+    completed: operations.filter(o => o.status === 'COMPLETED').length,
+    pending: operations.filter(o => o.status === 'PENDING').length,
   }
 
   return (
@@ -54,13 +84,23 @@ export default function OperationsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Операции</h1>
           <p className="text-muted-foreground">
-            Журнал операций с культурами: кормление, пассирование, заморозка, размораживание
+            История операций с культурами и контейнерами
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Новая операция
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/operations/new?type=FEEDING">
+              <Activity className="mr-2 h-4 w-4" />
+              Кормление
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/operations/new?type=THAW">
+              <Plus className="mr-2 h-4 w-4" />
+              Разморозка
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -77,9 +117,8 @@ export default function OperationsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
-              <Play className="h-4 w-4" />
-              В процессе
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              В работе
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -88,8 +127,7 @@ export default function OperationsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
-              <CheckCircle className="h-4 w-4" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">
               Завершено
             </CardTitle>
           </CardHeader>
@@ -100,11 +138,11 @@ export default function OperationsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Активных контейнеров
+              Ожидает
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.containers}</div>
+            <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
           </CardContent>
         </Card>
       </div>
@@ -114,81 +152,123 @@ export default function OperationsPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по коду, культуре..."
+            placeholder="Поиск по культуре, контейнеру..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Tabs value={selectedType} onValueChange={setSelectedType}>
+        <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
           <TabsList>
             <TabsTrigger value="all">Все</TabsTrigger>
-            <TabsTrigger value="FEED">Кормление</TabsTrigger>
-            <TabsTrigger value="PASSAGE">Пассирование</TabsTrigger>
-            <TabsTrigger value="FREEZE">Заморозка</TabsTrigger>
-            <TabsTrigger value="THAW">Размораживание</TabsTrigger>
+            <TabsTrigger value="IN_PROGRESS">В работе</TabsTrigger>
+            <TabsTrigger value="COMPLETED">Завершено</TabsTrigger>
+            <TabsTrigger value="PENDING">Ожидает</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
-      {/* Operations List */}
+      {/* Operations Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Журнал операций</CardTitle>
+          <CardTitle>История операций</CardTitle>
           <CardDescription>
-            {filteredOperations.length} операций найдено
+            {loading ? 'Загрузка...' : `${filteredOperations.length} операций найдено`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {filteredOperations.map((op) => (
-              <div
-                key={op.id}
-                className={`flex items-center justify-between p-4 rounded-lg border ${
-                  op.status === 'COMPLETED' ? 'bg-gray-50' : 'bg-blue-50'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`p-2 rounded-lg ${
-                    op.status === 'COMPLETED' ? 'bg-gray-200' : 'bg-blue-200'
-                  }`}>
-                    <FlaskConical className={`h-5 w-5 ${
-                      op.status === 'COMPLETED' ? 'text-gray-600' : 'text-blue-600'
-                    }`} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm font-medium bg-white px-2 py-1 rounded border">
-                        {op.container_code}
-                      </code>
-                      <Badge variant="outline">{op.culture}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {getOperationTypeLabel(op.operation_type)}
-                      <span className="mx-2">•</span>
-                      {formatDate(op.started_at)}
-                      {op.completed_at && (
-                        <>
-                          <span className="mx-2">→</span>
-                          {formatDate(op.completed_at)}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge className={getStatusColor(op.status)}>
-                    {op.status === 'COMPLETED' ? 'Завершено' : 'В процессе'}
-                  </Badge>
-                  {op.status === 'IN_PROGRESS' && (
-                    <Button variant="outline" size="sm">
-                      Завершить
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Тип операции</TableHead>
+                  <TableHead>Культура</TableHead>
+                  <TableHead>Контейнер</TableHead>
+                  <TableHead>Начато</TableHead>
+                  <TableHead>Завершено</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead>Оператор</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredOperations.map((op) => (
+                  <TableRow key={op.id}>
+                    <TableCell>
+                      <Link href={`/operations/${op.id}`} className="font-medium hover:underline">
+                        {op.id?.slice(0, 8)}...
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {getOperationTypeLabel(op.type)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {op.container?.lot?.culture?.name || '-'}
+                      <p className="text-xs text-muted-foreground">
+                        {op.container?.lot?.culture?.culture_type?.code}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      {op.container?.code || '-'}
+                    </TableCell>
+                    <TableCell>
+                      {op.started_at ? formatDateTime(op.started_at) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {op.completed_at ? formatDateTime(op.completed_at) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={getStatusColor(op.status)}>
+                        {getStatusLabel(op.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {op.operator?.name || '-'}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Действия</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem asChild>
+                            <Link href={`/operations/${op.id}`}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Просмотр
+                            </Link>
+                          </DropdownMenuItem>
+                          {op.status === 'IN_PROGRESS' && (
+                            <DropdownMenuItem>
+                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                              Завершить
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredOperations.length === 0 && !loading && (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      Операции не найдены
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -197,9 +277,22 @@ export default function OperationsPage() {
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
+    PENDING: 'bg-yellow-100 text-yellow-800',
     IN_PROGRESS: 'bg-blue-100 text-blue-800',
     COMPLETED: 'bg-green-100 text-green-800',
     CANCELLED: 'bg-red-100 text-red-800',
+    ON_HOLD: 'bg-gray-100 text-gray-800',
   }
   return colors[status] || 'bg-gray-100 text-gray-800'
+}
+
+function getStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    PENDING: 'Ожидает',
+    IN_PROGRESS: 'В работе',
+    COMPLETED: 'Завершено',
+    CANCELLED: 'Отменено',
+    ON_HOLD: 'Приостановлено',
+  }
+  return labels[status] || status
 }

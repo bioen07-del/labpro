@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { 
   Archive, 
@@ -10,7 +10,8 @@ import {
   Eye,
   Edit,
   FileText,
-  ThermometerSnowflake
+  ThermometerSnowflake,
+  Loader2
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,26 +34,48 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { mockBanks, mockCultures } from '@/lib/mock-data'
+import { getBanks } from '@/lib/api'
 import { formatDate, getStatusLabel, getBankTypeLabel, formatCellsCount } from '@/lib/utils'
 
 export default function BanksPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [banks, setBanks] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const filteredBanks = mockBanks.filter(bank => {
-    const culture = mockCultures.find(c => c.id === bank.culture_id)
-    const matchesSearch = bank.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      culture?.name.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = selectedStatus === 'all' || bank.status === selectedStatus
-    return matchesSearch && matchesStatus
+  useEffect(() => {
+    loadBanks()
+  }, [selectedStatus])
+
+  const loadBanks = async () => {
+    setLoading(true)
+    try {
+      const filters: any = {}
+      if (selectedStatus !== 'all') {
+        filters.status = selectedStatus
+      }
+      const data = await getBanks(filters)
+      setBanks(data || [])
+    } catch (error) {
+      console.error('Error loading banks:', error)
+      setBanks([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filteredBanks = banks.filter(bank => {
+    const matchesSearch = searchQuery === '' || 
+      bank.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      bank.culture?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    return matchesSearch
   })
 
   const stats = {
-    total: mockBanks.length,
-    quarantine: mockBanks.filter(b => b.status === 'QUARANTINE').length,
-    approved: mockBanks.filter(b => b.status === 'APPROVED').length,
-    reserved: mockBanks.filter(b => b.status === 'RESERVED').length,
+    total: banks.length,
+    quarantine: banks.filter(b => b.status === 'QUARANTINE').length,
+    approved: banks.filter(b => b.status === 'APPROVED').length,
+    reserved: banks.filter(b => b.status === 'RESERVED').length,
   }
 
   return (
@@ -142,41 +165,44 @@ export default function BanksPage() {
         <CardHeader>
           <CardTitle>Список банков</CardTitle>
           <CardDescription>
-            {filteredBanks.length} банков найдено
+            {loading ? 'Загрузка...' : `${filteredBanks.length} банков найдено`}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Код</TableHead>
-                <TableHead>Культура</TableHead>
-                <TableHead>Тип банка</TableHead>
-                <TableHead>Пробирок</TableHead>
-                <TableHead>Клеток/пробирка</TableHead>
-                <TableHead>Всего клеток</TableHead>
-                <TableHead>Дата заморозки</TableHead>
-                <TableHead>QC</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredBanks.map((bank) => {
-                const culture = mockCultures.find(c => c.id === bank.culture_id)
-                return (
+          {loading ? (
+            <div className="flex justify-center items-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Код</TableHead>
+                  <TableHead>Культура</TableHead>
+                  <TableHead>Тип банка</TableHead>
+                  <TableHead>Пробирок</TableHead>
+                  <TableHead>Клеток/пробирка</TableHead>
+                  <TableHead>Всего клеток</TableHead>
+                  <TableHead>Дата заморозки</TableHead>
+                  <TableHead>QC</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredBanks.map((bank) => (
                   <TableRow key={bank.id}>
                     <TableCell>
                       <Link href={`/banks/${bank.id}`} className="font-medium hover:underline">
-                        {bank.id}
+                        {bank.id?.slice(0, 8)}...
                       </Link>
                     </TableCell>
                     <TableCell>
                       <Link href={`/cultures/${bank.culture_id}`} className="text-sm hover:underline">
-                        {culture?.name || '-'}
+                        {bank.culture?.name || '-'}
                       </Link>
                       <p className="text-xs text-muted-foreground">
-                        {culture?.type?.code}
+                        {bank.culture?.culture_type?.code}
                       </p>
                     </TableCell>
                     <TableCell>
@@ -240,10 +266,17 @@ export default function BanksPage() {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                ))}
+                {filteredBanks.length === 0 && !loading && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      Банки не найдены
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>
