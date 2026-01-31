@@ -1,0 +1,168 @@
+"use client"
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Bell, Menu, User, Search, LogOut, Settings } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { mockNotifications, mockDashboardStats } from '@/lib/mock-data'
+import { getInitials, formatRelativeTime } from '@/lib/utils'
+
+export function Header() {
+  const pathname = usePathname()
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const unreadCount = mockNotifications.filter(n => !n.is_read).length
+
+  return (
+    <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+      <div className="container flex h-16 items-center justify-between px-4">
+        {/* Logo & Nav */}
+        <div className="flex items-center gap-6">
+          <Link href="/" className="flex items-center gap-2 font-bold text-xl">
+            <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
+              <span className="text-white text-sm">LP</span>
+            </div>
+            <span className="hidden sm:inline">LabPro</span>
+          </Link>
+
+          <nav className="hidden md:flex items-center gap-1">
+            <NavLink href="/" pathname={pathname}>Дашборд</NavLink>
+            <NavLink href="/cultures" pathname={pathname}>Культуры</NavLink>
+            <NavLink href="/banks" pathname={pathname}>Банки</NavLink>
+            <NavLink href="/inventory" pathname={pathname}>Склад</NavLink>
+            <NavLink href="/orders" pathname={pathname}>Заявки</NavLink>
+          </nav>
+        </div>
+
+        {/* Search & Actions */}
+        <div className="flex items-center gap-3">
+          <div className="relative hidden sm:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Поиск..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-64 pl-9"
+            />
+          </div>
+
+          {/* Notifications */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="relative">
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs">
+                    {unreadCount}
+                  </Badge>
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="flex items-center justify-between">
+                Уведомления
+                <Button variant="ghost" size="sm" className="text-xs">Прочитать все</Button>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {mockNotifications.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  Нет уведомлений
+                </div>
+              ) : (
+                mockNotifications.slice(0, 5).map((notification) => (
+                  <DropdownMenuItem key={notification.id} className="flex flex-col items-start gap-1 p-3">
+                    <div className="flex items-center gap-2 w-full">
+                      {!notification.is_read && (
+                        <div className="h-2 w-2 rounded-full bg-blue-600" />
+                      )}
+                      <span className="font-medium">{notification.title}</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">{notification.message}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatRelativeTime(notification.created_at)}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/notifications" className="w-full text-center text-blue-600">
+                  Все уведомления
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* User Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="rounded-full">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
+                    АД
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>
+                <div className="flex flex-col">
+                  <span>Администратор</span>
+                  <span className="text-xs text-muted-foreground font-normal">admin@labpro.local</span>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>
+                <User className="mr-2 h-4 w-4" />
+                Профиль
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Settings className="mr-2 h-4 w-4" />
+                Настройки
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-red-600">
+                <LogOut className="mr-2 h-4 w-4" />
+                Выйти
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Mobile Menu Toggle */}
+          <Button variant="ghost" size="icon" className="md:hidden">
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function NavLink({ href, pathname, children }: { href: string; pathname: string; children: React.ReactNode }) {
+  const isActive = pathname === href || pathname.startsWith(href + '/')
+  
+  return (
+    <Link
+      href={href}
+      className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+        isActive
+          ? 'bg-blue-50 text-blue-700'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+      }`}
+    >
+      {children}
+    </Link>
+  )
+}
