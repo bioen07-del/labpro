@@ -13,9 +13,9 @@ import type {
   User
 } from '@/types'
 
-// Initialize Supabase client (use any for now until schema is deployed)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+// Initialize Supabase client (use placeholder for static generation, real values in Vercel env)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://demo.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'demo-anon-key'
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
