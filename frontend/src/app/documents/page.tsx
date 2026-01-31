@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { 
   FileText, 
@@ -30,7 +30,7 @@ const MORPHOLOGY_LABELS: Record<string, string> = {
   degenerate: "Дегенеративная",
 }
 
-export default function DocumentsPage() {
+function DocumentsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const lotId = searchParams.get("lot_id")
@@ -414,3 +414,20 @@ export default function DocumentsPage() {
     </div>
   )
 }
+
+function DocumentsPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto py-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-10 bg-muted rounded w-1/4"></div>
+          <div className="h-96 bg-muted rounded"></div>
+        </div>
+      </div>
+    }>
+      <DocumentsContent />
+    </Suspense>
+  )
+}
+
+export default DocumentsPage
