@@ -62,7 +62,7 @@ export default function UsersPage() {
       LABORANT: 'secondary',
       MANAGER: 'secondary',
       QC_ADMIN: 'outline',
-      ADMIN: 'destructive'
+      ADMIN: 'outline'
     }
     const labels: Record<string, string> = {
       OPERATOR: 'Оператор',

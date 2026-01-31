@@ -20,7 +20,7 @@ const mockTasks = [
     last_done_date: '2026-01-28',
     interval_days: 3,
     container: { code: 'CT-0001-L1-P4-FL-001' },
-    culture: { name: 'MSC-001' }
+    culture: { id: 'culture-1', name: 'MSC-001' }
   },
   {
     id: '2',
@@ -32,7 +32,8 @@ const mockTasks = [
     last_done_date: '2026-01-28',
     interval_days: 3,
     lot: { passage_number: 4 },
-    culture: { name: 'MSC-001' }
+    culture: { id: 'culture-1', name: 'MSC-001' },
+    culture_id: 'culture-1'
   },
   {
     id: '3',
@@ -42,7 +43,8 @@ const mockTasks = [
     status: 'PENDING',
     due_date: '2026-02-05',
     bank: { bank_type: 'MCB' },
-    culture: { name: 'MSC-001' }
+    culture: { id: 'culture-1', name: 'MSC-001' },
+    culture_id: 'culture-1'
   },
   {
     id: '4',
