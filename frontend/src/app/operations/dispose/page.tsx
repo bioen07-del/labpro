@@ -40,6 +40,8 @@ export default function DisposePage({ targetType, targetId, targetCode, targetNa
     batch: "партию",
     ready_medium: "готовую среду"
   }
+  
+  const label = targetLabel[targetType] || "объект"
 
   const handleSubmit = async () => {
     if (!reason) {
@@ -105,7 +107,7 @@ export default function DisposePage({ targetType, targetId, targetCode, targetNa
       <Alert variant="destructive" className="mb-6">
         <AlertTriangle className="h-4 w-4" />
         <AlertDescription>
-          Это действие нельзя отменить. {targetLabel[targetType].charAt(0).toUpperCase() + targetLabel[targetType].slice(1)} будет помечен как утилизированный и не сможет использоваться в операциях.
+          Это действие нельзя отменить. {label.charAt(0).toUpperCase() + label.slice(1)} будет помечен как утилизированный и не сможет использоваться в операциях.
         </AlertDescription>
       </Alert>
 
@@ -120,7 +122,7 @@ export default function DisposePage({ targetType, targetId, targetCode, targetNa
         <CardHeader>
           <CardTitle>Причина утилизации</CardTitle>
           <CardDescription>
-            Укажите причину утилизации {targetLabel[targetType]}
+            Укажите причину утилизации {label}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
