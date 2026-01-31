@@ -41,6 +41,7 @@ export function Header() {
             <NavLink href="/" pathname={pathname}>Дашборд</NavLink>
             <NavLink href="/cultures" pathname={pathname}>Культуры</NavLink>
             <NavLink href="/banks" pathname={pathname}>Банки</NavLink>
+            <NavLink href="/operations" pathname={pathname}>Операции</NavLink>
             <NavLink href="/inventory" pathname={pathname}>Склад</NavLink>
             <NavLink href="/orders" pathname={pathname}>Заявки</NavLink>
           </nav>

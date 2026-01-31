@@ -70,7 +70,43 @@ export async function getCultureById(id: string) {
   return data
 }
 
+// ==================== CULTURES ====================
+
+export async function createCulture(culture: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('cultures')
+    .insert(culture)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function updateCulture(id: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('cultures')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
 // ==================== LOTS ====================
+
+export async function createLot(lot: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('lots')
+    .insert(lot)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
 
 export async function getLots(filters?: { status?: string; culture_id?: string }) {
   let query = supabase
@@ -953,31 +989,6 @@ export async function getContainersByLot(lotId: string) {
     .select('*, position:positions(*)')
     .eq('lot_id', lotId)
     .order('code')
-  
-  if (error) throw error
-  return data
-}
-
-// ==================== LOTS ====================
-
-export async function createLot(lot: Record<string, unknown>) {
-  const { data, error } = await supabase
-    .from('lots')
-    .insert(lot)
-    .select()
-    .single()
-  
-  if (error) throw error
-  return data
-}
-
-export async function updateLot(id: string, updates: Record<string, unknown>) {
-  const { data, error } = await supabase
-    .from('lots')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single()
   
   if (error) throw error
   return data
