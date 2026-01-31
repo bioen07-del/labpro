@@ -20,9 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased bg-gray-50`}>
+      <body className={`${inter.variable} font-sans antialiased bg-gray-50 w-full overflow-x-hidden`}>
         <Header />
-        <main className="min-h-screen">
+        <main className="min-h-screen w-full">
           {children}
         </main>
       </body>
