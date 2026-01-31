@@ -1,9 +1,9 @@
 ---
-name: labprocycle
+name: skills
 description: Brief description of what this skill does
 ---
 
-# labprocycle
+# skills
 
 Instructions for the AI agent...
 
