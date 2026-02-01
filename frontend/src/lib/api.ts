@@ -211,7 +211,6 @@ export async function getContainers(filters?: { lot_id?: string; status?: string
           culture_type:culture_types(*)
         )
       ),
-      position:positions(*),
       container_type:container_types(*)
     `)
     .order('code')

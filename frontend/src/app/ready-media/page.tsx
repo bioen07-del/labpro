@@ -71,12 +71,12 @@ export default function ReadyMediaPage() {
   
   // Форма создания
   const [newMedium, setNewMedium] = useState({
-    batch_id: '',
+    batch_id: 'none',
     name: '',
     volume_ml: 0,
     preparation_date: new Date().toISOString().split('T')[0],
     expiration_hours: 72,
-    storage_position_id: '',
+    storage_position_id: 'none',
     notes: '',
   })
   
