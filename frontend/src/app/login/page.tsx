@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { signIn } from '@/lib/api'
-import { useAuth } from '@/lib/auth-context'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,13 +33,12 @@ export default function LoginPage() {
     }
   }
 
-  // Demo login with Supabase auth (requires user to exist in Supabase Auth)
   const handleDemoLogin = async () => {
     setLoading(true)
     setError('')
 
     try {
-      await signIn('demo@labpro.ru', 'demo1234')
+      await signIn('admin@labpro.local', 'demo1234')
       router.push('/')
       router.refresh()
     } catch (err: any) {
@@ -51,7 +49,6 @@ export default function LoginPage() {
     }
   }
 
-  // Quick login with predefined demo accounts for different roles
   const handleQuickLogin = async (role: string, roleEmail: string) => {
     setLoading(true)
     setError('')
@@ -61,7 +58,7 @@ export default function LoginPage() {
       router.push('/')
       router.refresh()
     } catch (err: any) {
-      setError(`Аккаунт ${role} не существует. ${err.message || ''}`)
+      setError(`Аккаунт ${role} не существует в Supabase Auth. ${err.message || ''}`)
       console.error(err)
     } finally {
       setLoading(false)
@@ -71,7 +68,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="w-full max-w-md px-4">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-600 text-white mb-4">
             <FlaskConical className="h-8 w-8" />
@@ -113,7 +109,7 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="********"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -162,17 +158,16 @@ export default function LoginPage() {
               )}
             </Button>
 
-            {/* Quick login buttons for different roles */}
             <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-gray-200">
               <p className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
                 <Shield className="h-4 w-4" />
-                Быстрый вход (демо-аккаунты)
+                Быстрый вход (Supabase Auth)
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => handleQuickLogin('Администратор', 'admin@labpro.ru')}
+                  onClick={() => handleQuickLogin('Администратор', 'admin@labpro.local')}
                   disabled={loading}
                   className="text-xs"
                 >
@@ -182,17 +177,17 @@ export default function LoginPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => handleQuickLogin('Оператор', 'operator@labpro.ru')}
+                  onClick={() => handleQuickLogin('Оператор 1', 'operator1@labpro.local')}
                   disabled={loading}
                   className="text-xs"
                 >
                   <User className="h-3 w-3 mr-1" />
-                  Оператор
+                  Оператор 1
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => handleQuickLogin('Лаборант', 'laborant@labpro.ru')}
+                  onClick={() => handleQuickLogin('Лаборант', 'laborant1@labpro.local')}
                   disabled={loading}
                   className="text-xs"
                 >
@@ -202,7 +197,7 @@ export default function LoginPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => handleQuickLogin('Менеджер', 'manager@labpro.ru')}
+                  onClick={() => handleQuickLogin('Менеджер', 'manager1@labpro.local')}
                   disabled={loading}
                   className="text-xs"
                 >
@@ -211,7 +206,7 @@ export default function LoginPage() {
                 </Button>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Пароль для всех: demo1234
+                Пароль: demo1234 | См. seed.sql
               </p>
             </div>
           </CardContent>
