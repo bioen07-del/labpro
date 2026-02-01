@@ -136,7 +136,7 @@ export interface Lot {
 }
 
 // Container
-export type ContainerStatus = 'ACTIVE' | 'IN_BANK' | 'DISPOSE'
+export type ContainerStatus = 'IN_CULTURE' | 'IN_BANK' | 'ISSUED' | 'DISPOSE' | 'QUARANTINE'
 
 export interface Container {
   id: string
@@ -145,7 +145,7 @@ export interface Container {
   code: string
   container_type_id: string
   type?: ContainerType
-  container_status: ContainerStatus
+  status: ContainerStatus
   parent_container_id?: string
   position_id?: string
   position?: Position
@@ -488,13 +488,12 @@ export interface AuditLog {
 
 // Dashboard Stats
 export interface DashboardStats {
-  total_cultures: number
-  active_cultures: number
-  total_banks: number
-  pending_orders: number
-  expiring_batches: number
-  pending_tasks: number
-  unread_notifications: number
+  totalCultures: number
+  activeCultures: number
+  totalBanks: number
+  pendingOrders: number
+  pendingTasks: number
+  activeContainers: number
 }
 
 // Morphology Types
@@ -533,6 +532,16 @@ export interface Database {
         Row: Donor
         Insert: Partial<Donor>
         Update: Partial<Donor>
+      }
+      donations: {
+        Row: Donation
+        Insert: Partial<Donation>
+        Update: Partial<Donation>
+      }
+      tissue_types: {
+        Row: TissueType
+        Insert: Partial<TissueType>
+        Update: Partial<TissueType>
       }
       tissues: {
         Row: Tissue

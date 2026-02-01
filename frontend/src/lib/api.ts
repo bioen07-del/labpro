@@ -605,18 +605,29 @@ export async function completeTask(id: string) {
 // ==================== STATS ====================
 
 export async function getDashboardStats() {
-  const [lotsResult, banksResult, ordersResult, containersResult] = await Promise.all([
-    supabase.from('lots').select('status', { count: 'exact', head: true }),
-    supabase.from('banks').select('status', { count: 'exact', head: true }),
-    supabase.from('orders').select('status', { count: 'exact', head: true }),
-    supabase.from('containers').select('status', { count: 'exact', head: true }),
+  const [
+    culturesResult,
+    activeCulturesResult,
+    banksResult,
+    pendingOrdersResult,
+    pendingTasksResult,
+    activeContainersResult,
+  ] = await Promise.all([
+    supabase.from('cultures').select('*', { count: 'exact', head: true }),
+    supabase.from('cultures').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
+    supabase.from('banks').select('*', { count: 'exact', head: true }),
+    supabase.from('orders').select('*', { count: 'exact', head: true }).in('status', ['PENDING', 'IN_PROGRESS']),
+    supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
+    supabase.from('containers').select('*', { count: 'exact', head: true }).eq('status', 'IN_CULTURE'),
   ])
-  
+
   return {
-    totalLots: lotsResult.count || 0,
+    totalCultures: culturesResult.count || 0,
+    activeCultures: activeCulturesResult.count || 0,
     totalBanks: banksResult.count || 0,
-    totalOrders: ordersResult.count || 0,
-    totalContainers: containersResult.count || 0,
+    pendingOrders: pendingOrdersResult.count || 0,
+    pendingTasks: pendingTasksResult.count || 0,
+    activeContainers: activeContainersResult.count || 0,
   }
 }
 
@@ -702,6 +713,79 @@ export async function updateDonor(id: string, updates: Record<string, unknown>) 
     .select()
     .single()
   
+  if (error) throw error
+  return data
+}
+
+// ==================== DONATIONS ====================
+
+export async function getDonations(filters?: { donor_id?: string; status?: string }) {
+  let query = supabase
+    .from('donations')
+    .select('*, donor:donors(*), tissue_type:tissue_types(*)')
+    .order('created_at', { ascending: false })
+
+  if (filters?.donor_id) {
+    query = query.eq('donor_id', filters.donor_id)
+  }
+  if (filters?.status) {
+    query = query.eq('status', filters.status)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
+
+export async function getDonationById(id: string) {
+  const { data, error } = await supabase
+    .from('donations')
+    .select('*, donor:donors(*), tissue_type:tissue_types(*), cultures(*)')
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function createDonation(donation: Record<string, unknown>) {
+  const { count } = await supabase
+    .from('donations')
+    .select('*', { count: 'exact', head: true })
+
+  const code = `DON-${String((count || 0) + 1).padStart(4, '0')}`
+
+  const { data, error } = await supabase
+    .from('donations')
+    .insert({ ...donation, code })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function updateDonation(id: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('donations')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// ==================== TISSUE TYPES ====================
+
+export async function getTissueTypes() {
+  const { data, error } = await supabase
+    .from('tissue_types')
+    .select('*')
+    .eq('is_active', true)
+    .order('name')
+
   if (error) throw error
   return data
 }

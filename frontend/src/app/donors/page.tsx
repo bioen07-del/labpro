@@ -2,21 +2,22 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { 
-  Plus, 
-  Loader2, 
-  Search, 
+import {
+  Plus,
+  Loader2,
+  Search,
   Filter,
   User,
-  Heart,
   Calendar,
-  MoreHorizontal
+  Phone,
+  MoreHorizontal,
+  FilePlus
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -46,10 +47,16 @@ export default function DonorsPage() {
     }
   }
 
-  const filteredDonors = donors.filter((donor: any) => 
-    donor.code?.toLowerCase().includes(search.toLowerCase()) ||
-    donor.tissue_type?.toLowerCase().includes(search.toLowerCase())
-  )
+  const getDonorFullName = (donor: any) => {
+    const parts = [donor.last_name, donor.first_name, donor.middle_name].filter(Boolean)
+    return parts.length > 0 ? parts.join(' ') : 'ФИО не указано'
+  }
+
+  const filteredDonors = donors.filter((donor: any) => {
+    const q = search.toLowerCase()
+    const fullName = getDonorFullName(donor).toLowerCase()
+    return fullName.includes(q) || donor.code?.toLowerCase().includes(q)
+  })
 
   return (
     <div className="container py-6 space-y-6">
@@ -71,7 +78,7 @@ export default function DonorsPage() {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по коду или типу ткани..."
+            placeholder="Поиск по ФИО или коду..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -111,10 +118,12 @@ export default function DonorsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div>
-                    <CardTitle className="text-lg">{donor.code}</CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      {donor.tissue_type || 'Тип ткани не указан'}
-                    </p>
+                    <CardTitle className="text-lg">
+                      <Link href={`/donors/${donor.id}`} className="hover:underline">
+                        {getDonorFullName(donor)}
+                      </Link>
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground font-mono">{donor.code}</p>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -127,8 +136,8 @@ export default function DonorsPage() {
                         <Link href={`/donors/${donor.id}`}>Просмотр</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href={`/cultures/new?donor_id=${donor.id}`}>
-                          Создать культуру
+                        <Link href={`/donors/${donor.id}/donations/new`}>
+                          Новая донация
                         </Link>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -139,27 +148,34 @@ export default function DonorsPage() {
                 <div className="flex items-center gap-2 text-sm">
                   <User className="h-4 w-4 text-muted-foreground" />
                   <span>
-                    {donor.gender === 'M' ? 'Мужской' : donor.gender === 'F' ? 'Женский' : 'Не указан'}
-                    {donor.age && `, ${donor.age} лет`}
+                    {donor.sex === 'M' ? 'Мужской' : donor.sex === 'F' ? 'Женский' : 'Пол не указан'}
                   </span>
                 </div>
-                {donor.collection_date && (
+                {donor.birth_date && (
                   <div className="flex items-center gap-2 text-sm">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>Забор: {formatDate(donor.collection_date)}</span>
+                    <span>Дата рождения: {formatDate(donor.birth_date)}</span>
                   </div>
                 )}
-                {donor.tissues && donor.tissues.length > 0 && (
+                {donor.phone && (
                   <div className="flex items-center gap-2 text-sm">
-                    <Heart className="h-4 w-4 text-muted-foreground" />
-                    <span>Тканей: {donor.tissues.length}</span>
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span>{donor.phone}</span>
                   </div>
                 )}
-                {donor.status && (
-                  <Badge variant={donor.status === 'ACTIVE' ? 'default' : 'secondary'}>
-                    {donor.status === 'ACTIVE' ? 'Активен' : donor.status}
-                  </Badge>
-                )}
+                <div className="flex items-center justify-between">
+                  {donor.status && (
+                    <Badge variant={donor.status === 'ACTIVE' ? 'default' : 'secondary'}>
+                      {donor.status === 'ACTIVE' ? 'Активен' : donor.status}
+                    </Badge>
+                  )}
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href={`/donors/${donor.id}/donations/new`}>
+                      <FilePlus className="h-3 w-3 mr-1" />
+                      Донация
+                    </Link>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}

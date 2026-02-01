@@ -10,32 +10,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================
--- ENUM TYPES
+-- NOTE: All status fields use TEXT for flexibility.
+-- ENUM types removed to avoid migration conflicts.
 -- ============================================
-
-DROP TYPE IF EXISTS container_status CASCADE;
-DROP TYPE IF EXISTS bank_type CASCADE;
-DROP TYPE IF EXISTS bank_status CASCADE;
-DROP TYPE IF EXISTS qc_status CASCADE;
-DROP TYPE IF EXISTS qc_result CASCADE;
-DROP TYPE IF EXISTS culture_status CASCADE;
-DROP TYPE IF EXISTS order_type CASCADE;
-DROP TYPE IF EXISTS order_status CASCADE;
-DROP TYPE IF EXISTS operation_type CASCADE;
-DROP TYPE IF EXISTS operation_status CASCADE;
-DROP TYPE IF EXISTS batch_status CASCADE;
-
-CREATE TYPE container_status AS ENUM ('IN_CULTURE', 'IN_BANK', 'ISSUED', 'DISPOSE', 'QUARANTINE');
-CREATE TYPE bank_type AS ENUM ('MCB', 'WCB', 'RWB');
-CREATE TYPE bank_status AS ENUM ('QUARANTINE', 'APPROVED', 'RESERVED', 'ISSUED', 'DISPOSE');
-CREATE TYPE qc_status AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED');
-CREATE TYPE qc_result AS ENUM ('PASSED', 'FAILED', 'INCONCLUSIVE');
-CREATE TYPE culture_status AS ENUM ('ACTIVE', 'ARCHIVED', 'DISPOSE', 'QUARANTINE');
-CREATE TYPE order_type AS ENUM ('STANDARD', 'URGENT', 'RESEARCH');
-CREATE TYPE order_status AS ENUM ('PENDING', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD');
-CREATE TYPE operation_type AS ENUM ('FEEDING', 'PASSAGE', 'FREEZE', 'THAW', 'OBSERVE', 'QC', 'DISPOSE');
-CREATE TYPE operation_status AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD');
-CREATE TYPE batch_status AS ENUM ('AVAILABLE', 'RESERVED', 'USED', 'EXPIRED', 'QUARANTINE');
 
 -- ============================================
 -- REFERENCE TABLES
@@ -84,21 +61,59 @@ CREATE TABLE IF NOT EXISTS dispose_reasons (
 -- ENTITY TABLES
 -- ============================================
 
+-- Tissue Types (reference)
+CREATE TABLE IF NOT EXISTS tissue_types (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    tissue_form TEXT DEFAULT 'SOLID',  -- SOLID / LIQUID
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Donors
 CREATE TABLE IF NOT EXISTS donors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     code TEXT NOT NULL UNIQUE,
-    first_name TEXT,
     last_name TEXT,
+    first_name TEXT,
+    middle_name TEXT,
     birth_date DATE,
-    gender TEXT,
+    sex TEXT,          -- M / F
+    phone TEXT,
+    email TEXT,
     blood_type TEXT,
     consent_date DATE,
     consent_number TEXT,
     status TEXT DEFAULT 'ACTIVE',
     notes TEXT,
+    created_by UUID,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Donations
+CREATE TABLE IF NOT EXISTS donations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    donor_id UUID NOT NULL REFERENCES donors(id),
+    collected_at DATE NOT NULL,
+    tissue_type_id UUID REFERENCES tissue_types(id),
+    tissue_form TEXT,           -- SOLID / LIQUID
+    tissue_volume_ml NUMERIC,
+    tissue_weight_g NUMERIC,
+    consent_received BOOLEAN DEFAULT false,
+    consent_document TEXT,
+    contract_number TEXT,
+    contract_date DATE,
+    inf_hiv TEXT DEFAULT 'PENDING',
+    inf_hbv TEXT DEFAULT 'PENDING',
+    inf_hcv TEXT DEFAULT 'PENDING',
+    inf_syphilis TEXT DEFAULT 'PENDING',
+    status TEXT DEFAULT 'QUARANTINE',  -- QUARANTINE / APPROVED / REJECTED
+    notes TEXT,
+    created_by UUID,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Users
@@ -180,6 +195,7 @@ CREATE TABLE IF NOT EXISTS cultures (
     name TEXT NOT NULL,
     type_id UUID REFERENCES culture_types(id),
     donor_id UUID REFERENCES donors(id),
+    donation_id UUID REFERENCES donations(id),
     tissue_id UUID REFERENCES tissues(id),
     passage_number INTEGER DEFAULT 0,
     source TEXT,
@@ -198,6 +214,8 @@ CREATE TABLE IF NOT EXISTS lots (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     lot_number TEXT NOT NULL UNIQUE,
     culture_id UUID REFERENCES cultures(id),
+    parent_lot_id UUID REFERENCES lots(id),
+    source_container_id UUID,  -- FK added after containers table
     passage_number INTEGER NOT NULL,
     seeded_at TIMESTAMPTZ,
     harvest_at TIMESTAMPTZ,
@@ -521,7 +539,15 @@ CREATE INDEX IF NOT EXISTS idx_banks_culture_id ON banks(culture_id);
 CREATE INDEX IF NOT EXISTS idx_banks_lot_id ON banks(lot_id);
 CREATE INDEX IF NOT EXISTS idx_cultures_type_id ON cultures(type_id);
 CREATE INDEX IF NOT EXISTS idx_cultures_donor_id ON cultures(donor_id);
+CREATE INDEX IF NOT EXISTS idx_cultures_donation_id ON cultures(donation_id);
+CREATE INDEX IF NOT EXISTS idx_donations_donor_id ON donations(donor_id);
+CREATE INDEX IF NOT EXISTS idx_donations_status ON donations(status);
+CREATE INDEX IF NOT EXISTS idx_lots_parent_lot_id ON lots(parent_lot_id);
 CREATE INDEX IF NOT EXISTS idx_orders_bank_id ON orders(bank_id);
+
+-- Deferred FK: lots.source_container_id → containers(id)
+ALTER TABLE lots ADD CONSTRAINT fk_lots_source_container
+    FOREIGN KEY (source_container_id) REFERENCES containers(id);
 CREATE INDEX IF NOT EXISTS idx_qc_tests_target_id ON qc_tests(target_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_type ON equipment(type);
 CREATE INDEX IF NOT EXISTS idx_equipment_location ON equipment(location);
@@ -594,6 +620,30 @@ $$ LANGUAGE plpgsql;
 -- ============================================
 -- RLS POLICIES (Applied via migration)
 -- ============================================
+
+-- Donation auto-status trigger
+CREATE OR REPLACE FUNCTION update_donation_status()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- If all 4 infection tests are NEGATIVE → APPROVED
+    IF NEW.inf_hiv = 'NEGATIVE' AND NEW.inf_hbv = 'NEGATIVE'
+       AND NEW.inf_hcv = 'NEGATIVE' AND NEW.inf_syphilis = 'NEGATIVE' THEN
+        NEW.status = 'APPROVED';
+    -- If any test is POSITIVE → REJECTED
+    ELSIF NEW.inf_hiv = 'POSITIVE' OR NEW.inf_hbv = 'POSITIVE'
+          OR NEW.inf_hcv = 'POSITIVE' OR NEW.inf_syphilis = 'POSITIVE' THEN
+        NEW.status = 'REJECTED';
+    -- Otherwise stay QUARANTINE
+    ELSE
+        NEW.status = 'QUARANTINE';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_donation_status_trigger
+    BEFORE INSERT OR UPDATE ON donations
+    FOR EACH ROW EXECUTE FUNCTION update_donation_status();
 
 -- Note: RLS policies are applied separately to avoid conflicts
 -- See migrations/20260201000000_rls_reference_tables.sql

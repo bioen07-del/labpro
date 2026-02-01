@@ -31,10 +31,12 @@ import { ru } from "date-fns/locale"
 
 export default function DashboardPage() {
   const [stats, setStats] = useState({
-    totalLots: 0,
+    totalCultures: 0,
+    activeCultures: 0,
     totalBanks: 0,
-    totalOrders: 0,
-    totalContainers: 0,
+    pendingOrders: 0,
+    pendingTasks: 0,
+    activeContainers: 0,
   })
   const [tasks, setTasks] = useState<any[]>([])
   const [notifications, setNotifications] = useState<any[]>([])
@@ -127,11 +129,11 @@ export default function DashboardPage() {
             <FlaskConical className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalLots}</div>
-            <p className="text-xs text-muted-foreground">активных партий</p>
+            <div className="text-2xl font-bold">{stats.activeCultures}</div>
+            <p className="text-xs text-muted-foreground">активных из {stats.totalCultures}</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Банки</CardTitle>
@@ -139,29 +141,29 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalBanks}</div>
-            <p className="text-xs text-muted-foreground">криобанка</p>
+            <p className="text-xs text-muted-foreground">криобанков</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Заказы</CardTitle>
+            <CardTitle className="text-sm font-medium">Заявки</CardTitle>
             <ClipboardList className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalOrders}</div>
+            <div className="text-2xl font-bold">{stats.pendingOrders}</div>
             <p className="text-xs text-muted-foreground">в обработке</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Контейнеры</CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalContainers}</div>
-            <p className="text-xs text-muted-foreground">в работе</p>
+            <div className="text-2xl font-bold">{stats.activeContainers}</div>
+            <p className="text-xs text-muted-foreground">в культивировании</p>
           </CardContent>
         </Card>
       </div>
@@ -204,14 +206,18 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-3">
                         <div className={`w-2 h-2 rounded-full ${getTaskPriorityColor(task.priority)}`} />
                         <div>
-                          <p className="font-medium">{task.type}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {task.type === 'FEED' && 'Кормление'}
-                            {task.type === 'OBSERVE' && 'Наблюдение'}
-                            {task.type === 'PASSAGE' && 'Пассаж'}
-                            {task.type === 'QC' && 'Контроль качества'}
-                            {task.type === 'OTHER' && task.description}
+                          <p className="font-medium">
+                            {task.title || (
+                              task.type === 'FEED' ? 'Кормление' :
+                              task.type === 'OBSERVE' ? 'Наблюдение' :
+                              task.type === 'PASSAGE' ? 'Пассаж' :
+                              task.type === 'QC' ? 'Контроль качества' :
+                              task.type
+                            )}
                           </p>
+                          {task.description && (
+                            <p className="text-sm text-muted-foreground">{task.description}</p>
+                          )}
                         </div>
                       </div>
                       <div className="text-right">

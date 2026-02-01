@@ -10,7 +10,7 @@
 INSERT INTO culture_types (code, name, description, is_active) VALUES
 ('MSC', 'Мезенхимальные стволовые клетки', 'Мезенхимальные стволовые клетки жировой ткани', true),
 ('CHONDRO', 'Хондроциты', 'Хондроциты суставного хряща', true),
-('fibroblast', 'Фибробласты', 'Кожные фибробласты', true),
+('FIBROBLAST', 'Фибробласты', 'Кожные фибробласты', true),
 ('HEK293', 'HEK293', 'Эмбриональные почечные клетки человека', true),
 ('CHO', 'CHO', 'Клетки яичников китайского хомячка', true)
 ON CONFLICT (code) DO NOTHING;
@@ -32,12 +32,25 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO morphology_types (code, name, description) VALUES
 ('SPINDLE', 'Веретенообразная', 'Веретенообразная морфология (характерно для MSC)'),
 ('FIBROBLAST', 'Фибробластоподобная', 'Фибробластоподобная морфология'),
-('COBblestone', 'Булыжниковая', 'Булыжниковая морфология (эпителиальные)'),
+('COBBLESTONE', 'Булыжниковая', 'Булыжниковая морфология (эпителиальные)'),
 ('POLYGONAL', 'Полигональная', 'Полигональная форма клеток'),
 ('ROUND', 'Округлая', 'Округлая форма клеток'),
 ('STAR', 'Звёздчатая', 'Звёздчатая форма клеток'),
 ('CLUSTER', 'Кластеры', 'Рост кластерами'),
 ('MONOLAYER', 'Монослой', 'Рост монослоем')
+ON CONFLICT (code) DO NOTHING;
+
+-- Tissue Types
+INSERT INTO tissue_types (code, name, tissue_form, is_active) VALUES
+('ADIPOSE', 'Жировая ткань', 'SOLID', true),
+('CARTILAGE', 'Хрящевая ткань', 'SOLID', true),
+('BONE', 'Костная ткань', 'SOLID', true),
+('BONE_MARROW', 'Костный мозг', 'LIQUID', true),
+('BLOOD', 'Кровь', 'LIQUID', true),
+('SKIN', 'Кожа', 'SOLID', true),
+('MUSCLE', 'Мышечная ткань', 'SOLID', true),
+('PLACENTA', 'Плацента', 'SOLID', true),
+('CORD_BLOOD', 'Пуповинная кровь', 'LIQUID', true)
 ON CONFLICT (code) DO NOTHING;
 
 -- Dispose Reasons

@@ -26,24 +26,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { getCultureTypes, getDonors, createCulture, createLot } from '@/lib/api'
+import { getCultureTypes, getDonors, getDonations, createCulture, createLot } from '@/lib/api'
 
 function CultureForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const donorId = searchParams.get('donor_id')
-  
+  const donationIdParam = searchParams.get('donation_id')
+
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [cultureTypes, setCultureTypes] = useState<any[]>([])
   const [donors, setDonors] = useState<any[]>([])
+  const [donorDonations, setDonorDonations] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-  
+
   // Form state
   const [name, setName] = useState('')
   const [typeId, setTypeId] = useState('')
   const [donorIdState, setDonorIdState] = useState(donorId || '')
+  const [donationIdState, setDonationIdState] = useState(donationIdParam || '')
   const [description, setDescription] = useState('')
   const [passageNumber, setPassageNumber] = useState(1)
   const [notes, setNotes] = useState('')
@@ -51,6 +54,16 @@ function CultureForm() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Load donations when donor changes
+  useEffect(() => {
+    if (donorIdState) {
+      loadDonorDonations(donorIdState)
+    } else {
+      setDonorDonations([])
+      setDonationIdState('')
+    }
+  }, [donorIdState])
 
   const loadData = async () => {
     setLoading(true)
@@ -61,16 +74,31 @@ function CultureForm() {
       ])
       setCultureTypes(typesData || [])
       setDonors(donorsData || [])
-      
+
       // Auto-select first type
       if (typesData?.length > 0 && !typeId) {
         setTypeId(typesData[0].id)
+      }
+
+      // If donor_id came from URL, load donations immediately
+      if (donorId) {
+        await loadDonorDonations(donorId)
       }
     } catch (err) {
       console.error('Error loading data:', err)
       setError('Ошибка загрузки данных')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadDonorDonations = async (dId: string) => {
+    try {
+      const data = await getDonations({ donor_id: dId, status: 'APPROVED' })
+      setDonorDonations(data || [])
+    } catch (err) {
+      console.error('Error loading donations:', err)
+      setDonorDonations([])
     }
   }
 
@@ -89,6 +117,7 @@ function CultureForm() {
         name,
         type_id: typeId,
         donor_id: donorIdState || null,
+        donation_id: donationIdState || null,
         status: 'ACTIVE',
         description,
         coefficient: null,
@@ -212,35 +241,61 @@ function CultureForm() {
             </CardContent>
           </Card>
 
-          {/* Donor Selection */}
+          {/* Donor & Donation Selection */}
           <Card>
             <CardHeader>
-              <CardTitle>Донор</CardTitle>
-              <CardDescription>Связь с донором (необязательно)</CardDescription>
+              <CardTitle>Донор и донация</CardTitle>
+              <CardDescription>Выберите донора, затем одобренную донацию</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="donor">Донор ткани</Label>
-                <Select value={donorIdState} onValueChange={setDonorIdState}>
+                <Label htmlFor="donor">Донор</Label>
+                <Select value={donorIdState} onValueChange={(v) => { setDonorIdState(v); setDonationIdState('') }}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Без донора" />
+                    <SelectValue placeholder="Выберите донора" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Без донора</SelectItem>
-                    {donors.map((donor) => (
-                      <SelectItem key={donor.id} value={donor.id}>
-                        {donor.code} — {donor.tissue_type || 'Не указано'}
-                      </SelectItem>
-                    ))}
+                    {donors.map((donor) => {
+                      const fullName = [donor.last_name, donor.first_name, donor.middle_name].filter(Boolean).join(' ')
+                      return (
+                        <SelectItem key={donor.id} value={donor.id}>
+                          {donor.code} — {fullName || 'ФИО не указано'}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
-              
+
               {donorIdState && (
-                <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-                  <User className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm text-blue-700">
-                    Культура будет связана с выбранным донором
+                <div className="space-y-2">
+                  <Label htmlFor="donation">Донация (только одобренные)</Label>
+                  {donorDonations.length === 0 ? (
+                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+                      У донора нет одобренных донаций. Сначала создайте донацию и дождитесь результатов инфекционных тестов.
+                    </div>
+                  ) : (
+                    <Select value={donationIdState} onValueChange={setDonationIdState}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите донацию" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {donorDonations.map((d: any) => (
+                          <SelectItem key={d.id} value={d.id}>
+                            {d.code} — {d.collected_at} {d.tissue_type?.name ? `(${d.tissue_type.name})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+
+              {donorIdState && donationIdState && (
+                <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                  <User className="h-4 w-4 text-green-600" />
+                  <span className="text-sm text-green-700">
+                    Культура будет связана с донором и выбранной донацией
                   </span>
                 </div>
               )}
@@ -313,6 +368,12 @@ function CultureForm() {
                   <span className="text-sm text-muted-foreground">Донор</span>
                   <span className="font-medium">
                     {donors.find(d => d.id === donorIdState)?.code || 'Нет'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Донация</span>
+                  <span className="font-medium">
+                    {donorDonations.find((d: any) => d.id === donationIdState)?.code || 'Нет'}
                   </span>
                 </div>
                 <div className="flex justify-between">
