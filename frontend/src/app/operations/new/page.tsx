@@ -102,7 +102,7 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
   const loadData = async () => {
     try {
       const [containersData, lotsData, positionsData, typesData] = await Promise.all([
-        getContainers({ status: 'ACTIVE' }),
+        getContainers({ container_status: 'ACTIVE' }),
         getLots({ status: 'ACTIVE' }),
         getPositions(),
         getCultureTypes()

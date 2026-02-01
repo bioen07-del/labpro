@@ -89,7 +89,7 @@ function TasksPage() {
     try {
       const [tasksData, containersData, banksData, ordersData] = await Promise.all([
         getTasks(),
-        getContainers({ status: 'ACTIVE' }),
+        getContainers({ container_status: 'ACTIVE' }),
         getBanks({ status: 'ACTIVE' }),
         getOrders(),
       ])
