@@ -2100,8 +2100,8 @@ export async function createAutoTask(data: AutoTaskData) {
   }
   
   const taskData = {
-    type: taskTypeMap[data.type],
-    target_type: targetTypeMap[data.target_type.toLowerCase()] || data.target_type.toUpperCase(),
+    type: taskTypeMap[data.type as keyof typeof taskTypeMap],
+    target_type: targetTypeMap[data.target_type.toLowerCase() as keyof typeof targetTypeMap] || data.target_type.toUpperCase(),
     target_id: data.target_id,
     status: 'PENDING',
     due_date: dueDate.toISOString().split('T')[0],
@@ -2317,19 +2317,23 @@ export async function createOperationFreeze(data: FreezeData) {
     })
   
   // 9. Создать QC-задачу через createQCTask()
-  await createQCTask(bankId)
+  if (bankId) {
+    await createQCTask(bankId)
+  }
   
   // 10. Создать уведомление о необходимости QC
-  await createNotification({
-    type: 'qc_required',
-    category: 'qc',
-    title: 'Требуется QC для банка',
-    message: `Банк ${bankType} создан и ожидает контроль качества`,
-    link_type: 'bank',
-    link_id: bankId,
-    is_read: false,
-    created_at: new Date().toISOString()
-  })
+  if (bankId) {
+    await createNotification({
+      type: 'qc_required',
+      category: 'qc',
+      title: 'Требуется QC для банка',
+      message: `Банк ${bankType} создан и ожидает контроль качества`,
+      link_type: 'bank',
+      link_id: bankId,
+      is_read: false,
+      created_at: new Date().toISOString()
+    })
+  }
   
   return { 
     operation, 

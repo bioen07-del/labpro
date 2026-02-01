@@ -263,19 +263,35 @@ export default function CultureDetailPage() {
                         <p className="font-medium">{culture.donor.code}</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Возраст</label>
-                        <p className="font-medium">{culture.donor.age || '-'}</p>
+                        <label className="text-sm font-medium text-muted-foreground">ФИО</label>
+                        <p className="font-medium">
+                          {[
+                            culture.donor.last_name,
+                            culture.donor.first_name,
+                            culture.donor.middle_name
+                          ].filter(Boolean).join(' ') || '-'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Дата рождения</label>
+                        <p className="font-medium">
+                          {culture.donor.birth_date ? formatDate(culture.donor.birth_date) : '-'}
+                        </p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Пол</label>
                         <p className="font-medium">
-                          {culture.donor.gender === 'M' ? 'Мужской' : 
-                           culture.donor.gender === 'F' ? 'Женский' : '-'}
+                          {culture.donor.sex === 'M' ? 'Мужской' : 
+                           culture.donor.sex === 'F' ? 'Женский' : '-'}
                         </p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Тип ткани</label>
-                        <p className="font-medium">{culture.donor.tissue_type || '-'}</p>
+                        <label className="text-sm font-medium text-muted-foreground">Телефон</label>
+                        <p className="font-medium">{culture.donor.phone || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Email</label>
+                        <p className="font-medium">{culture.donor.email || '-'}</p>
                       </div>
                     </div>
                     {culture.donor.notes && (

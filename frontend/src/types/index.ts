@@ -14,6 +14,8 @@ export interface Culture {
   culture_type?: CultureType
   donor_id?: string
   donor?: Donor
+  donation_id?: string | null
+  donation?: Donation
   tissue_id?: string
   tissue?: Tissue
   status: CultureStatus
@@ -44,18 +46,66 @@ export interface CultureType {
   created_at: string
 }
 
-// Donor & Tissue
-export interface Donor {
+// ==================== DONATIONS ====================
+
+export type DonationStatus = 'QUARANTINE' | 'APPROVED' | 'REJECTED'
+export type InfectionTestResult = 'PENDING' | 'NEGATIVE' | 'POSITIVE'
+
+export interface TissueType {
   id: string
   code: string
-  age?: number
-  gender?: 'M' | 'F'
-  tissue_type?: string
-  collection_date?: string
-  notes?: string
+  name: string
+  tissue_form: 'SOLID' | 'LIQUID'
+  is_active: boolean
   created_at: string
 }
 
+export interface Donation {
+  id: string
+  code: string
+  donor_id: string
+  collected_at: string
+  tissue_type_id: string | null
+  tissue_form: 'SOLID' | 'LIQUID' | null
+  tissue_volume_ml: number | null
+  tissue_weight_g: number | null
+  consent_received: boolean
+  consent_document: string | null
+  contract_number: string | null
+  contract_date: string | null
+  inf_hiv: InfectionTestResult
+  inf_hbv: InfectionTestResult
+  inf_hcv: InfectionTestResult
+  inf_syphilis: InfectionTestResult
+  status: DonationStatus
+  notes: string | null
+  created_at: string
+  created_by: string | null
+  // Relations
+  donor?: Donor
+  tissue_type?: TissueType
+  cultures?: Culture[]
+}
+
+// Donor (расширенный)
+export interface Donor {
+  id: string
+  code: string
+  last_name: string | null
+  first_name: string | null
+  middle_name: string | null
+  birth_date: string | null
+  sex: string | null
+  phone: string | null
+  email: string | null
+  notes: string | null
+  created_at: string
+  created_by: string | null
+  // Relations
+  donations?: Donation[]
+}
+
+// Legacy - для обратной совместимости
 export interface Tissue {
   id: string
   donor_id: string

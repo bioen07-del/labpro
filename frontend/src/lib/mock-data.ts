@@ -10,10 +10,10 @@ export const mockCultureTypes: CultureType[] = [
   { id: '3', code: 'HEK293', name: 'HEK293', description: 'Эмбриональные почечные клетки человека', growth_rate: 1.5, optimal_confluent: 90, passage_interval_days: 2, is_active: true, created_at: '2026-01-01T00:00:00Z' },
 ]
 
-// Donors
+// Donors (расширенный формат)
 export const mockDonors: Donor[] = [
-  { id: '1', code: 'DN-0001', age: 35, gender: 'F', tissue_type: 'Жировая', collection_date: '2026-01-10', notes: 'Донор без патологий', created_at: '2026-01-10T00:00:00Z' },
-  { id: '2', code: 'DN-0002', age: 45, gender: 'M', tissue_type: 'Хрящевая', collection_date: '2026-01-15', notes: 'Здоровый донор', created_at: '2026-01-15T00:00:00Z' },
+  { id: '1', code: 'D-0001', last_name: 'Иванова', first_name: 'Мария', middle_name: 'Петровна', birth_date: '1990-05-15', sex: 'F', phone: '+7 999 111-22-33', email: 'ivanova@test.local', notes: 'Донор без патологий', created_at: '2026-01-10T00:00:00Z', created_by: '1' },
+  { id: '2', code: 'D-0002', last_name: 'Петров', first_name: 'Алексей', middle_name: 'Сергеевич', birth_date: '1980-08-20', sex: 'M', phone: '+7 999 444-55-66', email: 'petrov@test.local', notes: 'Здоровый донор', created_at: '2026-01-15T00:00:00Z', created_by: '1' },
 ]
 
 // Tissues
