@@ -39,7 +39,9 @@ export default function ContainersPage() {
       IN_BANK: 'secondary',
       DISPOSE: 'destructive'
     }
-    return <Badge variant={variants[status] || 'outline'}>{status}</Badge>
+    return <Badge variant={variants[status] || 'outline'}>
+      {status === 'ACTIVE' ? 'В культуре' : status === 'IN_BANK' ? 'В банке' : 'Утилизирован'}
+    </Badge>
   }
 
   return (

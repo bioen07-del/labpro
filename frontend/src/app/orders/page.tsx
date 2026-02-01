@@ -72,10 +72,10 @@ export default function OrdersPage() {
 
   const stats = {
     total: orders.length,
-    pending: orders.filter(o => o.status === 'PENDING').length,
-    approved: orders.filter(o => o.status === 'APPROVED').length,
+    new: orders.filter(o => o.status === 'NEW').length,
     inProgress: orders.filter(o => o.status === 'IN_PROGRESS').length,
     completed: orders.filter(o => o.status === 'COMPLETED').length,
+    cancelled: orders.filter(o => o.status === 'CANCELLED').length,
   }
 
   return (
@@ -95,7 +95,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -109,21 +109,11 @@ export default function OrdersPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ожидают
+              Новые
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Подтверждено
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.approved}</div>
+            <div className="text-2xl font-bold text-yellow-600">{stats.new}</div>
           </CardContent>
         </Card>
         <Card>
@@ -162,8 +152,7 @@ export default function OrdersPage() {
         <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
           <TabsList>
             <TabsTrigger value="all">Все</TabsTrigger>
-            <TabsTrigger value="PENDING">Ожидает</TabsTrigger>
-            <TabsTrigger value="APPROVED">Подтверждено</TabsTrigger>
+            <TabsTrigger value="NEW">Новые</TabsTrigger>
             <TabsTrigger value="IN_PROGRESS">В работе</TabsTrigger>
             <TabsTrigger value="COMPLETED">Завершено</TabsTrigger>
           </TabsList>
@@ -251,10 +240,10 @@ export default function OrdersPage() {
                             <FileText className="mr-2 h-4 w-4" />
                             Создать спецификацию
                           </DropdownMenuItem>
-                          {order.status === 'PENDING' && (
+                          {order.status === 'NEW' && (
                             <DropdownMenuItem>
                               <Edit className="mr-2 h-4 w-4" />
-                              Подтвердить
+                              В работу
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -280,12 +269,10 @@ export default function OrdersPage() {
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
-    PENDING: 'bg-yellow-100 text-yellow-800',
-    APPROVED: 'bg-blue-100 text-blue-800',
+    NEW: 'bg-yellow-100 text-yellow-800',
     IN_PROGRESS: 'bg-orange-100 text-orange-800',
     COMPLETED: 'bg-green-100 text-green-800',
     CANCELLED: 'bg-red-100 text-red-800',
-    ON_HOLD: 'bg-gray-100 text-gray-800',
   }
   return colors[status] || 'bg-gray-100 text-gray-800'
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { Plus, Eye, Check, AlertCircle } from 'lucide-react'
+import { Plus, RefreshCw, Check, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,17 +10,16 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { getLots, getContainers, createOperation, updateContainer } from '@/lib/api'
+import { getLots, getContainers, createOperation } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
-export default function ObservePage() {
+export default function FeedPage() {
   const router = useRouter()
   const [lots, setLots] = useState<any[]>([])
   const [selectedLotId, setSelectedLotId] = useState<string>('')
   const [containers, setContainers] = useState<any[]>([])
   const [selectedContainers, setSelectedContainers] = useState<string[]>([])
-  const [morphology, setMorphology] = useState<string>('')
-  const [contamination, setContamination] = useState<boolean>(false)
+  const [mediaType, setMediaType] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -40,7 +39,7 @@ export default function ObservePage() {
   
   const loadContainers = async (lotId: string) => {
     try {
-      const data = await getContainers({ lot_id: lotId })
+      const data = await getContainers({ lot_id: lotId, status: 'ACTIVE' })
       setContainers(data || [])
       setSelectedContainers([])
     } catch (error) {
@@ -61,25 +60,28 @@ export default function ObservePage() {
     )
   }
   
+  const toggleAll = () => {
+    if (selectedContainers.length === containers.length) {
+      setSelectedContainers([])
+    } else {
+      setSelectedContainers(containers.map(c => c.id))
+    }
+  }
+  
   const handleSubmit = async () => {
-    if (!selectedLotId || selectedContainers.length === 0 || !morphology) {
+    if (!selectedLotId || selectedContainers.length === 0 || !mediaType) {
       return
     }
     
     setLoading(true)
     try {
-      // Обновляем морфологию для каждого выбранного контейнера
+      // Создаём операцию кормления для каждого выбранного контейнера
       for (const containerId of selectedContainers) {
-        await updateContainer(containerId, {
-          morphology: morphology,
-          last_observation: new Date().toISOString()
-        })
-        
         await createOperation({
-          operation_type: 'OBSERVE',
+          operation_type: 'FEED',
           container_id: containerId,
           lot_id: selectedLotId,
-          notes: `Морфология: ${morphology}. Контаминация: ${contamination ? 'Да' : 'Нет'}. ${notes}`,
+          notes: `Замена среды: ${mediaType}. ${notes}`,
           status: 'COMPLETED'
         })
       }
@@ -101,9 +103,9 @@ export default function ObservePage() {
         <Card className="max-w-md mx-auto">
           <CardContent className="pt-6 text-center">
             <Check className="h-12 w-12 mx-auto text-green-600 mb-4" />
-            <h2 className="text-xl font-bold mb-2">Наблюдение зарегистрировано!</h2>
+            <h2 className="text-xl font-bold mb-2">Операция выполнена!</h2>
             <p className="text-muted-foreground">
-              Данные наблюдения сохранены для {selectedContainers.length} контейнеров
+              Кормление выполнено для {selectedContainers.length} контейнеров
             </p>
           </CardContent>
         </Card>
@@ -115,9 +117,9 @@ export default function ObservePage() {
     <div className="container py-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Наблюдение</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Кормление культур</h1>
         <p className="text-muted-foreground">
-          Регистрация наблюдения за культурой
+          Регистрация операции замены питательной среды
         </p>
       </div>
       
@@ -125,11 +127,11 @@ export default function ObservePage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5" />
-            Новое наблюдение
+            <RefreshCw className="h-5 w-5" />
+            Новая операция кормления
           </CardTitle>
           <CardDescription>
-            Зафиксируйте морфологию и состояние культуры
+            Выберите лот и контейнеры для замены питательной среды
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -150,47 +152,47 @@ export default function ObservePage() {
             </Select>
           </div>
           
-          {/* Morphology */}
+          {/* Media Type */}
           <div className="space-y-2">
-            <Label>Морфология</Label>
-            <Select value={morphology} onValueChange={setMorphology}>
+            <Label>Тип питательной среды</Label>
+            <Select value={mediaType} onValueChange={setMediaType}>
               <SelectTrigger>
-                <SelectValue placeholder="Выберите тип морфологии..." />
+                <SelectValue placeholder="Выберите тип среды..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="SPINDLE">Веретенообразные клетки</SelectItem>
-                <SelectItem value="EPITHELIAL">Эпителиоподобные</SelectItem>
-                <SelectItem value="FIBROBLAST">Фибробластоподобные</SelectItem>
-                <SelectItem value="ROUND">Округлые клетки</SelectItem>
-                <SelectItem value="POLYGONAL">Полигональные</SelectItem>
-                <SelectItem value="MIXED">Смешанная</SelectItem>
-                <SelectItem value="UNUSUAL">Необычная</SelectItem>
+                <SelectItem value="DMEM">DMEM</SelectItem>
+                <SelectItem value="DMEM/F12">DMEM/F12</SelectItem>
+                <SelectItem value="RPMI-1640">RPMI-1640</SelectItem>
+                <SelectItem value="MEM">MEM</SelectItem>
+                <SelectItem value="PBS">PBS (промывание)</SelectItem>
+                <SelectItem value="TRYPSIN">Трипсин</SelectItem>
+                <SelectItem value="OTHER">Другое</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          
-          {/* Contamination */}
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="contamination"
-              checked={contamination}
-              onCheckedChange={(v) => setContamination(v as boolean)}
-            />
-            <Label htmlFor="contamination" className="flex items-center gap-2 cursor-pointer">
-              <AlertCircle className="h-4 w-4 text-red-500" />
-              Обнаружена контаминация
-            </Label>
           </div>
           
           {/* Containers */}
           {selectedLotId && (
             <div className="space-y-4">
-              <Label>Контейнеры ({containers.length})</Label>
+              <div className="flex items-center justify-between">
+                <Label>Контейнеры ({containers.length})</Label>
+                {containers.length > 0 && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={toggleAll}
+                  >
+                    {selectedContainers.length === containers.length 
+                      ? 'Снять все' 
+                      : 'Выбрать все'}
+                  </Button>
+                )}
+              </div>
               
               {containers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground border rounded-lg">
-                  <Eye className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                  <p>Нет контейнеров в выбранном лоте</p>
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                  <p>Нет активных контейнеров в выбранном лоте</p>
                 </div>
               ) : (
                 <div className="grid gap-2 max-h-64 overflow-y-auto">
@@ -214,11 +216,6 @@ export default function ObservePage() {
                           <span className="text-sm text-muted-foreground">
                             {container.container_type?.name}
                           </span>
-                          {container.morphology && (
-                            <Badge variant="secondary" className="text-xs">
-                              {container.morphology}
-                            </Badge>
-                          )}
                         </div>
                       </div>
                       <div className="text-sm text-right">
@@ -243,7 +240,7 @@ export default function ObservePage() {
             <Textarea 
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Дополнительные наблюдения..."
+              placeholder="Дополнительная информация..."
               rows={3}
             />
           </div>
@@ -255,9 +252,9 @@ export default function ObservePage() {
             </Button>
             <Button 
               onClick={handleSubmit}
-              disabled={!selectedLotId || selectedContainers.length === 0 || !morphology || loading}
+              disabled={!selectedLotId || selectedContainers.length === 0 || !mediaType || loading}
             >
-              {loading ? 'Сохранение...' : 'Зарегистрировать наблюдение'}
+              {loading ? 'Сохранение...' : 'Выполнить кормление'}
             </Button>
           </div>
         </CardContent>

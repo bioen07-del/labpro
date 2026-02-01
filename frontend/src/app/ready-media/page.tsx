@@ -1,290 +1,457 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { 
+  Beaker, 
   Plus, 
-  Search, 
-  FlaskConical, 
-  Thermometer, 
+  Search,
+  Filter,
   Calendar,
+  User,
+  AlertTriangle,
   CheckCircle2,
-  XCircle,
-  AlertTriangle
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getReadyMedia, activateReadyMedium, disposeReadyMedium } from "@/lib/api"
-import { format, differenceInDays } from "date-fns"
-import { ru } from "date-fns/locale"
+  Clock,
+  ArrowRight,
+  RefreshCw,
+  Trash2,
+  Eye
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { 
+  getReadyMedia, 
+  createReadyMedium, 
+  activateReadyMedium,
+  disposeReadyMedium,
+  getBatches,
+  getPositions
+} from '@/lib/api'
+import { formatDate, getStatusLabel } from '@/lib/utils'
 
-const STATUS_COLORS: Record<string, string> = {
-  QUARANTINE: "bg-yellow-500",
-  ACTIVE: "bg-green-500",
-  EXPIRED: "bg-red-500",
-  DISPOSE: "bg-gray-500",
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  QUARANTINE: "Карантин",
-  ACTIVE: "Активна",
-  EXPIRED: "Просрочена",
-  DISPOSE: "Утилизирована",
-}
-
-const STERILIZATION_LABELS: Record<string, string> = {
-  FILTRATION: "Фильтрация",
-  AUTOCLAVE: "Автоклавирование",
+const STATUS_CONFIG: Record<string, { color: string; label: string; icon: any }> = {
+  PREPARED: { color: 'bg-blue-100 text-blue-800', label: 'Приготовлена', icon: Beaker },
+  ACTIVE: { color: 'bg-green-100 text-green-800', label: 'Готова к использованию', icon: CheckCircle2 },
+  IN_USE: { color: 'bg-yellow-100 text-yellow-800', label: 'В использовании', icon: RefreshCw },
+  EXPIRED: { color: 'bg-red-100 text-red-800', label: 'Просрочена', icon: AlertTriangle },
+  DISPOSE: { color: 'bg-gray-100 text-gray-800', label: 'Утилизирована', icon: Trash2 },
 }
 
 export default function ReadyMediaPage() {
-  const router = useRouter()
-  const [media, setMedia] = useState<any[]>([])
+  const [readyMedia, setReadyMedia] = useState<any[]>([])
+  const [batches, setBatches] = useState<any[]>([])
+  const [positions, setPositions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState("all")
-  const [search, setSearch] = useState("")
-
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  
+  // Форма создания
+  const [newMedium, setNewMedium] = useState({
+    batch_id: '',
+    name: '',
+    volume_ml: 0,
+    preparation_date: new Date().toISOString().split('T')[0],
+    expiration_hours: 72,
+    storage_position_id: '',
+    notes: '',
+  })
+  
   useEffect(() => {
-    loadMedia()
+    loadData()
   }, [])
-
-  const loadMedia = async () => {
+  
+  const loadData = async () => {
+    setLoading(true)
     try {
-      const data = await getReadyMedia()
-      setMedia(data || [])
-    } catch (err) {
-      console.error(err)
+      const [mediaData, batchesData, positionsData] = await Promise.all([
+        getReadyMedia(),
+        getBatches({ status: 'ACTIVE' }),
+        getPositions({ is_active: true })
+      ])
+      setReadyMedia(mediaData || [])
+      setBatches(batchesData || [])
+      setPositions(positionsData || [])
+    } catch (error) {
+      console.error('Error loading data:', error)
     } finally {
       setLoading(false)
     }
   }
-
+  
+  const getExpirationStatus = (preparedAt: string, expirationHours: number) => {
+    const prepared = new Date(preparedAt)
+    const expires = new Date(prepared.getTime() + expirationHours * 60 * 60 * 1000)
+    const now = new Date()
+    const hoursLeft = (expires.getTime() - now.getTime()) / (1000 * 60 * 60)
+    
+    if (hoursLeft < 0) return { status: 'expired', hoursLeft: 0, label: 'Просрочена' }
+    if (hoursLeft < 6) return { status: 'warning', hoursLeft, label: `Осталось ${hoursLeft.toFixed(1)} ч.` }
+    return { status: 'ok', hoursLeft, label: `Осталось ${hoursLeft.toFixed(1)} ч.` }
+  }
+  
+  const handleCreate = async () => {
+    try {
+      const batch = batches.find(b => b.id === newMedium.batch_id)
+      await createReadyMedium({
+        ...newMedium,
+        nomenclature_id: batch?.nomenclature_id,
+        status: 'ACTIVE',
+      })
+      setShowCreateDialog(false)
+      loadData()
+    } catch (error) {
+      console.error('Error creating ready medium:', error)
+    }
+  }
+  
   const handleActivate = async (id: string) => {
     try {
       await activateReadyMedium(id)
-      loadMedia()
-    } catch (err) {
-      console.error(err)
+      loadData()
+    } catch (error) {
+      console.error('Error activating:', error)
     }
   }
-
+  
   const handleDispose = async (id: string) => {
-    if (!confirm("Вы уверены, что хотите утилизировать эту среду?")) return
-    
     try {
       await disposeReadyMedium(id)
-      loadMedia()
-    } catch (err) {
-      console.error(err)
+      loadData()
+    } catch (error) {
+      console.error('Error disposing:', error)
     }
   }
-
-  const getDaysUntilExpiry = (date: string) => {
-    return differenceInDays(new Date(date), new Date())
-  }
-
-  const filteredMedia = media.filter(item => {
-    const matchesFilter = filter === "all" || item.status === filter
-    const matchesSearch = !search || 
-      item.name?.toLowerCase().includes(search.toLowerCase()) ||
-      item.code?.toLowerCase().includes(search.toLowerCase())
-    return matchesFilter && matchesSearch
+  
+  const filteredMedia = readyMedia.filter(media => {
+    const matchesSearch = searchQuery === '' || 
+      media.code?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      media.name?.toLowerCase().includes(searchQuery.toLowerCase())
+    
+    const matchesStatus = selectedStatus === 'all' || media.status === selectedStatus
+    
+    return matchesSearch && matchesStatus
   })
-
-  const quarantineMedia = filteredMedia.filter(m => m.status === "QUARANTINE")
-  const activeMedia = filteredMedia.filter(m => m.status === "ACTIVE")
-  const expiredMedia = filteredMedia.filter(m => m.status === "EXPIRED")
-
-  if (loading) {
-    return (
-      <div className="container mx-auto py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-10 bg-muted rounded w-1/4"></div>
-          <div className="h-64 bg-muted rounded"></div>
-        </div>
-      </div>
-    )
+  
+  const stats = {
+    total: readyMedia.length,
+    active: readyMedia.filter(m => m.status === 'ACTIVE').length,
+    expiring: readyMedia.filter(m => {
+      const exp = getExpirationStatus(m.created_at, m.expiration_hours)
+      return exp.status === 'warning'
+    }).length,
+    expired: readyMedia.filter(m => m.status === 'EXPIRED').length,
   }
-
+  
   return (
-    <div className="container mx-auto py-6 max-w-6xl">
+    <div className="container py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Готовые среды</h1>
-          <p className="text-muted-foreground">Учёт приготовленных питательных сред</p>
+          <h1 className="text-3xl font-bold tracking-tight">Готовые среды</h1>
+          <p className="text-muted-foreground">
+            Учёт приготовленных клеточных сред (FEFO)
+          </p>
         </div>
-        <Button onClick={() => router.push("/ready-media/new")}>
-          <Plus className="mr-2 h-4 w-4" />
-          Новая среда
-        </Button>
+        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Приготовить среду
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Приготовление среды</DialogTitle>
+              <DialogDescription>
+                Зарегистрируйте новую партию готовой среды
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Базовая среда</Label>
+                <Select 
+                  value={newMedium.batch_id}
+                  onValueChange={(v) => setNewMedium({...newMedium, batch_id: v})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите партию..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {batches.map(batch => (
+                      <SelectItem key={batch.id} value={batch.id}>
+                        {batch.nomenclature?.name} • Партия: {batch.batch_number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Название/добавки</Label>
+                <Input 
+                  value={newMedium.name}
+                  onChange={(e) => setNewMedium({...newMedium, name: e.target.value})}
+                  placeholder="Например: DMEM + 10% FBS + 1% P/S"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Объём (мл)</Label>
+                  <Input 
+                    type="number"
+                    value={newMedium.volume_ml}
+                    onChange={(e) => setNewMedium({...newMedium, volume_ml: parseInt(e.target.value) || 0})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Срок годности (ч)</Label>
+                  <Input 
+                    type="number"
+                    value={newMedium.expiration_hours}
+                    onChange={(e) => setNewMedium({...newMedium, expiration_hours: parseInt(e.target.value) || 72})}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Позиция хранения</Label>
+                <Select 
+                  value={newMedium.storage_position_id}
+                  onValueChange={(v) => setNewMedium({...newMedium, storage_position_id: v})}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите позицию..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {positions.filter(p => p.equipment?.type === 'REFRIGERATOR').map(pos => (
+                      <SelectItem key={pos.id} value={pos.id}>
+                        {pos.path}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Примечания</Label>
+                <Textarea 
+                  value={newMedium.notes}
+                  onChange={(e) => setNewMedium({...newMedium, notes: e.target.value})}
+                  placeholder="Дополнительная информация..."
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                Отмена
+              </Button>
+              <Button onClick={handleCreate} disabled={!newMedium.batch_id}>
+                Создать
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
-
+      
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Карантин</p>
-                <p className="text-2xl font-bold">{quarantineMedia.length}</p>
-              </div>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Всего партий
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Активны</p>
-                <p className="text-2xl font-bold">{activeMedia.length}</p>
-              </div>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Готовы к использованию
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{stats.active}</div>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <XCircle className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Просрочено</p>
-                <p className="text-2xl font-bold">{expiredMedia.length}</p>
-              </div>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Срок истекает (меньше 6ч)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-yellow-600">{stats.expiring}</div>
           </CardContent>
         </Card>
-
         <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <FlaskConical className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Всего</p>
-                <p className="text-2xl font-bold">{filteredMedia.length}</p>
-              </div>
-            </div>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Просрочено
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{stats.expired}</div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Filters & Search */}
-      <div className="flex gap-4 mb-6">
-        <div className="relative flex-1 max-w-sm">
+      
+      {/* Filters */}
+      <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по названию или коду..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по коду, названию..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Tabs value={filter} onValueChange={setFilter}>
+        <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
           <TabsList>
             <TabsTrigger value="all">Все</TabsTrigger>
-            <TabsTrigger value="QUARANTINE">Карантин</TabsTrigger>
-            <TabsTrigger value="ACTIVE">Активны</TabsTrigger>
-            <TabsTrigger value="EXPIRED">Просрочено</TabsTrigger>
+            <TabsTrigger value="ACTIVE">Активные</TabsTrigger>
+            <TabsTrigger value="IN_USE">В использовании</TabsTrigger>
+            <TabsTrigger value="EXPIRED">Просроченные</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
-
-      {/* Media List */}
-      <div className="space-y-4">
-        {filteredMedia.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              Среды не найдены
-            </CardContent>
-          </Card>
-        ) : (
-          filteredMedia.map(item => {
-            const daysLeft = getDaysUntilExpiry(item.expiration_date)
-            const isCritical = daysLeft <= 7 && daysLeft > 0
-            
-            return (
-              <Card key={item.id} className="hover:bg-muted/50 transition-colors">
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-muted rounded-lg">
-                        <FlaskConical className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{item.name}</p>
-                          <Badge className={STATUS_COLORS[item.status]}>
-                            {STATUS_LABELS[item.status]}
-                          </Badge>
-                          {isCritical && (
-                            <Badge variant="destructive">Истекает</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>Код: {item.code}</span>
-                          <span>Объём: {item.volume_ml} мл</span>
-                          <span>Стерилизация: {STERILIZATION_LABELS[item.sterilization_method]}</span>
-                        </div>
-                        {item.storage_position && (
-                          <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
-                            <Thermometer className="h-3 w-3" />
-                            {item.storage_position.path}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <span className={isCritical ? "text-red-600 font-semibold" : ""}>
-                          Срок: {format(new Date(item.expiration_date), "dd MMM yyyy", { locale: ru })}
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {daysLeft > 0 ? `Осталось ${daysLeft} дней` : daysLeft === 0 ? "Истекает сегодня" : `Просрочено на ${Math.abs(daysLeft)} дней`}
+      
+      {/* Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Список готовых сред</CardTitle>
+          <CardDescription>
+            FEFO — First Expired, First Out
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Код</TableHead>
+                <TableHead>Состав</TableHead>
+                <TableHead>Объём</TableHead>
+                <TableHead>Приготовлено</TableHead>
+                <TableHead>Годность</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Позиция</TableHead>
+                <TableHead className="w-[100px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredMedia.map((media) => {
+                const expStatus = getExpirationStatus(media.created_at, media.expiration_hours)
+                const statusConfig = STATUS_CONFIG[media.status] || STATUS_CONFIG.PREPARED
+                const StatusIcon = statusConfig.icon
+                
+                return (
+                  <TableRow key={media.id}>
+                    <TableCell>
+                      <Link href={`/ready-media/${media.id}`} className="font-medium hover:underline">
+                        {media.code}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {media.name || media.batch?.nomenclature?.name || '-'}
+                      {media.notes && (
+                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                          {media.notes}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell>{media.volume_ml} мл</TableCell>
+                    <TableCell>
+                      {formatDate(media.created_at)}
+                      <p className="text-xs text-muted-foreground">
+                        {media.created_by_user?.full_name}
                       </p>
-                      <div className="flex gap-2 mt-3">
-                        {item.status === "QUARANTINE" && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleActivate(item.id)}
-                          >
+                    </TableCell>
+                    <TableCell>
+                      <div className={`flex items-center gap-1 ${
+                        expStatus.status === 'expired' ? 'text-red-600' :
+                        expStatus.status === 'warning' ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        <Clock className="h-3 w-3" />
+                        <span className="text-sm">{expStatus.label}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={statusConfig.color}>
+                        <StatusIcon className="h-3 w-3 mr-1" />
+                        {statusConfig.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {media.storage_position?.path || '-'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {media.status === 'ACTIVE' && (
+                          <>
+                            <Button variant="ghost" size="icon" title="Взять в работу">
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" title="Утилизировать" onClick={() => handleDispose(media.id)}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </>
+                        )}
+                        {media.status === 'PREPARED' && (
+                          <Button variant="ghost" size="sm" onClick={() => handleActivate(media.id)}>
                             Активировать
                           </Button>
                         )}
-                        {item.status !== "DISPOSE" && item.status !== "EXPIRED" && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            className="text-red-600"
-                            onClick={() => handleDispose(item.id)}
-                          >
-                            Утилизировать
-                          </Button>
-                        )}
                       </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })
-        )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+              {filteredMedia.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    Среды не найдены
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+      
+      {/* FEFO Info */}
+      <div className="flex items-center gap-2 p-4 bg-muted rounded-lg">
+        <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          <strong>FEFO</strong> — среды с истекающим сроком годности отображаются первыми в списке. 
+          Всегда используйте сначала среду с ближайшей датой истечения срока.
+        </p>
       </div>
     </div>
   )

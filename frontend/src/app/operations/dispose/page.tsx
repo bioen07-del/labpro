@@ -1,168 +1,265 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { ArrowLeft, Trash2, AlertTriangle, CheckCircle2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { createOperationDispose } from "@/lib/api"
+import { useState, useEffect } from 'react'
+import { Trash2, Check, AlertTriangle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { getLots, getContainers, createOperation, updateContainer } from '@/lib/api'
+import { useRouter } from 'next/navigation'
 
-interface DisposePageProps {
-  targetType: 'container' | 'batch' | 'ready_medium'
-  targetId: string
-  targetCode: string
-  targetName?: string
-}
-
-const DISPOSE_REASONS = [
-  { value: "expired", label: "Истёк срок годности" },
-  { value: "contamination", label: "Контаминация" },
-  { value: "low_quality", label: "Низкое качество" },
-  { value: "protocol_complete", label: "Протокол завершён" },
-  { value: "damaged", label: "Повреждён" },
-  { value: "other", label: "Другое" },
-]
-
-export default function DisposePage({ targetType, targetId, targetCode, targetName }: DisposePageProps) {
+export default function DisposePage() {
   const router = useRouter()
-  const [reason, setReason] = useState("")
-  const [notes, setNotes] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [lots, setLots] = useState<any[]>([])
+  const [selectedLotId, setSelectedLotId] = useState<string>('')
+  const [containers, setContainers] = useState<any[]>([])
+  const [selectedContainers, setSelectedContainers] = useState<string[]>([])
+  const [reason, setReason] = useState<string>('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [notes, setNotes] = useState<string>('')
+  const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
-
-  const targetLabel = {
-    container: "контейнер",
-    batch: "партию",
-    ready_medium: "готовую среду"
+  
+  useEffect(() => {
+    loadLots()
+  }, [])
+  
+  const loadLots = async () => {
+    try {
+      const data = await getLots({ status: 'ACTIVE' })
+      setLots(data || [])
+    } catch (error) {
+      console.error('Error loading lots:', error)
+    }
   }
   
-  const label = targetLabel[targetType] || "объект"
-
-  const handleSubmit = async () => {
-    if (!reason) {
-      setError("Выберите причину утилизации")
-      return
-    }
-
-    setIsSubmitting(true)
-    setError(null)
-
+  const loadContainers = async (lotId: string) => {
     try {
-      await createOperationDispose({
-        target_type: targetType,
-        target_id: targetId,
-        reason,
-        notes
-      })
-
-      setSuccess(true)
-      
-      // Редирект через 2 секунды
-      setTimeout(() => {
-        router.push("/inventory")
-        router.refresh()
-      }, 2000)
-    } catch (err: any) {
-      setError(err.message || "Ошибка при утилизации")
-    } finally {
-      setIsSubmitting(false)
+      const data = await getContainers({ lot_id: lotId })
+      setContainers(data || [])
+      setSelectedContainers([])
+    } catch (error) {
+      console.error('Error loading containers:', error)
     }
   }
-
+  
+  const handleLotChange = (lotId: string) => {
+    setSelectedLotId(lotId)
+    loadContainers(lotId)
+  }
+  
+  const toggleContainer = (containerId: string) => {
+    setSelectedContainers(prev => 
+      prev.includes(containerId) 
+        ? prev.filter(id => id !== containerId)
+        : [...prev, containerId]
+    )
+  }
+  
+  const handleSubmit = async () => {
+    if (!selectedLotId || selectedContainers.length === 0 || !reason || !confirmed) {
+      return
+    }
+    
+    setLoading(true)
+    try {
+      // Утилизируем каждый выбранный контейнер
+      for (const containerId of selectedContainers) {
+        await updateContainer(containerId, {
+          status: 'DISPOSE'
+        })
+        
+        await createOperation({
+          operation_type: 'DISPOSE',
+          container_id: containerId,
+          lot_id: selectedLotId,
+          notes: `Причина: ${reason}. ${notes}`,
+          status: 'COMPLETED'
+        })
+      }
+      
+      setSuccess(true)
+      setTimeout(() => {
+        router.push('/operations')
+      }, 2000)
+    } catch (error) {
+      console.error('Error creating operation:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
   if (success) {
     return (
-      <div className="container mx-auto py-6 max-w-2xl">
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Утилизация выполнена</h2>
-            <p className="text-muted-foreground text-center">
-              {targetCode} успешно утилизирован
+      <div className="container py-6">
+        <Card className="max-w-md mx-auto">
+          <CardContent className="pt-6 text-center">
+            <Check className="h-12 w-12 mx-auto text-green-600 mb-4" />
+            <h2 className="text-xl font-bold mb-2">Утилизация выполнена!</h2>
+            <p className="text-muted-foreground">
+              Утилизировано {selectedContainers.length} контейнеров
             </p>
           </CardContent>
         </Card>
       </div>
     )
   }
-
+  
   return (
-    <div className="container mx-auto py-6 max-w-2xl">
-      <div className="flex items-center gap-4 mb-6">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+    <div className="container py-6 space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Утилизация</h1>
+        <p className="text-muted-foreground">
+          Утилизация культур и контейнеров
+        </p>
+      </div>
+      
+      {/* Warning */}
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+        <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
         <div>
-          <h1 className="text-2xl font-bold">Утилизация</h1>
-          <p className="text-muted-foreground">
-            {targetCode} {targetName && `- ${targetName}`}
+          <p className="font-medium text-red-800">Внимание!</p>
+          <p className="text-sm text-red-700">
+            Утилизация необратима. После подтверждения операции контейнеры будут помечены как утилизированные
+            и не смогут быть восстановлены.
           </p>
         </div>
       </div>
-
-      <Alert variant="destructive" className="mb-6">
-        <AlertTriangle className="h-4 w-4" />
-        <AlertDescription>
-          Это действие нельзя отменить. {label.charAt(0).toUpperCase() + label.slice(1)} будет помечен как утилизированный и не сможет использоваться в операциях.
-        </AlertDescription>
-      </Alert>
-
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
+      
+      {/* Form */}
       <Card>
         <CardHeader>
-          <CardTitle>Причина утилизации</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-red-600">
+            <Trash2 className="h-5 w-5" />
+            Утилизация контейнеров
+          </CardTitle>
           <CardDescription>
-            Укажите причину утилизации {label}
+            Выберите контейнеры для утилизации
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <Label>Причина *</Label>
-            <Select value={reason} onValueChange={setReason}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Выберите причину" />
+          {/* Lot Selection */}
+          <div className="space-y-2">
+            <Label>Лот культуры</Label>
+            <Select value={selectedLotId} onValueChange={handleLotChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите лот..." />
               </SelectTrigger>
               <SelectContent>
-                {DISPOSE_REASONS.map(r => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
+                {lots.map(lot => (
+                  <SelectItem key={lot.id} value={lot.id}>
+                    {lot.code} - {lot.culture?.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-
-          <div>
+          
+          {/* Reason */}
+          <div className="space-y-2">
+            <Label>Причина утилизации</Label>
+            <Select value={reason} onValueChange={setReason}>
+              <SelectTrigger>
+                <SelectValue placeholder="Выберите причину..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CONTAMINATION">Контаминация</SelectItem>
+                <SelectItem value="DEATH">Гибель культуры</SelectItem>
+                <SelectItem value="PASSAGE_LIMIT">Достигнут лимит пассажей</SelectItem>
+                <SelectItem value="EXPERIMENT">Завершение эксперимента</SelectItem>
+                <SelectItem value="DAMAGE">Повреждение</SelectItem>
+                <SelectItem value="OTHER">Другая причина</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Containers */}
+          {selectedLotId && (
+            <div className="space-y-4">
+              <Label>Контейнеры ({containers.length})</Label>
+              
+              {containers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                  <Trash2 className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                  <p>Нет контейнеров в выбранном лоте</p>
+                </div>
+              ) : (
+                <div className="grid gap-2 max-h-64 overflow-y-auto">
+                  {containers
+                    .filter(c => c.status === 'ACTIVE')
+                    .map(container => (
+                    <div 
+                      key={container.id}
+                      className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedContainers.includes(container.id) 
+                          ? 'border-red-500 bg-red-50' 
+                          : 'hover:bg-muted'
+                      }`}
+                      onClick={() => toggleContainer(container.id)}
+                    >
+                      <Checkbox 
+                        checked={selectedContainers.includes(container.id)}
+                        onCheckedChange={() => toggleContainer(container.id)}
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{container.code}</Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {container.container_type?.name}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-sm text-right">
+                        <span className="text-muted-foreground">Конфлюэнтность: </span>
+                        <span>{container.confluent_percent}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Confirmation */}
+          <div className="flex items-center space-x-2 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <Checkbox 
+              id="confirm"
+              checked={confirmed}
+              onCheckedChange={(v) => setConfirmed(v as boolean)}
+            />
+            <Label htmlFor="confirm" className="cursor-pointer">
+              Я подтверждаю утилизацию выбранных контейнеров
+            </Label>
+          </div>
+          
+          {/* Notes */}
+          <div className="space-y-2">
             <Label>Примечания</Label>
-            <Textarea
+            <Textarea 
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Дополнительная информация..."
-              className="mt-1"
+              rows={3}
             />
           </div>
-
-          <div className="flex gap-4 justify-end pt-4">
+          
+          {/* Submit */}
+          <div className="flex justify-end gap-4">
             <Button variant="outline" onClick={() => router.back()}>
               Отмена
             </Button>
             <Button 
-              variant="destructive" 
-              onClick={handleSubmit} 
-              disabled={isSubmitting || !reason}
+              variant="destructive"
+              onClick={handleSubmit}
+              disabled={!selectedLotId || selectedContainers.length === 0 || !reason || !confirmed || loading}
             >
-              <Trash2 className="mr-2 h-4 w-4" />
-              {isSubmitting ? "Утилизация..." : "Утилизировать"}
+              {loading ? 'Сохранение...' : 'Утилизировать'}
             </Button>
           </div>
         </CardContent>

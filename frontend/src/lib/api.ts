@@ -1413,3 +1413,297 @@ export function subscribeToQCTests(callback: (payload: unknown) => void) {
     )
     .subscribe()
 }
+
+// ==================== NOTIFICATIONS ====================
+
+export async function getNotifications(filters?: { is_read?: boolean; category?: string; limit?: number }) {
+  let query = supabase
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+  
+  if (filters?.is_read !== undefined) {
+    query = query.eq('is_read', filters.is_read)
+  }
+  if (filters?.category) {
+    query = query.eq('category', filters.category)
+  }
+  if (filters?.limit) {
+    query = query.limit(filters.limit)
+  }
+  
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
+
+export async function getNotificationById(id: string) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('id', id)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function createNotification(notification: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert(notification)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function markNotificationRead(id: string) {
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ is_read: true, read_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function markAllNotificationsRead() {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ is_read: true, read_at: new Date().toISOString() })
+    .eq('is_read', false)
+  
+  if (error) throw error
+}
+
+export async function deleteNotification(id: string) {
+  const { error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('id', id)
+  
+  if (error) throw error
+}
+
+export async function getUnreadNotificationCount() {
+  const { count, error } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_read', false)
+  
+  if (error) throw error
+  return count || 0
+}
+
+// ==================== PASSAGE OPERATIONS ====================
+
+export interface PassageContainerData {
+  container_id: string
+  split_ratio: number
+  new_confluent_percent: number
+  seeded_cells: number
+  notes?: string
+}
+
+export async function createOperationPassage(data: {
+  lot_id: string
+  containers: PassageContainerData[]
+  notes?: string
+}) {
+  // Создаем операцию PASSAGE
+  const { data: operation, error: opError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id: data.lot_id,
+      operation_type: 'PASSAGE',
+      status: 'COMPLETED',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      notes: data.notes
+    })
+    .select()
+    .single()
+  
+  if (opError) throw opError
+  
+  // Создаем записи operation_container
+  const operationContainers = data.containers.map(container => ({
+    operation_id: operation.id,
+    container_id: container.container_id,
+    split_ratio: container.split_ratio,
+    new_confluent_percent: container.new_confluent_percent,
+    seeded_cells: container.seeded_cells,
+    notes: container.notes
+  }))
+  
+  const { error: ocError } = await supabase
+    .from('operation_containers')
+    .insert(operationContainers)
+  
+  if (ocError) throw ocError
+  
+  // Обновляем контейнеры
+  for (const container of data.containers) {
+    const { error: updateError } = await supabase
+      .from('containers')
+      .update({
+        confluent_percent: container.new_confluent_percent,
+        passage_count: supabase.rpc('increment_passage_count', { row_id: container.container_id })
+      })
+      .eq('id', container.container_id)
+    
+    if (updateError) throw updateError
+  }
+  
+  return operation
+}
+
+// ==================== FEED OPERATIONS ====================
+
+export interface FeedContainerData {
+  container_id: string
+  medium_id: string
+  volume_ml: number
+}
+
+export async function createOperationFeed(data: {
+  lot_id: string
+  containers: FeedContainerData[]
+  notes?: string
+}) {
+  // Создаем операцию FEED
+  const { data: operation, error: opError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id: data.lot_id,
+      operation_type: 'FEED',
+      status: 'COMPLETED',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      notes: data.notes
+    })
+    .select()
+    .single()
+  
+  if (opError) throw opError
+  
+  // Создаем записи operation_container
+  const operationContainers = data.containers.map(container => ({
+    operation_id: operation.id,
+    container_id: container.container_id,
+    medium_id: container.medium_id,
+    volume_ml: container.volume_ml
+  }))
+  
+  const { error: ocError } = await supabase
+    .from('operation_containers')
+    .insert(operationContainers)
+  
+  if (ocError) throw ocError
+  
+  // Обновляем ready_medium если используется
+  for (const container of data.containers) {
+    if (container.medium_id) {
+      const medium = await getReadyMediumById(container.medium_id)
+      if (medium) {
+        const newVolume = (medium.current_volume_ml || medium.volume_ml) - container.volume_ml
+        await supabase
+          .from('ready_media')
+          .update({ current_volume_ml: Math.max(0, newVolume) })
+          .eq('id', container.medium_id)
+      }
+    }
+  }
+  
+  return operation
+}
+
+// ==================== FREEZE OPERATIONS ====================
+
+export interface FreezeData {
+  lot_id: string
+  container_id: string
+  bank_id?: string
+  cryo_vial_count: number
+  freezer_position_id?: string
+  freezing_medium: string
+  notes?: string
+}
+
+export async function createOperationFreeze(data: FreezeData) {
+  // Создаем операцию FREEZE
+  const { data: operation, error: opError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id: data.lot_id,
+      operation_type: 'FREEZE',
+      status: 'COMPLETED',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      notes: data.notes
+    })
+    .select()
+    .single()
+  
+  if (opError) throw opError
+  
+  // Создаем cryo_vials
+  const cryoVials = []
+  for (let i = 0; i < data.cryo_vial_count; i++) {
+    const { data: vial, error: vialError } = await supabase
+      .from('cryo_vials')
+      .insert({
+        bank_id: data.bank_id || null,
+        lot_id: data.lot_id,
+        freezing_date: new Date().toISOString().split('T')[0],
+        position_id: data.freezer_position_id || null,
+        status: 'IN_STOCK'
+      })
+      .select()
+      .single()
+    
+    if (vialError) throw vialError
+    cryoVials.push(vial)
+  }
+  
+  // Создаем связь operation_container
+  const { error: ocError } = await supabase
+    .from('operation_containers')
+    .insert({
+      operation_id: operation.id,
+      container_id: data.container_id,
+      cryo_vial_ids: cryoVials.map(v => v.id),
+      notes: `Заморозка ${data.cryo_vial_count} ампул, среда: ${data.freezing_medium}`
+    })
+  
+  if (ocError) throw ocError
+  
+  // Обновляем банк если указан
+  if (data.bank_id) {
+    const { data: bank } = await supabase
+      .from('banks')
+      .select('vial_count')
+      .eq('id', data.bank_id)
+      .single()
+    
+    await supabase
+      .from('banks')
+      .update({ 
+        vial_count: (bank?.vial_count || 0) + data.cryo_vial_count,
+        status: 'IN_STOCK'
+      })
+      .eq('id', data.bank_id)
+  }
+  
+  // Обновляем контейнер - помечаем как замороженный
+  await supabase
+    .from('containers')
+    .update({ status: 'FROZEN' })
+    .eq('id', data.container_id)
+  
+  return { operation, cryoVials }
+}
