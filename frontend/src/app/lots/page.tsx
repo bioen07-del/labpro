@@ -19,9 +19,11 @@ export default async function LotsPage() {
           <h1 className="text-3xl font-bold">Лоты</h1>
           <p className="text-muted-foreground">Управление лотами культур</p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Создать лот
+        <Button asChild>
+          <Link href="/lots/new">
+            <Plus className="mr-2 h-4 w-4" />
+            Создать лот
+          </Link>
         </Button>
       </div>
 
