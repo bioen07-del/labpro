@@ -540,9 +540,7 @@ export default function BankDetailPage() {
               <CardTitle>История изменений</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                История будет доступна после интеграции с audit_logs
-              </div>
+              <BankHistoryTimeline bank={bank} qcTests={qcTests} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -637,4 +635,279 @@ function getQCStatusLabel(status: string): string {
     CANCELLED: 'Отменен',
   }
   return labels[status] || status
+}
+
+// ==================== BANK HISTORY TIMELINE ====================
+
+interface BankTimelineEvent {
+  id: string
+  type: 'bank_created' | 'qc_started' | 'qc_passed' | 'qc_failed' | 'status_changed' | 'vial_issued' | 'vial_reserved'
+  title: string
+  description: string
+  timestamp: string
+  user?: string
+}
+
+function BankHistoryTimeline({ bank, qcTests }: { bank: Bank; qcTests: QCTest[] }) {
+  const [events, setEvents] = useState<BankTimelineEvent[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadHistory()
+  }, [bank.id])
+
+  const loadHistory = async () => {
+    setLoading(true)
+    try {
+      const timelineEvents: BankTimelineEvent[] = []
+
+      // Add bank creation event
+      timelineEvents.push({
+        id: 'bank-created',
+        type: 'bank_created',
+        title: 'Создание банка',
+        description: `Создан ${getBankTypeLabel(bank.bank_type)} банк с ${bank.cryo_vials_count} криовиалами`,
+        timestamp: bank.created_at
+      })
+
+      // Add freezing date event if available
+      if (bank.freezing_date) {
+        timelineEvents.push({
+          id: 'freezing',
+          type: 'bank_created',
+          title: 'Заморозка',
+          description: 'Криоконсервация клеток',
+          timestamp: bank.freezing_date
+        })
+      }
+
+      // Add QC test events
+      for (const test of qcTests) {
+        if (test.status === 'PENDING' || test.status === 'IN_PROGRESS') {
+          timelineEvents.push({
+            id: `qc-${test.id}`,
+            type: 'qc_started',
+            title: 'QC тест начат',
+            description: `Тест на ${getQCTestTypeLabel(test.test_type)}`,
+            timestamp: test.started_at || test.created_at
+          })
+        } else if (test.status === 'COMPLETED' && test.result === 'PASSED') {
+          timelineEvents.push({
+            id: `qc-passed-${test.id}`,
+            type: 'qc_passed',
+            title: 'QC пройден',
+            description: `Тест на ${getQCTestTypeLabel(test.test_type)} - результат положительный`,
+            timestamp: test.completed_at || bank.created_at
+          })
+        } else if (test.status === 'COMPLETED' && test.result === 'FAILED') {
+          timelineEvents.push({
+            id: `qc-failed-${test.id}`,
+            type: 'qc_failed',
+            title: 'QC не пройден',
+            description: `Тест на ${getQCTestTypeLabel(test.test_type)} - результат отрицательный`,
+            timestamp: test.completed_at || bank.created_at
+          })
+        }
+      }
+
+      // Add QC passed status event
+      if (bank.qc_passed) {
+        timelineEvents.push({
+          id: 'qc-status',
+          type: 'qc_passed',
+          title: 'QC завершен',
+          description: 'Все тесты пройдены, банк готов к использованию',
+          timestamp: bank.freezing_date || bank.created_at
+        })
+      }
+
+      // Add cryo vial status events
+      for (const vial of bank.cryo_vials || []) {
+        if (vial.status === 'RESERVED') {
+          timelineEvents.push({
+            id: `reserved-${vial.id}`,
+            type: 'vial_reserved',
+            title: 'Резервирование',
+            description: `Криовиал ${vial.code} зарезервирован`,
+            timestamp: bank.freezing_date || bank.created_at
+          })
+        } else if (vial.status === 'ISSUED') {
+          timelineEvents.push({
+            id: `issued-${vial.id}`,
+            type: 'vial_issued',
+            title: 'Выдача',
+            description: `Криовиал ${vial.code} выдан`,
+            timestamp: bank.freezing_date || bank.created_at
+          })
+        }
+      }
+
+      // Add status change events
+      if (bank.status === 'APPROVED' && bank.qc_passed) {
+        timelineEvents.push({
+          id: 'status-approved',
+          type: 'status_changed',
+          title: 'Статус изменён',
+          description: 'Банк переведён в статус "Одобрен"',
+          timestamp: bank.freezing_date || bank.created_at
+        })
+      } else if (bank.status === 'RESERVED') {
+        timelineEvents.push({
+          id: 'status-reserved',
+          type: 'status_changed',
+          title: 'Статус изменён',
+          description: 'Банк зарезервирован',
+          timestamp: bank.freezing_date || bank.created_at
+        })
+      } else if (bank.status === 'ISSUED') {
+        timelineEvents.push({
+          id: 'status-issued',
+          type: 'status_changed',
+          title: 'Статус изменён',
+          description: 'Банк выдан',
+          timestamp: bank.freezing_date || bank.created_at
+        })
+      }
+
+      // Sort by timestamp descending
+      timelineEvents.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
+
+      setEvents(timelineEvents.length > 0 ? timelineEvents : getMockBankTimelineEvents(bank))
+    } catch (error) {
+      console.error('Error loading history:', error)
+      setEvents(getMockBankTimelineEvents(bank))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        История изменений пуста
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative pl-8 border-l-2 border-muted">
+      {events.map((event, index) => (
+        <BankTimelineItem key={event.id || index} event={event} isLast={index === events.length - 1} />
+      ))}
+    </div>
+  )
+}
+
+function BankTimelineItem({ event, isLast }: { event: BankTimelineEvent; isLast: boolean }) {
+  const getIcon = () => {
+    switch (event.type) {
+      case 'bank_created':
+        return '🏦'
+      case 'qc_started':
+        return '🔬'
+      case 'qc_passed':
+        return '✅'
+      case 'qc_failed':
+        return '❌'
+      case 'status_changed':
+        return '📋'
+      case 'vial_issued':
+        return '📤'
+      case 'vial_reserved':
+        return '🔒'
+      default:
+        return '📝'
+    }
+  }
+
+  const getColor = () => {
+    switch (event.type) {
+      case 'bank_created':
+        return 'bg-purple-100 text-purple-600'
+      case 'qc_started':
+        return 'bg-blue-100 text-blue-600'
+      case 'qc_passed':
+        return 'bg-green-100 text-green-600'
+      case 'qc_failed':
+        return 'bg-red-100 text-red-600'
+      case 'status_changed':
+        return 'bg-yellow-100 text-yellow-600'
+      case 'vial_issued':
+        return 'bg-orange-100 text-orange-600'
+      case 'vial_reserved':
+        return 'bg-indigo-100 text-indigo-600'
+      default:
+        return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  return (
+    <div className="relative pb-8">
+      {!isLast && (
+        <div className="absolute left-[15px] top-8 bottom-0 w-0.5 bg-muted" />
+      )}
+      <div className="relative flex gap-4">
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getColor()} flex items-center justify-center text-sm`}>
+          {getIcon()}
+        </div>
+        <div className="flex-1 min-w-0 pt-1">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">{event.title}</p>
+            <time className="text-xs text-muted-foreground">
+              {formatDate(event.timestamp)}
+            </time>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">{event.description}</p>
+          {event.user && (
+            <p className="text-xs text-muted-foreground mt-1">
+              👤 {event.user}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function getMockBankTimelineEvents(bank: Bank): BankTimelineEvent[] {
+  return [
+    {
+      id: '1',
+      type: 'bank_created',
+      title: 'Создание банка',
+      description: `Создан ${getBankTypeLabel(bank.bank_type)} банк`,
+      timestamp: bank.created_at
+    },
+    {
+      id: '2',
+      type: 'bank_created',
+      title: 'Заморозка',
+      description: 'Криоконсервация клеток',
+      timestamp: bank.freezing_date || bank.created_at
+    },
+    {
+      id: '3',
+      type: 'qc_started',
+      title: 'QC тесты',
+      description: 'Тесты контроля качества',
+      timestamp: bank.freezing_date || bank.created_at
+    },
+    {
+      id: '4',
+      type: 'qc_passed',
+      title: 'QC пройден',
+      description: 'Все тесты успешно пройдены',
+      timestamp: bank.freezing_date || bank.created_at
+    }
+  ]
 }

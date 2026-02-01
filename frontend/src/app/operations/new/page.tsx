@@ -464,7 +464,11 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
               <CardDescription>{OPERATION_CONFIG.FEED.description}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-muted-foreground">Форма кормления — в разработке</p>
+              <p className="text-muted-foreground mb-4">Переход на специализированную форму кормления...</p>
+              <Button onClick={() => router.push('/operations/feed')}>
+                Перейти к форме кормления
+                <ArrowLeft className="ml-2 h-4 w-4 rotate-180" />
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -477,7 +481,11 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
               <CardDescription>{OPERATION_CONFIG.OBSERVE.description}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-muted-foreground">Форма наблюдения — в разработке</p>
+              <p className="text-muted-foreground mb-4">Переход на специализированную форму наблюдения...</p>
+              <Button onClick={() => router.push('/operations/observe')}>
+                Перейти к форме наблюдения
+                <ArrowLeft className="ml-2 h-4 w-4 rotate-180" />
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -490,7 +498,11 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
               <CardDescription>{OPERATION_CONFIG.FREEZE.description}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-muted-foreground">Форма заморозки — в разработке</p>
+              <p className="text-muted-foreground mb-4">Переход на специализированную форму заморозки...</p>
+              <Button onClick={() => router.push('/operations/freeze')}>
+                Перейти к форме заморозки
+                <ArrowLeft className="ml-2 h-4 w-4 rotate-180" />
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -503,7 +515,11 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
               <CardDescription>{OPERATION_CONFIG.THAW.description}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-muted-foreground">Форма разморозки — в разработке</p>
+              <p className="text-muted-foreground mb-4">Переход на специализированную форму разморозки...</p>
+              <Button onClick={() => router.push('/operations/thaw')}>
+                Перейти к форме разморозки
+                <ArrowLeft className="ml-2 h-4 w-4 rotate-180" />
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -516,7 +532,11 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
               <CardDescription>{OPERATION_CONFIG.DISPOSE.description}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-muted-foreground">Форма утилизации — в разработке</p>
+              <p className="text-muted-foreground mb-4">Переход на специализированную форму утилизации...</p>
+              <Button onClick={() => router.push('/operations/dispose')}>
+                Перейти к форме утилизации
+                <ArrowLeft className="ml-2 h-4 w-4 rotate-180" />
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

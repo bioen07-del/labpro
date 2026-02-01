@@ -71,12 +71,11 @@ export default function DisposePage() {
       // Утилизируем каждый выбранный контейнер
       for (const containerId of selectedContainers) {
         await updateContainer(containerId, {
-          status: 'DISPOSE'
+          container_status: 'DISPOSE'
         })
         
         await createOperation({
           operation_type: 'DISPOSE',
-          container_id: containerId,
           lot_id: selectedLotId,
           notes: `Причина: ${reason}. ${notes}`,
           status: 'COMPLETED'
@@ -191,8 +190,8 @@ export default function DisposePage() {
                 </div>
               ) : (
                 <div className="grid gap-2 max-h-64 overflow-y-auto">
-                  {containers
-                    .filter(c => c.status === 'ACTIVE')
+              {containers
+                    .filter(c => c.container_status === 'ACTIVE')
                     .map(container => (
                     <div 
                       key={container.id}

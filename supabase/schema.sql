@@ -380,13 +380,14 @@ CREATE TABLE containers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   lot_id UUID REFERENCES lots(id) ON DELETE CASCADE,
   code VARCHAR(50) NOT NULL UNIQUE,
-  type_id UUID REFERENCES container_types(id),
-  status container_status NOT NULL DEFAULT 'ACTIVE',
+  container_type_id UUID REFERENCES container_types(id),
+  container_status container_status NOT NULL DEFAULT 'ACTIVE',
   parent_container_id UUID REFERENCES containers(id),
   position_id UUID,
   confluent_percent INTEGER CHECK (confluent_percent >= 0 AND confluent_percent <= 100),
   morphology VARCHAR(50),
   contaminated BOOLEAN DEFAULT false,
+  passage_count INTEGER DEFAULT 0,
   placed_at TIMESTAMP WITH TIME ZONE,
   created_by UUID REFERENCES users(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -414,10 +415,12 @@ CREATE TABLE banks (
 CREATE TABLE cryo_vials (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   bank_id UUID REFERENCES banks(id) ON DELETE CASCADE,
+  lot_id UUID REFERENCES lots(id),
   code VARCHAR(50) NOT NULL UNIQUE,
   position_id UUID,
   status cryo_vial_status NOT NULL DEFAULT 'IN_STOCK',
   cells_count DECIMAL(15, 2),
+  freezing_date DATE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -480,6 +483,7 @@ CREATE TABLE ready_media (
   name VARCHAR(200) NOT NULL,
   category VARCHAR(50) NOT NULL,
   volume_ml DECIMAL(10, 2) NOT NULL,
+  current_volume_ml DECIMAL(10, 2),
   status ready_medium_status NOT NULL DEFAULT 'QUARANTINE',
   sterilization_method sterilization_method NOT NULL,
   expiration_date DATE NOT NULL,
@@ -512,10 +516,16 @@ CREATE TABLE operation_containers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   operation_id UUID REFERENCES operations(id) ON DELETE CASCADE,
   container_id UUID REFERENCES containers(id),
-  role container_role NOT NULL,
+  role container_role DEFAULT 'SOURCE',
   confluent_percent INTEGER CHECK (confluent_percent >= 0 AND confluent_percent <= 100),
   morphology VARCHAR(50),
   contaminated BOOLEAN DEFAULT false,
+  notes TEXT,
+  medium_id UUID REFERENCES ready_media(id),
+  volume_ml DECIMAL(10, 2),
+  split_ratio VARCHAR(20),
+  new_confluent_percent INTEGER,
+  seeded_cells DECIMAL(15, 2),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -605,9 +615,19 @@ CREATE TABLE equipment (
   type equipment_type NOT NULL,
   location VARCHAR(200),
   temperature INTEGER,
+  current_temperature DECIMAL(5, 1),
   status equipment_status NOT NULL DEFAULT 'ACTIVE',
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Equipment Logs
+CREATE TABLE equipment_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE,
+  temperature DECIMAL(5, 1),
+  notes TEXT,
+  logged_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Positions
@@ -679,7 +699,7 @@ CREATE INDEX idx_cultures_status ON cultures(status);
 CREATE INDEX idx_lots_culture ON lots(culture_id);
 CREATE INDEX idx_lots_status ON lots(status);
 CREATE INDEX idx_containers_lot ON containers(lot_id);
-CREATE INDEX idx_containers_status ON containers(status);
+CREATE INDEX idx_containers_container_status ON containers(container_status);
 CREATE INDEX idx_containers_position ON containers(position_id);
 CREATE INDEX idx_banks_culture ON banks(culture_id);
 CREATE INDEX idx_banks_status ON banks(status);
@@ -700,6 +720,11 @@ CREATE INDEX idx_notifications_unread ON notifications(is_read) WHERE is_read = 
 CREATE INDEX idx_audit_logs_entity ON audit_logs(entity_type, entity_id);
 CREATE INDEX idx_audit_logs_user ON audit_logs(user_id);
 CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
+CREATE INDEX idx_equipment_logs_equipment ON equipment_logs(equipment_id);
+CREATE INDEX idx_equipment_logs_logged_at ON equipment_logs(logged_at);
+CREATE INDEX idx_cryo_vials_lot ON cryo_vials(lot_id);
+CREATE INDEX idx_ready_media_current_volume ON ready_media(current_volume_ml) WHERE current_volume_ml IS NOT NULL;
+CREATE INDEX idx_equipment_current_temp ON equipment(current_temperature) WHERE current_temperature IS NOT NULL;
 
 -- ============================================
 -- FUNCTIONS
@@ -774,12 +799,12 @@ DECLARE
   v_active_containers INTEGER;
   v_lot_id UUID;
 BEGIN
-  IF TG_TABLE_NAME = 'containers' AND NEW.status = 'DISPOSE' THEN
+  IF TG_TABLE_NAME = 'containers' AND NEW.container_status = 'DISPOSE' THEN
     v_lot_id := NEW.lot_id;
     
     SELECT COUNT(*) INTO v_active_containers
     FROM containers
-    WHERE lot_id = v_lot_id AND status != 'DISPOSE';
+    WHERE lot_id = v_lot_id AND container_status != 'DISPOSE';
     
     IF v_active_containers = 0 THEN
       UPDATE lots SET status = 'CLOSED', end_date = NOW()::date WHERE id = v_lot_id;
@@ -792,8 +817,18 @@ $$ language 'plpgsql';
 CREATE TRIGGER trigger_check_lot_closure
   AFTER UPDATE ON containers
   FOR EACH ROW
-  WHEN (NEW.status = 'DISPOSE')
+  WHEN (NEW.container_status = 'DISPOSE')
   EXECUTE FUNCTION check_lot_closure();
+
+-- Function to increment passage count for a container
+CREATE OR REPLACE FUNCTION increment_passage_count(row_id UUID)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE containers
+  SET passage_count = COALESCE(passage_count, 0) + 1
+  WHERE id = row_id;
+END;
+$$ language 'plpgsql';
 
 -- Function to update bank status based on QC result
 CREATE OR REPLACE FUNCTION update_bank_from_qc()
@@ -831,6 +866,7 @@ ALTER TABLE positions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE equipment_logs ENABLE ROW LEVEL SECURITY;
 
 -- Basic RLS policies (can be customized based on role)
 CREATE POLICY "Allow authenticated access" ON users
@@ -874,3 +910,6 @@ CREATE POLICY "Allow authenticated access" ON notifications
 
 CREATE POLICY "Allow authenticated access" ON audit_logs
   FOR SELECT USING (auth.role() = 'admin');
+
+CREATE POLICY "Allow authenticated access" ON equipment_logs
+  FOR ALL USING (auth.role() IN ('authenticated'));

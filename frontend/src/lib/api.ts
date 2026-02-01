@@ -74,8 +74,6 @@ export async function getCultureById(id: string) {
   return data
 }
 
-// ==================== CULTURES ====================
-
 export async function createCulture(culture: Record<string, unknown>) {
   const { data, error } = await supabase
     .from('cultures')
@@ -304,7 +302,6 @@ export async function createOperationObserve(data: {
   containers: ObserveContainerData[]
   notes?: string
 }) {
-  // Создаем операцию OBSERVE
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
@@ -320,10 +317,10 @@ export async function createOperationObserve(data: {
   
   if (opError) throw opError
   
-  // Создаем записи operation_container и обновляем контейнеры
   const operationContainers = data.containers.map(container => ({
     operation_id: operation.id,
     container_id: container.container_id,
+    role: 'SOURCE',
     confluent_percent: container.confluent_percent,
     morphology: container.morphology,
     contaminated: container.contaminated
@@ -335,7 +332,6 @@ export async function createOperationObserve(data: {
   
   if (ocError) throw ocError
   
-  // Обновляем контейнеры
   for (const container of data.containers) {
     const { error: updateError } = await supabase
       .from('containers')
@@ -362,7 +358,6 @@ export interface DisposeData {
 }
 
 export async function createOperationDispose(data: DisposeData) {
-  // Определяем lot_id в зависимости от типа объекта
   let lot_id: string | null = null
   
   if (data.target_type === 'container') {
@@ -370,7 +365,6 @@ export async function createOperationDispose(data: DisposeData) {
     lot_id = container?.lot_id
   }
   
-  // Создаем операцию DISPOSE
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
@@ -386,7 +380,6 @@ export async function createOperationDispose(data: DisposeData) {
   
   if (opError) throw opError
   
-  // Обновляем статус объекта
   let tableName: string
   let statusValue: string
   
@@ -407,7 +400,6 @@ export async function createOperationDispose(data: DisposeData) {
       throw new Error('Unknown target_type')
   }
   
-  // Для контейнеров используем container_status, для остальных - status
   let updateField = 'status'
   if (data.target_type === 'container') {
     updateField = 'container_status'
@@ -420,7 +412,6 @@ export async function createOperationDispose(data: DisposeData) {
   
   if (updateError) throw updateError
   
-  // Если все контейнеры лота утилизированы - закрываем лот
   if (data.target_type === 'container' && lot_id) {
     const { data: remainingContainers } = await supabase
       .from('containers')
@@ -493,7 +484,6 @@ export async function getOrderById(id: string) {
 }
 
 export async function createOrder(order: Record<string, unknown>) {
-  // Generate order number
   const today = new Date()
   const datePrefix = today.toISOString().slice(0, 10).replace(/-/g, '')
   
@@ -661,7 +651,6 @@ export async function getCurrentUser() {
   return data.user
 }
 
-// Subscribe to real-time updates
 export function subscribeToOrders(callback: (payload: unknown) => void) {
   return supabase
     .channel('orders-changes')
@@ -697,7 +686,6 @@ export async function getDonorById(id: string) {
 }
 
 export async function createDonor(donor: Record<string, unknown>) {
-  // Generate donor code
   const { count } = await supabase
     .from('donors')
     .select('*', { count: 'exact', head: true })
@@ -883,7 +871,6 @@ export async function getReadyMediumById(id: string) {
 }
 
 export async function createReadyMedium(readyMedium: Record<string, unknown>) {
-  // Generate RM code
   const { count } = await supabase
     .from('ready_media')
     .select('*', { count: 'exact', head: true })
@@ -979,7 +966,6 @@ export async function updateEquipment(id: string, updates: Record<string, unknow
 }
 
 export async function createEquipmentLog(equipmentId: string, log: { temperature: number; notes?: string }) {
-  // Создаем запись лога
   const { data: logData, error: logError } = await supabase
     .from('equipment_logs')
     .insert({
@@ -993,7 +979,6 @@ export async function createEquipmentLog(equipmentId: string, log: { temperature
   
   if (logError) throw logError
   
-  // Обновляем текущую температуру оборудования
   const { error: updateError } = await supabase
     .from('equipment')
     .update({ current_temperature: log.temperature })
@@ -1056,6 +1041,128 @@ export async function getPositionByQR(qrCode: string) {
   
   if (error) throw error
   return data
+}
+
+// ==================== QR CODE LOOKUPS ====================
+
+export async function getContainerByQR(qrCode: string) {
+  const { data, error } = await supabase
+    .from('containers')
+    .select(`
+      *,
+      lot:lots(
+        *,
+        culture:cultures(
+          *,
+          culture_type:culture_types(*)
+        )
+      ),
+      position:positions(*)
+    `)
+    .eq('qr_code', qrCode)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getEquipmentByQR(qrCode: string) {
+  const { data, error } = await supabase
+    .from('equipment')
+    .select('*')
+    .eq('qr_code', qrCode)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getCultureByQR(qrCode: string) {
+  const { data, error } = await supabase
+    .from('cultures')
+    .select(`
+      *,
+      culture_type:culture_types(*),
+      lots:lots(*)
+    `)
+    .eq('qr_code', qrCode)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getLotByQR(qrCode: string) {
+  const { data, error } = await supabase
+    .from('lots')
+    .select(`
+      *,
+      culture:cultures(
+        *,
+        culture_type:culture_types(*)
+      ),
+      containers:containers(*)
+    `)
+    .eq('qr_code', qrCode)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getBankByQR(qrCode: string) {
+  const { data, error } = await supabase
+    .from('banks')
+    .select(`
+      *,
+      culture:cultures(
+        *,
+        culture_type:culture_types(*)
+      ),
+      lot:lots(*),
+      cryo_vials:cryo_vials(*)
+    `)
+    .eq('qr_code', qrCode)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function getReadyMediumByQR(qrCode: string) {
+  const { data, error } = await supabase
+    .from('ready_media')
+    .select('*, storage_position:positions(*)')
+    .eq('qr_code', qrCode)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export function parseQRCode(code: string): { type: string; value: string } | null {
+  if (code.startsWith('POS:')) {
+    return { type: 'position', value: code.substring(4) }
+  }
+  if (code.startsWith('CNT:')) {
+    return { type: 'container', value: code.substring(4) }
+  }
+  if (code.startsWith('EQP:')) {
+    return { type: 'equipment', value: code.substring(4) }
+  }
+  if (code.startsWith('CULT:')) {
+    return { type: 'culture', value: code.substring(5) }
+  }
+  if (code.startsWith('INV:')) {
+    return { type: 'lot', value: code.substring(4) }
+  }
+  if (code.startsWith('RM:')) {
+    return { type: 'ready_medium', value: code.substring(3) }
+  }
+  if (code.startsWith('BK:')) {
+    return { type: 'bank', value: code.substring(3) }
+  }
+  return { type: 'unknown', value: code }
 }
 
 export async function createPosition(position: Record<string, unknown>) {
@@ -1198,7 +1305,6 @@ export async function getContainersByLot(lotId: string) {
 // ==================== BANKS ====================
 
 export async function createBank(bank: Record<string, unknown>) {
-  // Generate bank code
   const { count } = await supabase
     .from('banks')
     .select('*', { count: 'exact', head: true })
@@ -1390,7 +1496,6 @@ export async function getAuditLogs(filters?: {
   const { data, error } = await query
   if (error) {
     console.warn('getAuditLogs error:', error.message)
-    // Return empty array if table doesn't exist or other error
     return []
   }
   return data || []
@@ -1463,8 +1568,6 @@ export async function updateUser(id: string, updates: Record<string, unknown>) {
   if (error) throw error
   return data
 }
-
-// ==================== REAL-TIME SUBSCRIPTIONS ====================
 
 export function subscribeToQCTests(callback: (payload: unknown) => void) {
   return supabase
@@ -1577,7 +1680,6 @@ export async function createOperationPassage(data: {
   containers: PassageContainerData[]
   notes?: string
 }) {
-  // Создаем операцию PASSAGE
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
@@ -1593,10 +1695,10 @@ export async function createOperationPassage(data: {
   
   if (opError) throw opError
   
-  // Создаем записи operation_container
   const operationContainers = data.containers.map(container => ({
     operation_id: operation.id,
     container_id: container.container_id,
+    role: 'SOURCE',
     split_ratio: container.split_ratio,
     new_confluent_percent: container.new_confluent_percent,
     seeded_cells: container.seeded_cells,
@@ -1609,13 +1711,20 @@ export async function createOperationPassage(data: {
   
   if (ocError) throw ocError
   
-  // Обновляем контейнеры
   for (const container of data.containers) {
+    const { data: currentContainer } = await supabase
+      .from('containers')
+      .select('passage_count')
+      .eq('id', container.container_id)
+      .single()
+    
+    const newPassageCount = (currentContainer?.passage_count || 0) + 1
+    
     const { error: updateError } = await supabase
       .from('containers')
       .update({
         confluent_percent: container.new_confluent_percent,
-        passage_count: supabase.rpc('increment_passage_count', { row_id: container.container_id })
+        passage_count: newPassageCount
       })
       .eq('id', container.container_id)
     
@@ -1633,12 +1742,46 @@ export interface FeedContainerData {
   volume_ml: number
 }
 
+// FEFO: Get available media sorted by expiration date (FEFO - First Expired, First Out)
+export async function getAvailableMediaForFeed(batchId?: string) {
+  let query = supabase
+    .from('ready_media')
+    .select('*')
+    .eq('status', 'ACTIVE')
+    .gt('current_volume_ml', 0)
+    .gt('expiration_date', new Date().toISOString().split('T')[0]) // Not expired
+    .order('expiration_date', { ascending: true }) // FEFO: earliest expiration first
+  
+  if (batchId) {
+    query = query.eq('batch_id', batchId)
+  }
+  
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
+
 export async function createOperationFeed(data: {
   lot_id: string
   containers: FeedContainerData[]
   notes?: string
 }) {
-  // Создаем операцию FEED
+  // FEFO Validation: Check if selected media is the earliest available
+  for (const container of data.containers) {
+    if (container.medium_id) {
+      const selectedMedium = await getReadyMediumById(container.medium_id)
+      if (selectedMedium) {
+        const availableMedia = await getAvailableMediaForFeed(selectedMedium.batch_id)
+        if (availableMedia && availableMedia.length > 0) {
+          const earliestMedium = availableMedia[0]
+          if (earliestMedium.id !== container.medium_id) {
+            console.warn(`FEFO Warning: Using ${selectedMedium.code} but ${earliestMedium.code} expires earlier`)
+            // In production, you might want to throw an error or show a warning
+          }
+        }
+      }
+    }
+  }
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
@@ -1654,12 +1797,10 @@ export async function createOperationFeed(data: {
   
   if (opError) throw opError
   
-  // Создаем записи operation_container
   const operationContainers = data.containers.map(container => ({
     operation_id: operation.id,
     container_id: container.container_id,
-    medium_id: container.medium_id,
-    volume_ml: container.volume_ml
+    role: 'SOURCE'
   }))
   
   const { error: ocError } = await supabase
@@ -1668,7 +1809,23 @@ export async function createOperationFeed(data: {
   
   if (ocError) throw ocError
   
-  // Обновляем ready_medium если используется
+  const operationMedia = data.containers
+    .filter(container => container.medium_id)
+    .map(container => ({
+      operation_id: operation.id,
+      ready_medium_id: container.medium_id,
+      quantity_ml: container.volume_ml,
+      purpose: 'FEED'
+    }))
+  
+  if (operationMedia.length > 0) {
+    const { error: omError } = await supabase
+      .from('operation_media')
+      .insert(operationMedia)
+    
+    if (omError) throw omError
+  }
+  
   for (const container of data.containers) {
     if (container.medium_id) {
       const medium = await getReadyMediumById(container.medium_id)
@@ -1685,6 +1842,101 @@ export async function createOperationFeed(data: {
   return operation
 }
 
+// ==================== AUTO TASKS ====================
+
+export interface AutoTaskData {
+  type: 'PASSAGE' | 'FEED' | 'OBSERVE' | 'QC' | 'BANK_CHECK' | 'MEDIA_PREP'
+  target_id: string // container_id, lot_id, or bank_id
+  target_type: 'container' | 'lot' | 'bank'
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  due_days: number // days from now
+  notes?: string
+}
+
+// Create automatic task after operation completion
+export async function createAutoTask(data: AutoTaskData) {
+  const dueDate = new Date()
+  dueDate.setDate(dueDate.getDate() + data.due_days)
+  
+  const taskTypeMap = {
+    PASSAGE: 'passage',
+    FEED: 'feed',
+    OBSERVE: 'observe',
+    QC: 'qc',
+    BANK_CHECK: 'bank_check',
+    MEDIA_PREP: 'media_prep'
+  }
+  
+  const taskData = {
+    type: taskTypeMap[data.type],
+    status: 'PENDING',
+    priority: data.priority,
+    due_date: dueDate.toISOString(),
+    container_id: data.target_type === 'container' ? data.target_id : null,
+    lot_id: data.target_type === 'lot' ? data.target_id : null,
+    bank_id: data.target_type === 'bank' ? data.target_id : null,
+    notes: data.notes,
+    created_at: new Date().toISOString()
+  }
+  
+  const { data: task, error } = await supabase
+    .from('tasks')
+    .insert(taskData)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return task
+}
+
+// Create follow-up task after passage operation (e.g., for next passage)
+export async function createPassageFollowUpTask(lotId: string, containerId: string, daysUntilNext: number = 3) {
+  return createAutoTask({
+    type: 'PASSAGE',
+    target_id: containerId,
+    target_type: 'container',
+    priority: 'medium',
+    due_days: daysUntilNext,
+    notes: 'Автоматическая задача: следующий пассаж'
+  })
+}
+
+// Create observation task for containers reaching target confluence
+export async function createObserveTask(containerId: string, targetConfluence: number = 80) {
+  return createAutoTask({
+    type: 'OBSERVE',
+    target_id: containerId,
+    target_type: 'container',
+    priority: 'low',
+    due_days: 0,
+    notes: `Проверка при достижении ${targetConfluence}% конфлюэнтности`
+  })
+}
+
+// Create QC task after freeze operation
+export async function createQCTask(bankId: string) {
+  return createAutoTask({
+    type: 'QC',
+    target_id: bankId,
+    target_type: 'bank',
+    priority: 'high',
+    due_days: 1,
+    notes: 'Контроль качества после заморозки'
+  })
+}
+
+// Create feed task based on media type and schedule
+export async function createFeedTask(lotId: string, mediaType: string, scheduleDays: number = 2) {
+  return createAutoTask({
+    type: 'FEED',
+    target_id: lotId,
+    target_type: 'lot',
+    priority: 'medium',
+    due_days: scheduleDays,
+    notes: `Кормление: ${mediaType}`
+  })
+}
+
 // ==================== FREEZE OPERATIONS ====================
 
 export interface FreezeData {
@@ -1698,7 +1950,6 @@ export interface FreezeData {
 }
 
 export async function createOperationFreeze(data: FreezeData) {
-  // Создаем операцию FREEZE
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
@@ -1714,14 +1965,22 @@ export async function createOperationFreeze(data: FreezeData) {
   
   if (opError) throw opError
   
-  // Создаем cryo_vials
   const cryoVials = []
   for (let i = 0; i < data.cryo_vial_count; i++) {
+    const { count: vialCount } = await supabase
+      .from('cryo_vials')
+      .select('*', { count: 'exact', head: true })
+      .eq('bank_id', data.bank_id || null)
+    
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+    const vialCode = `CV-${String((vialCount || 0) + i + 1).padStart(3, '0')}-${today}`
+    
     const { data: vial, error: vialError } = await supabase
       .from('cryo_vials')
       .insert({
         bank_id: data.bank_id || null,
         lot_id: data.lot_id,
+        code: vialCode,
         freezing_date: new Date().toISOString().split('T')[0],
         position_id: data.freezer_position_id || null,
         status: 'IN_STOCK'
@@ -1733,39 +1992,36 @@ export async function createOperationFreeze(data: FreezeData) {
     cryoVials.push(vial)
   }
   
-  // Создаем связь operation_container
   const { error: ocError } = await supabase
     .from('operation_containers')
     .insert({
       operation_id: operation.id,
       container_id: data.container_id,
-      cryo_vial_ids: cryoVials.map(v => v.id),
+      role: 'SOURCE',
       notes: `Заморозка ${data.cryo_vial_count} ампул, среда: ${data.freezing_medium}`
     })
   
   if (ocError) throw ocError
   
-  // Обновляем банк если указан
   if (data.bank_id) {
     const { data: bank } = await supabase
       .from('banks')
-      .select('vial_count')
+      .select('cryo_vials_count')
       .eq('id', data.bank_id)
       .single()
     
     await supabase
       .from('banks')
       .update({ 
-        vial_count: (bank?.vial_count || 0) + data.cryo_vial_count,
+        cryo_vials_count: (bank?.cryo_vials_count || 0) + data.cryo_vial_count,
         status: 'IN_STOCK'
       })
       .eq('id', data.bank_id)
   }
   
-  // Обновляем контейнер - помечаем как замороженный
   await supabase
     .from('containers')
-    .update({ container_status: 'FROZEN' })
+    .update({ container_status: 'IN_BANK' })
     .eq('id', data.container_id)
   
   return { operation, cryoVials }

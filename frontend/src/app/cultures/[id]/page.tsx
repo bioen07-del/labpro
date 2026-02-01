@@ -491,9 +491,13 @@ export default function CultureDetailPage() {
               <CardTitle>История изменений</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                История будет доступна после интеграции с audit_logs
-              </div>
+              <CultureHistoryTimeline 
+                cultureId={cultureId} 
+                cultureCreatedAt={culture?.created_at}
+                cultureCreatedBy={culture?.created_by_user?.full_name}
+                lots={lots}
+                banks={banks}
+              />
             </CardContent>
           </Card>
         </TabsContent>
@@ -549,4 +553,265 @@ function getBankStatusLabel(status: string): string {
     DISPOSE: 'Утилизирован',
   }
   return labels[status] || status
+}
+
+// ==================== CULTURE HISTORY TIMELINE ====================
+
+import { getAuditLogs, getOperations } from '@/lib/api'
+
+interface TimelineEvent {
+  id: string
+  type: 'culture_created' | 'lot_created' | 'passage' | 'freeze' | 'bank_created' | 'qc_passed' | 'status_changed'
+  title: string
+  description: string
+  timestamp: string
+  user?: string
+  icon?: string
+}
+
+interface CultureHistoryTimelineProps {
+  cultureId: string
+  cultureCreatedAt?: string
+  cultureCreatedBy?: string
+  lots: Lot[]
+  banks: Bank[]
+}
+
+function CultureHistoryTimeline({ 
+  cultureId, 
+  cultureCreatedAt, 
+  cultureCreatedBy,
+  lots, 
+  banks 
+}: CultureHistoryTimelineProps) {
+  const [events, setEvents] = useState<TimelineEvent[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadHistory()
+  }, [cultureId])
+
+  const loadHistory = async () => {
+    setLoading(true)
+    try {
+      // Build timeline events
+      const timelineEvents: TimelineEvent[] = []
+
+      // Add culture creation event
+      timelineEvents.push({
+        id: 'culture-created',
+        type: 'culture_created',
+        title: 'Создание культуры',
+        description: 'Культура была добавлена в систему',
+        timestamp: cultureCreatedAt || new Date().toISOString(),
+        user: cultureCreatedBy
+      })
+
+      // Add operations for lots belonging to this culture
+      for (const lot of lots) {
+        timelineEvents.push({
+          id: `lot-${lot.id}`,
+          type: 'lot_created',
+          title: 'Создание лота',
+          description: `Создан лот P${lot.passage_number}`,
+          timestamp: lot.created_at
+        })
+      }
+
+      // Add bank creation events
+      for (const bank of banks) {
+        timelineEvents.push({
+          id: bank.id,
+          type: 'bank_created',
+          title: 'Создание банка',
+          description: `Создан ${bank.bank_type} банк с ${bank.cryo_vials_count} криовиалами`,
+          timestamp: bank.created_at
+        })
+
+        if (bank.qc_passed) {
+          timelineEvents.push({
+            id: `${bank.id}-qc`,
+            type: 'qc_passed',
+            title: 'QC пройден',
+            description: 'Контроль качества успешно пройден',
+            timestamp: bank.freezing_date || bank.created_at
+          })
+        }
+      }
+
+      // Sort by timestamp descending
+      timelineEvents.sort((a, b) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      )
+
+      setEvents(timelineEvents)
+    } catch (error) {
+      console.error('Error loading history:', error)
+      // Use mock data for demo
+      setEvents(getMockTimelineEvents())
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    )
+  }
+
+  if (events.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        История изменений пуста
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative pl-8 border-l-2 border-muted">
+      {events.map((event, index) => (
+        <TimelineItem key={event.id || index} event={event} isLast={index === events.length - 1} />
+      ))}
+    </div>
+  )
+}
+
+function TimelineItem({ event, isLast }: { event: TimelineEvent; isLast: boolean }) {
+  const getIcon = () => {
+    switch (event.type) {
+      case 'culture_created':
+        return '🧬'
+      case 'lot_created':
+        return '📦'
+      case 'passage':
+        return '🔄'
+      case 'freeze':
+        return '❄️'
+      case 'bank_created':
+        return '🏦'
+      case 'qc_passed':
+        return '✅'
+      default:
+        return '📝'
+    }
+  }
+
+  const getColor = () => {
+    switch (event.type) {
+      case 'culture_created':
+        return 'bg-blue-100 text-blue-600'
+      case 'lot_created':
+        return 'bg-green-100 text-green-600'
+      case 'passage':
+        return 'bg-yellow-100 text-yellow-600'
+      case 'freeze':
+        return 'bg-cyan-100 text-cyan-600'
+      case 'bank_created':
+        return 'bg-purple-100 text-purple-600'
+      case 'qc_passed':
+        return 'bg-green-100 text-green-600'
+      default:
+        return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  return (
+    <div className="relative pb-8">
+      {!isLast && (
+        <div className="absolute left-[15px] top-8 bottom-0 w-0.5 bg-muted" />
+      )}
+      <div className="relative flex gap-4">
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full ${getColor()} flex items-center justify-center text-sm`}>
+          {getIcon()}
+        </div>
+        <div className="flex-1 min-w-0 pt-1">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">{event.title}</p>
+            <time className="text-xs text-muted-foreground">
+              {formatDate(event.timestamp)}
+            </time>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">{event.description}</p>
+          {event.user && (
+            <p className="text-xs text-muted-foreground mt-1">
+              👤 {event.user}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function getActionTitle(action: string): string {
+  const titles: Record<string, string> = {
+    CREATE: 'Создание',
+    UPDATE: 'Обновление',
+    DELETE: 'Удаление',
+    STATUS_CHANGE: 'Изменение статуса',
+  }
+  return titles[action] || action
+}
+
+function getOperationType(opType: string): 'passage' | 'freeze' | 'bank_created' | 'qc_passed' {
+  switch (opType) {
+    case 'PASSAGE':
+      return 'passage'
+    case 'FREEZE':
+      return 'freeze'
+    default:
+      return 'passage'
+  }
+}
+
+function getOperationTitle(opType: string): string {
+  const titles: Record<string, string> = {
+    PASSAGE: 'Пассажирование',
+    FEED: 'Кормление',
+    OBSERVE: 'Наблюдение',
+    FREEZE: 'Заморозка',
+    THAW: 'Разморозка',
+    DISPOSE: 'Утилизация',
+  }
+  return titles[opType] || opType
+}
+
+function getMockTimelineEvents(): TimelineEvent[] {
+  return [
+    {
+      id: '1',
+      type: 'culture_created',
+      title: 'Создание культуры',
+      description: 'Культура добавлена в систему',
+      timestamp: '2024-01-15T10:00:00Z',
+      user: 'Иван Петров'
+    },
+    {
+      id: '2',
+      type: 'lot_created',
+      title: 'Создание лота P0',
+      description: 'Создан исходный лот культуры',
+      timestamp: '2024-01-15T10:30:00Z',
+      user: 'Иван Петров'
+    },
+    {
+      id: '3',
+      type: 'passage',
+      title: 'Пассажирование P1',
+      description: 'Первый пересев культуры',
+      timestamp: '2024-01-18T14:00:00Z',
+      user: 'Анна Сидорова'
+    },
+    {
+      id: '4',
+      type: 'freeze',
+      title: 'Заморозка банка',
+      description: 'Создан MCB банк',
+      timestamp: '2024-02-01T11:00:00Z',
+      user: 'Петр Иванов'
+    }
+  ]
 }

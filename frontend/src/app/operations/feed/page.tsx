@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { getLots, getContainers, createOperation } from '@/lib/api'
+import { getLots, getContainers, createOperationFeed, getReadyMedia } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
 export default function FeedPage() {
@@ -75,16 +75,18 @@ export default function FeedPage() {
     
     setLoading(true)
     try {
-      // Создаём операцию кормления для каждого выбранного контейнера
-      for (const containerId of selectedContainers) {
-        await createOperation({
-          operation_type: 'FEED',
-          container_id: containerId,
-          lot_id: selectedLotId,
-          notes: `Замена среды: ${mediaType}. ${notes}`,
-          status: 'COMPLETED'
-        })
-      }
+      // Формируем данные для операции кормления
+      const containersData = selectedContainers.map(containerId => ({
+        container_id: containerId,
+        medium_id: mediaType, // mediaType теперь используется как medium_id
+        volume_ml: 5 // Значение по умолчанию
+      }))
+      
+      await createOperationFeed({
+        lot_id: selectedLotId,
+        containers: containersData,
+        notes: `Замена среды: ${mediaType}. ${notes}`
+      })
       
       setSuccess(true)
       setTimeout(() => {

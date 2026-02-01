@@ -1,311 +1,360 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { 
-  ArrowRight, 
-  Archive, 
-  Beaker, 
-  ClipboardList, 
+  FlaskConical, 
   Package, 
+  Database, 
+  ClipboardList, 
+  Bell, 
   TrendingUp,
-  Clock,
+  Calendar,
+  ArrowRight,
+  AlertCircle,
   CheckCircle2,
-  AlertTriangle,
-  Loader2
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
-import { getDashboardStats, getBanks, getOrders, getOperations } from '@/lib/api'
-import { formatDate, getStatusLabel } from '@/lib/utils'
+  Clock
+} from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { 
+  getDashboardStats, 
+  getTasks, 
+  getNotifications, 
+  getUnreadNotificationCount,
+  getOperations 
+} from "@/lib/api"
+import { format, differenceInDays, isPast, addDays } from "date-fns"
+import { ru } from "date-fns/locale"
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
     totalLots: 0,
     totalBanks: 0,
     totalOrders: 0,
     totalContainers: 0,
   })
-  const [recentBanks, setRecentBanks] = useState<any[]>([])
-  const [recentOrders, setRecentOrders] = useState<any[]>([])
-  const [pendingOperations, setPendingOperations] = useState<any[]>([])
+  const [tasks, setTasks] = useState<any[]>([])
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [recentOperations, setRecentOperations] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadDashboardData()
+    loadData()
   }, [])
 
-  const loadDashboardData = async () => {
-    setLoading(true)
+  const loadData = async () => {
     try {
-      const [statsData, banks, orders, operations] = await Promise.all([
+      const [statsData, tasksData, notificationsData, unreadData, operationsData] = await Promise.all([
         getDashboardStats(),
-        getBanks(),
-        getOrders(),
-        getOperations({ type: 'THAW' })
+        getTasks({ status: 'PENDING' }).catch(() => []),
+        getNotifications({ limit: 5 }).catch(() => []),
+        getUnreadNotificationCount().catch(() => 0),
+        getOperations({ status: 'COMPLETED' }).catch(() => [])
       ])
       
       setStats(statsData)
-      setRecentBanks(banks.slice(0, 5))
-      setRecentOrders(orders.slice(0, 5))
-      setPendingOperations(operations.filter(op => op.status === 'IN_PROGRESS').slice(0, 5))
+      setTasks(tasksData.slice(0, 5))
+      setNotifications(notificationsData)
+      setUnreadCount(unreadData)
+      setRecentOperations(operationsData.slice(0, 5))
     } catch (error) {
-      console.error('Error loading dashboard data:', error)
+      console.error("Error loading dashboard data:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  const cards = [
-    {
-      title: 'Клеточные культуры',
-      value: stats.totalLots,
-      description: 'Активные культуры',
-      icon: Beaker,
-      href: '/cultures',
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
-    },
-    {
-      title: 'Клеточные банки',
-      value: stats.totalBanks,
-      description: 'Всего в хранилище',
-      icon: Archive,
-      href: '/banks',
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-    },
-    {
-      title: 'Заказы',
-      value: stats.totalOrders,
-      description: 'Активные заказы',
-      icon: ClipboardList,
-      href: '/orders',
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100',
-    },
-    {
-      title: 'Контейнеры',
-      value: stats.totalContainers,
-      description: 'На хранении',
-      icon: Package,
-      href: '/containers',
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
-    },
-  ]
+  const getDaysUntilDue = (dueDate: string) => {
+    if (!dueDate) return null
+    const due = new Date(dueDate)
+    if (isPast(due)) return { days: 0, urgent: true, overdue: true }
+    const days = differenceInDays(due, new Date())
+    return { days, urgent: days <= 2, overdue: false }
+  }
+
+  const getTaskPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'HIGH': return 'bg-red-500'
+      case 'MEDIUM': return 'bg-yellow-500'
+      case 'LOW': return 'bg-green-500'
+      default: return 'bg-gray-500'
+    }
+  }
 
   if (loading) {
     return (
-      <div className="container py-6 flex justify-center items-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="container mx-auto py-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="container py-6 space-y-6">
-      {/* Welcome Section */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Лаборатория</h1>
-        <p className="text-muted-foreground">
-          Система управления клеточными культурами и биобанком
-        </p>
+    <div className="container mx-auto py-6 space-y-6">
+      {/* Header with Notifications */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Панель управления</h1>
+          <p className="text-muted-foreground">Обзор состояния лаборатории</p>
+        </div>
+        <Link href="/notifications">
+          <Button variant="outline" className="relative">
+            <Bell className="mr-2 h-4 w-4" />
+            Уведомления
+            {unreadCount > 0 && (
+              <Badge 
+                variant="destructive" 
+                className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Badge>
+            )}
+          </Button>
+        </Link>
       </div>
 
-      {/* Stats Cards */}
+      {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {cards.map((card) => (
-          <Link key={card.title} href={card.href}>
-            <Card className="hover:bg-accent transition-colors cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {card.title}
-                </CardTitle>
-                <div className={`p-2 rounded-full ${card.bgColor}`}>
-                  <card.icon className={`h-4 w-4 ${card.color}`} />
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{card.value}</div>
-                <p className="text-xs text-muted-foreground">{card.description}</p>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Культуры</CardTitle>
+            <FlaskConical className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalLots}</div>
+            <p className="text-xs text-muted-foreground">активных партий</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Банки</CardTitle>
+            <Database className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalBanks}</div>
+            <p className="text-xs text-muted-foreground">криобанка</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Заказы</CardTitle>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalOrders}</div>
+            <p className="text-xs text-muted-foreground">в обработке</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Контейнеры</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalContainers}</div>
+            <p className="text-xs text-muted-foreground">в работе</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Quick Actions */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* My Tasks */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5" />
+                  Мои задачи
+                </CardTitle>
+                <CardDescription>Текущие задачи требующие внимания</CardDescription>
+              </div>
+              <Link href="/tasks">
+                <Button variant="ghost" size="sm">
+                  Все
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {tasks.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <CheckCircle2 className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <p>Нет активных задач</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {tasks.map((task) => {
+                  const dueInfo = getDaysUntilDue(task.due_date)
+                  return (
+                    <div 
+                      key={task.id} 
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full ${getTaskPriorityColor(task.priority)}`} />
+                        <div>
+                          <p className="font-medium">{task.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {task.type === 'FEED' && 'Кормление'}
+                            {task.type === 'OBSERVE' && 'Наблюдение'}
+                            {task.type === 'PASSAGE' && 'Пассаж'}
+                            {task.type === 'QC' && 'Контроль качества'}
+                            {task.type === 'OTHER' && task.description}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {dueInfo && (
+                          <Badge 
+                            variant={dueInfo.overdue ? "destructive" : dueInfo.urgent ? "secondary" : "outline"}
+                          >
+                            {dueInfo.overdue 
+                              ? "Просрочено" 
+                              : dueInfo.days === 0 
+                                ? "Сегодня" 
+                                : `${dueInfo.days} дн.`}
+                          </Badge>
+                        )}
+                        {task.container?.code && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {task.container.code}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Notifications */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="h-5 w-5" />
+                  Уведомления
+                </CardTitle>
+                <CardDescription>Последние события и напоминания</CardDescription>
+              </div>
+              <Link href="/notifications">
+                <Button variant="ghost" size="sm">
+                  Все
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {notifications.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Bell className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <p>Нет уведомлений</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {notifications.map((notification) => (
+                  <div 
+                    key={notification.id}
+                    className={`p-3 border rounded-lg ${notification.is_read ? 'bg-muted/30' : 'bg-muted/50 border-primary/20'}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-1 ${notification.is_read ? 'text-muted-foreground' : 'text-primary'}`}>
+                        {notification.category === 'ALERT' && <AlertCircle className="h-4 w-4" />}
+                        {notification.category === 'TASK' && <Clock className="h-4 w-4" />}
+                        {notification.category === 'SYSTEM' && <Bell className="h-4 w-4" />}
+                        {notification.category === 'QC' && <CheckCircle2 className="h-4 w-4" />}
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium">{notification.title}</p>
+                        <p className="text-sm text-muted-foreground">{notification.message}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {format(new Date(notification.created_at), "dd MMM HH:mm", { locale: ru })}
+                        </p>
+                      </div>
+                      {!notification.is_read && (
+                        <div className="w-2 h-2 rounded-full bg-primary mt-2" />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Operations */}
       <Card>
         <CardHeader>
-          <CardTitle>Быстрые действия</CardTitle>
-          <CardDescription>Часто используемые операции</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2" asChild>
-              <Link href="/operations/new?type=THAW">
-                <Beaker className="h-5 w-5" />
-                <span>Разморозка</span>
-              </Link>
-            </Button>
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2" asChild>
-              <Link href="/operations/new?type=FEEDING">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                <span>Кормление</span>
-              </Link>
-            </Button>
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2" asChild>
-              <Link href="/orders/new">
-                <ClipboardList className="h-5 w-5" />
-                <span>Новый заказ</span>
-              </Link>
-            </Button>
-            <Button variant="outline" className="h-auto py-4 flex-col gap-2" asChild>
-              <Link href="/donors/new">
-                <Package className="h-5 w-5" />
-                <span>Приём донора</span>
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Recent Activity */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Recent Banks */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Последние банки</CardTitle>
-              <CardDescription>Недавно созданные клеточные банки</CardDescription>
+                Последние операции
+              </CardTitle>
+              <CardDescription>Журнал выполненных операций</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/banks">
-                Все <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentBanks.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Банки не найдены
-                </p>
-              ) : (
-                recentBanks.map((bank) => (
-                  <div key={bank.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-purple-100 rounded-full">
-                        <Archive className="h-4 w-4 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">
-                          {bank.culture?.name || bank.id?.slice(0, 8)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {bank.bank_type} • {bank.cryo_vials_count} пробирок
-                        </p>
-                      </div>
-                    </div>
-                    <Badge className={getStatusColor(bank.status)}>
-                      {getStatusLabel(bank.status)}
-                    </Badge>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Orders */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Последние заказы</CardTitle>
-              <CardDescription>Недавние заказы на выдачу</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/orders">
-                Все <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {recentOrders.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Заказы не найдены
-                </p>
-              ) : (
-                recentOrders.map((order) => (
-                  <div key={order.id} className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-orange-100 rounded-full">
-                        <ClipboardList className="h-4 w-4 text-orange-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">
-                          {order.order_number}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {order.culture_type?.name || '-'} • {formatDate(order.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge className={getOrderStatusColor(order.status)}>
-                      {getStatusLabel(order.status)}
-                    </Badge>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Pending Operations */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Активные операции</CardTitle>
-            <CardDescription>Операции в процессе выполнения</CardDescription>
-          </div>
-          <Button variant="ghost" size="sm" asChild>
             <Link href="/operations">
-              Все <ArrowRight className="ml-2 h-4 w-4" />
+              <Button variant="ghost" size="sm">
+                Все
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             </Link>
-          </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          {pendingOperations.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <CheckCircle2 className="h-12 w-12 text-green-500 mb-4" />
-              <p className="text-sm font-medium">Нет активных операций</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Все операции завершены
-              </p>
+          {recentOperations.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground">
+              <TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-20" />
+              <p>Нет операций</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {pendingOperations.map((op) => (
-                <div key={op.id} className="flex items-center justify-between p-3 border rounded-lg">
+            <div className="space-y-3">
+              {recentOperations.map((operation) => (
+                <div 
+                  key={operation.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 rounded-full">
-                      <Clock className="h-4 w-4 text-blue-600" />
-                    </div>
+                    <Badge variant="outline">
+                      {operation.operation_type === 'OBSERVE' && '👁️ Наблюдение'}
+                      {operation.operation_type === 'FEED' && '🧪 Кормление'}
+                      {operation.operation_type === 'PASSAGE' && '🔄 Пассаж'}
+                      {operation.operation_type === 'FREEZE' && '❄️ Заморозка'}
+                      {operation.operation_type === 'THAW' && '🔥 Размораживание'}
+                      {operation.operation_type === 'DISPOSE' && '🗑️ Утилизация'}
+                    </Badge>
                     <div>
-                      <p className="text-sm font-medium">
-                        {op.type} • {op.container?.lot?.culture?.name || '-'}
+                      <p className="font-medium">
+                        {operation.lot?.culture?.name || '—'}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Начато: {formatDate(op.started_at)}
+                      <p className="text-sm text-muted-foreground">
+                        Партия: {operation.lot?.lot_number || '—'}
                       </p>
                     </div>
                   </div>
-                  <Progress value={65} className="w-24" />
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground">
+                      {operation.completed_at 
+                        ? format(new Date(operation.completed_at), "dd MMM HH:mm", { locale: ru })
+                        : format(new Date(operation.started_at), "dd MMM HH:mm", { locale: ru })}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -313,61 +362,33 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Alerts */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-yellow-800 flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
-              Требует внимания
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p className="text-sm text-yellow-700">
-                • 3 банка на карантине ожидают QC
-              </p>
-              <p className="text-sm text-yellow-700">
-                • 2 заказа ожидают подтверждения
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Срок годности</CardTitle>
-            <CardDescription>Реагенты с истекающим сроком</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Нет реагентов с истекающим сроком годности
-            </p>
-          </CardContent>
-        </Card>
+      {/* Quick Actions */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Link href="/operations/new">
+          <Button className="w-full" variant="outline">
+            <FlaskConical className="mr-2 h-4 w-4" />
+            Новая операция
+          </Button>
+        </Link>
+        <Link href="/tasks/new">
+          <Button className="w-full" variant="outline">
+            <ClipboardList className="mr-2 h-4 w-4" />
+            Новая задача
+          </Button>
+        </Link>
+        <Link href="/orders/new">
+          <Button className="w-full" variant="outline">
+            <Package className="mr-2 h-4 w-4" />
+            Новый заказ
+          </Button>
+        </Link>
+        <Link href="/scan">
+          <Button className="w-full" variant="outline">
+            <Bell className="mr-2 h-4 w-4" />
+            QR Сканирование
+          </Button>
+        </Link>
       </div>
     </div>
   )
-}
-
-function getStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    QUARANTINE: 'bg-yellow-100 text-yellow-800',
-    APPROVED: 'bg-green-100 text-green-800',
-    RESERVED: 'bg-blue-100 text-blue-800',
-    ISSUED: 'bg-purple-100 text-purple-800',
-    DISPOSE: 'bg-red-100 text-red-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
-}
-
-function getOrderStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    PENDING: 'bg-gray-100 text-gray-800',
-    APPROVED: 'bg-green-100 text-green-800',
-    IN_PROGRESS: 'bg-blue-100 text-blue-800',
-    COMPLETED: 'bg-purple-100 text-purple-800',
-    CANCELLED: 'bg-red-100 text-red-800',
-  }
-  return colors[status] || 'bg-gray-100 text-gray-800'
 }

@@ -118,18 +118,17 @@ export default function FreezePage() {
   const handleSubmit = async () => {
     setLoading(true)
     try {
-      // Создаем банк
+      // Создаем банк с правильным статусом QUARANTINE
       const bankData = {
         culture_id: lotInfo?.culture_id,
         lot_id: lotInfo?.id,
-        bank_type: 'MASTER',
-        passage_number: freezeParams.passage_number,
-        population_doubling: freezeParams.population_doubling,
-        vials_total: freezeParams.vials_count,
-        status: 'ACTIVE',
-        freeze_date: new Date().toISOString().split('T')[0],
-        cryoprotectant: freezeParams.cryoprotectant,
-        notes,
+        bank_type: 'MCB', // Master Cell Bank
+        cryo_vials_count: freezeParams.vials_count,
+        cells_per_vial: freezeParams.cells_per_vial,
+        total_cells: freezeParams.cells_per_vial * freezeParams.vials_count,
+        status: 'QUARANTINE', // Банк создается на карантине до QC
+        freezing_date: new Date().toISOString().split('T')[0],
+        notes: `Криопротектор: ${freezeParams.cryoprotectant}. ${notes}`,
       }
       
       const bank = await createBank(bankData)
@@ -138,12 +137,11 @@ export default function FreezePage() {
       for (let i = 0; i < freezeParams.vials_count; i++) {
         const vialData = {
           bank_id: bank.id,
+          lot_id: lotInfo?.id,
           position_id: vials[i]?.position?.id || null,
-          vial_number: i + 1,
           cells_count: freezeParams.cells_per_vial,
-          volume_ml: freezeParams.finalVolume,
-          status: 'FROZEN',
-          freeze_date: new Date().toISOString(),
+          freezing_date: new Date().toISOString().split('T')[0],
+          status: 'IN_STOCK',
         }
         await createCryoVial(vialData)
       }
@@ -160,9 +158,9 @@ export default function FreezePage() {
       
       await createOperation(operationData)
       
-      // Обновляем статус контейнера-донора
+      // Обновляем статус контейнера-донора на DISPOSE (использован для заморозки)
       if (selectedContainer) {
-        await updateContainerStatus(selectedContainer.id, 'HARVESTED')
+        await updateContainer(selectedContainer.id, { container_status: 'DISPOSE' })
       }
       
       router.push(`/banks/${bank.id}`)

@@ -155,23 +155,21 @@ export default function PassagePage() {
     
     setLoading(true)
     try {
-      // 1. Обновляем статус исходного контейнера
+      // 1. Обновляем статус исходного контейнера (помечаем как использованный)
       await updateContainer(selectedContainer.id, {
-        container_status: 'HARVESTED',
+        container_status: 'DISPOSE',
         morphology: metrics.morphology,
         confluent_percent: metrics.concentration > 0 ? Math.min(100, metrics.concentration / 10000) : 0,
       })
       
-      // 2. Создаём новый лот (если split - больше контейнеров чем источников)
-      const isSplit = targetContainers.length > 1
+      // 2. Создаём новый лот
       const newLot = await createLot({
         culture_id: lotInfo?.culture_id,
         parent_lot_id: lotInfo?.id,
         passage_number: passageResult.newPassageNumber,
         status: 'ACTIVE',
         start_date: new Date().toISOString().split('T')[0],
-        notes: `Пассаж из ${selectedContainer.code}. Split: ${isSplit ? 'Да' : 'Нет'}. ${notes}`,
-        split: isSplit,
+        notes: `Пассаж из ${selectedContainer.code}. ${notes}`,
       })
       
       // 3. Создаём целевые контейнеры
@@ -182,7 +180,6 @@ export default function PassagePage() {
           container_type_id: target.containerType,
           position_id: target.position?.id || null,
           container_status: 'ACTIVE',
-          code: `${lotInfo?.culture?.code}-L${lotInfo?.lot_number || 1}-P${passageResult.newPassageNumber}-${containerType?.name?.slice(0, 2).toUpperCase()}-${String(target.id).padStart(3, '0')}`,
           confluent_percent: 10, // Начальная конфлюэнтность после пассажа
           morphology: metrics.morphology,
         })
