@@ -87,17 +87,35 @@ export default function OperationsPage() {
             История операций с культурами и контейнерами
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href="/operations/new?type=FEEDING">
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/operations/observe">
+              <Eye className="mr-2 h-4 w-4" />
+              Наблюдение
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/operations/passage">
               <Activity className="mr-2 h-4 w-4" />
+              Пассаж
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/operations/thaw">
+              <Plus className="mr-2 h-4 w-4" />
+              Разморозка
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/operations/feed">
+              <Clock className="mr-2 h-4 w-4" />
               Кормление
             </Link>
           </Button>
-          <Button asChild>
-            <Link href="/operations/new?type=THAW">
-              <Plus className="mr-2 h-4 w-4" />
-              Разморозка
+          <Button size="sm" asChild>
+            <Link href="/operations/dispose">
+              <Activity className="mr-2 h-4 w-4" />
+              Утилизация
             </Link>
           </Button>
         </div>

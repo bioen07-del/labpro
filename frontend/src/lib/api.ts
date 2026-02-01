@@ -1252,6 +1252,64 @@ export async function updateCryoVialStatus(id: string, status: string) {
   return data
 }
 
+export async function getCryoVials(filters?: { bank_id?: string; status?: string }) {
+  let query = supabase
+    .from('cryo_vials')
+    .select(`
+      *,
+      bank:banks(
+        *,
+        culture:cultures(
+          *,
+          culture_type:culture_types(*)
+        )
+      ),
+      position:positions(
+        *,
+        equipment:equipment(*)
+      )
+    `)
+    .order('vial_number')
+  
+  if (filters?.bank_id) {
+    query = query.eq('bank_id', filters.bank_id)
+  }
+  if (filters?.status) {
+    query = query.eq('status', filters.status)
+  }
+  
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
+
+export async function getCryoVialById(id: string) {
+  const { data, error } = await supabase
+    .from('cryo_vials')
+    .select(`
+      *,
+      bank:banks(*),
+      position:positions(*)
+    `)
+    .eq('id', id)
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
+export async function updateCryoVial(id: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('cryo_vials')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+  
+  if (error) throw error
+  return data
+}
+
 // ==================== REAL-TIME SUBSCRIPTIONS ====================
 
 export function subscribeToOperations(callback: (payload: unknown) => void) {

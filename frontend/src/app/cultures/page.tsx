@@ -88,9 +88,11 @@ export default function CulturesPage() {
             Первичные и пассажированные культуры клеток
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Создать культуру
+        <Button asChild>
+          <Link href="/cultures/new">
+            <Plus className="mr-2 h-4 w-4" />
+            Создать культуру
+          </Link>
         </Button>
       </div>
 

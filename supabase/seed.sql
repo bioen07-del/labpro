@@ -62,13 +62,13 @@ INSERT INTO operation_types (code, name, description, requires_containers, requi
 
 -- Morphology Types
 INSERT INTO morphology_types (code, name, description) VALUES
-('SPINDLE', 'Веретенообразная', 'Веретенообразная морфология (характерно для MSC)',
-('FIBROBLAST', 'Фибробластоподобная', 'Фибробластоподобная морфология',
-('COBblestone', 'Булыжниковая', 'Булыжниковая морфология (эпителиальные)',
-('POLYGONAL', 'Полигональная', 'Полигональная форма клеток',
-('ROUND', 'Округлая', 'Округлая форма клеток',
-('STAR', 'Звёздчатая', 'Звёздчатая форма клеток',
-('CLUSTER', 'Кластеры', 'Рост кластерами',
+('SPINDLE', 'Веретенообразная', 'Веретенообразная морфология (характерно для MSC)'),
+('FIBROBLAST', 'Фибробластоподобная', 'Фибробластоподобная морфология'),
+('COBblestone', 'Булыжниковая', 'Булыжниковая морфология (эпителиальные)'),
+('POLYGONAL', 'Полигональная', 'Полигональная форма клеток'),
+('ROUND', 'Округлая', 'Округлая форма клеток'),
+('STAR', 'Звёздчатая', 'Звёздчатая форма клеток'),
+('CLUSTER', 'Кластеры', 'Рост кластерами'),
 ('MONOLAYER', 'Монослой', 'Рост монослоем');
 
 -- QC Test Types
@@ -80,13 +80,13 @@ INSERT INTO qc_test_types (code, name, duration_days, target_types) VALUES
 
 -- Dispose Reasons
 INSERT INTO dispose_reasons (code, name, description) VALUES
-('EXPIRED', 'Истёк срок годности', 'Материал или партия с истёкшим сроком годности',
-('CONTAMINATED', 'Контаминация', 'Выявлена бактериальная/грибковая контаминация',
-('MYCOPLASMA_POS', 'Микоплазма положительно', 'Положительный тест на микоплазму',
-('LOW_VIABILITY', 'Низкая жизнеспособность', 'Жизнеспособность ниже порогового значения',
-('PASSAGE_LIMIT', 'Достигнут лимит пассажей', 'Культура достигла максимального числа пассажей',
-('EXPERIMENT_END', 'Завершение эксперимента', 'Окончание экспериментальной программы',
-('QUALITY_ISSUE', 'Проблема качества', 'Несоответствие стандартам качества',
+('EXPIRED', 'Истёк срок годности', 'Материал или партия с истёкшим сроком годности'),
+('CONTAMINATED', 'Контаминация', 'Выявлена бактериальная/грибковая контаминация'),
+('MYCOPLASMA_POS', 'Микоплазма положительно', 'Положительный тест на микоплазму'),
+('LOW_VIABILITY', 'Низкая жизнеспособность', 'Жизнеспособность ниже порогового значения'),
+('PASSAGE_LIMIT', 'Достигнут лимит пассажей', 'Культура достигла максимального числа пассажей'),
+('EXPERIMENT_END', 'Завершение эксперимента', 'Окончание экспериментальной программы'),
+('QUALITY_ISSUE', 'Проблема качества', 'Несоответствие стандартам качества'),
 ('OTHER', 'Другое', 'Другая причина');
 
 -- ============================================
@@ -135,3 +135,98 @@ INSERT INTO nomenclatures (name, category, unit, storage_temp) VALUES
 ('Флакон T-175', 'CONSUMABLE', 'шт', 4),
 ('Планшет 6-луночный', 'CONSUMABLE', 'шт', 4),
 ('Криовиалы 2мл', 'CONSUMABLE', 'шт', 4);
+
+-- ============================================
+-- POSITIONS (Позиции хранения)
+-- ============================================
+
+-- Позиции в инкубаторах
+INSERT INTO positions (equipment_id, code, qr_code, path, capacity) VALUES
+((SELECT id FROM equipment WHERE code = 'INC-01'), 'INC-01-SH1', 'INC-01-SH1', 'INC-01/Полка 1', 20),
+((SELECT id FROM equipment WHERE code = 'INC-01'), 'INC-01-SH2', 'INC-01-SH2', 'INC-01/Полка 2', 20),
+((SELECT id FROM equipment WHERE code = 'INC-01'), 'INC-01-SH3', 'INC-01-SH3', 'INC-01/Полка 3', 20),
+((SELECT id FROM equipment WHERE code = 'INC-02'), 'INC-02-SH1', 'INC-02-SH1', 'INC-02/Полка 1', 20),
+((SELECT id FROM equipment WHERE code = 'INC-02'), 'INC-02-SH2', 'INC-02-SH2', 'INC-02/Полка 2', 20),
+((SELECT id FROM equipment WHERE code = 'INC-03'), 'INC-03-SH1', 'INC-03-SH1', 'INC-03/Полка 1', 20);
+
+-- Позиции в морозильниках -80°C
+INSERT INTO positions (equipment_id, code, qr_code, path, capacity) VALUES
+((SELECT id FROM equipment WHERE code = 'FREEZER-80-01'), 'FRZ-80-01-BX1', 'FRZ-80-01-BX1', 'FREEZER-80-01/Бокс 1', 100),
+((SELECT id FROM equipment WHERE code = 'FREEZER-80-01'), 'FRZ-80-01-BX2', 'FRZ-80-01-BX2', 'FREEZER-80-01/Бокс 2', 100),
+((SELECT id FROM equipment WHERE code = 'FREEZER-80-02'), 'FRZ-80-02-BX1', 'FRZ-80-02-BX1', 'FREEZER-80-02/Бокс 1', 100);
+
+-- Позиции в криохранилище LN2
+INSERT INTO positions (equipment_id, code, qr_code, path, capacity) VALUES
+((SELECT id FROM equipment WHERE code = 'CRYO-01'), 'LN2-CNS-01', 'LN2-CNS-01', 'CRYO-01/Канистра 1', 100),
+((SELECT id FROM equipment WHERE code = 'CRYO-01'), 'LN2-CNS-02', 'LN2-CNS-02', 'CRYO-01/Канистра 2', 100),
+((SELECT id FROM equipment WHERE code = 'CRYO-01'), 'LN2-CNS-03', 'LN2-CNS-03', 'CRYO-01/Канистра 3', 100);
+
+-- ============================================
+-- DONORS (Доноры)
+-- ============================================
+
+INSERT INTO donors (code, age, gender, tissue_type, collection_date, notes) VALUES
+('DN-0001', 35, 'M', 'Жировая ткань', '2025-01-15', 'Донор для MSC-P-001'),
+('DN-0002', 42, 'F', 'Костный мозг', '2025-02-20', 'Донор для MSC-P-002'),
+('DN-0003', 28, 'M', 'Кожа', '2025-03-10', 'Донор для FIB-P-001'),
+('DN-0004', 55, 'F', 'Хрящ', '2025-04-05', 'Донор для CHONDRO-P-001');
+
+-- ============================================
+-- TISSUES (Ткани)
+-- ============================================
+
+INSERT INTO tissues (donor_id, type, weight_kg, passage_yield, notes) VALUES
+((SELECT id FROM donors WHERE code = 'DN-0001'), 'Жировая ткань', 0.150, 0.85, 'Аспират из подкожной жировой клетчатки'),
+((SELECT id FROM donors WHERE code = 'DN-0002'), 'Костный мозг', 0.050, 0.75, 'Пункция подвздошной кости'),
+((SELECT id FROM donors WHERE code = 'DN-0003'), 'Кожа', 0.100, 0.90, 'Биопсия кожи предплечья'),
+((SELECT id FROM donors WHERE code = 'DN-0004'), 'Хрящ', 0.080, 0.65, 'Артроскопия коленного сустава');
+
+-- ============================================
+-- CULTURES (Культуры)
+-- ============================================
+
+INSERT INTO cultures (name, type_id, donor_id, tissue_id, status, description, coefficient, created_by) VALUES
+('MSC-P-001', (SELECT id FROM culture_types WHERE code = 'MSC'), (SELECT id FROM donors WHERE code = 'DN-0001'), (SELECT id FROM tissues WHERE donor_id = (SELECT id FROM donors WHERE code = 'DN-0001') LIMIT 1), 'ACTIVE', 'Первичная культура MSC из жировой ткани', 1.0, (SELECT id FROM users WHERE username = 'admin')),
+('MSC-P-002', (SELECT id FROM culture_types WHERE code = 'MSC'), (SELECT id FROM donors WHERE code = 'DN-0002'), (SELECT id FROM tissues WHERE donor_id = (SELECT id FROM donors WHERE code = 'DN-0002') LIMIT 1), 'ACTIVE', 'Первичная культура MSC из костного мозга', 1.0, (SELECT id FROM users WHERE username = 'admin')),
+('FIB-P-001', (SELECT id FROM culture_types WHERE code = ' fibroblast'), (SELECT id FROM donors WHERE code = 'DN-0003'), (SELECT id FROM tissues WHERE donor_id = (SELECT id FROM donors WHERE code = 'DN-0003') LIMIT 1), 'ACTIVE', 'Кожные фибробласты пассаж 3', 1.0, (SELECT id FROM users WHERE username = 'admin')),
+('CHONDRO-P-001', (SELECT id FROM culture_types WHERE code = 'CHONDRO'), (SELECT id FROM donors WHERE code = 'DN-0004'), (SELECT id FROM tissues WHERE donor_id = (SELECT id FROM donors WHERE code = 'DN-0004') LIMIT 1), 'ACTIVE', 'Первичные хондроциты', 1.0, (SELECT id FROM users WHERE username = 'admin'));
+
+-- ============================================
+-- LOTS (Партии)
+-- ============================================
+
+INSERT INTO lots (culture_id, passage_number, status, start_date, notes) VALUES
+((SELECT id FROM cultures WHERE name = 'MSC-P-001'), 1, 'ACTIVE', '2025-01-20', 'Первичный посев'),
+((SELECT id FROM cultures WHERE name = 'MSC-P-001'), 2, 'ACTIVE', '2025-01-25', 'Пассаж 2'),
+((SELECT id FROM cultures WHERE name = 'MSC-P-001'), 3, 'ACTIVE', '2025-01-30', 'Пассаж 3'),
+((SELECT id FROM cultures WHERE name = 'MSC-P-002'), 1, 'ACTIVE', '2025-02-25', 'Первичный посев'),
+((SELECT id FROM cultures WHERE name = 'FIB-P-001'), 3, 'ACTIVE', '2025-03-15', 'Пассаж 3'),
+((SELECT id FROM cultures WHERE name = 'CHONDRO-P-001'), 1, 'ACTIVE', '2025-04-10', 'Первичный посев');
+
+-- ============================================
+-- CONTAINERS (Контейнеры)
+-- ============================================
+
+-- Контейнеры для MSC-P-001 L1
+INSERT INTO containers (lot_id, code, type_id, status, confluent_percent, morphology, position_id) VALUES
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'MSC-P-001') AND passage_number = 1 LIMIT 1), 'CT-0001-L1-P1-FL75-001', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 85, 'SPINDLE', (SELECT id FROM positions WHERE code = 'INC-01-SH1')),
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'MSC-P-001') AND passage_number = 1 LIMIT 1), 'CT-0001-L1-P1-FL75-002', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 80, 'SPINDLE', (SELECT id FROM positions WHERE code = 'INC-01-SH1'));
+
+-- Контейнеры для MSC-P-001 L2 (passage 2)
+INSERT INTO containers (lot_id, code, type_id, status, confluent_percent, morphology, position_id) VALUES
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'MSC-P-001') AND passage_number = 2 LIMIT 1), 'CT-0001-L2-P2-FL75-001', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 75, 'SPINDLE', (SELECT id FROM positions WHERE code = 'INC-01-SH2')),
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'MSC-P-001') AND passage_number = 2 LIMIT 1), 'CT-0001-L2-P2-FL75-002', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 70, 'SPINDLE', (SELECT id FROM positions WHERE code = 'INC-01-SH2'));
+
+-- Контейнеры для MSC-P-002 L1
+INSERT INTO containers (lot_id, code, type_id, status, confluent_percent, morphology, position_id) VALUES
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'MSC-P-002') AND passage_number = 1 LIMIT 1), 'CT-0002-L1-P1-FL75-001', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 90, 'SPINDLE', (SELECT id FROM positions WHERE code = 'INC-02-SH1')),
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'MSC-P-002') AND passage_number = 1 LIMIT 1), 'CT-0002-L1-P1-FL75-002', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 88, 'SPINDLE', (SELECT id FROM positions WHERE code = 'INC-02-SH1'));
+
+-- Контейнеры для FIB-P-001
+INSERT INTO containers (lot_id, code, type_id, status, confluent_percent, morphology, position_id) VALUES
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'FIB-P-001') LIMIT 1), 'CT-0003-L1-P3-FL75-001', (SELECT id FROM container_types WHERE code = 'FL75'), 'ACTIVE', 95, 'FIBROBLAST', (SELECT id FROM positions WHERE code = 'INC-03-SH1'));
+
+-- Контейнеры для CHONDRO-P-001
+INSERT INTO containers (lot_id, code, type_id, status, confluent_percent, morphology, position_id) VALUES
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'CHONDRO-P-001') LIMIT 1), 'CT-0004-L1-P1-PL6-001', (SELECT id FROM container_types WHERE code = 'PL6'), 'ACTIVE', 65, 'POLYGONAL', (SELECT id FROM positions WHERE code = 'INC-01-SH3')),
+((SELECT id FROM lots WHERE culture_id = (SELECT id FROM cultures WHERE name = 'CHONDRO-P-001') LIMIT 1), 'CT-0004-L1-P1-PL6-002', (SELECT id FROM container_types WHERE code = 'PL6'), 'ACTIVE', 60, 'POLYGONAL', (SELECT id FROM positions WHERE code = 'INC-01-SH3'));
