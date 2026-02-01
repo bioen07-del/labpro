@@ -79,7 +79,7 @@ export default function FreezePage() {
   const loadData = async () => {
     try {
       const [containersData, positionsData, banksData] = await Promise.all([
-        getContainers({ status: 'ACTIVE' }),
+        getContainers({ container_status: 'ACTIVE' }),
         getPositions({ is_active: true }),
         getBanks()
       ])
@@ -174,7 +174,7 @@ export default function FreezePage() {
   }
   
   const updateContainerStatus = async (id: string, status: string) => {
-    await updateContainer(id, { status })
+    await updateContainer(id, { container_status: status })
   }
   
   return (
