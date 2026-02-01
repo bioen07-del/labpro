@@ -64,7 +64,7 @@ export default function FeedPage() {
     if (selectedContainers.length === containers.length) {
       setSelectedContainers([])
     } else {
-      setSelectedContainers(containers.map(c => c.id))
+      setSelectedContainers(containers.map((c: any) => c.id))
     }
   }
   
