@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { FlaskConical, Loader2, AlertCircle } from 'lucide-react'
+import { FlaskConical, Loader2, AlertCircle, User, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { signIn } from '@/lib/api'
+import { useAuth } from '@/lib/auth-context'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -44,6 +45,23 @@ export default function LoginPage() {
       router.refresh()
     } catch (err: any) {
       setError('Демо-аккаунт не существует. Создайте его в Supabase Dashboard → Authentication → Users → Add User')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Quick login with predefined demo accounts for different roles
+  const handleQuickLogin = async (role: string, roleEmail: string) => {
+    setLoading(true)
+    setError('')
+
+    try {
+      await signIn(roleEmail, 'demo1234')
+      router.push('/')
+      router.refresh()
+    } catch (err: any) {
+      setError(`Аккаунт ${role} не существует. ${err.message || ''}`)
       console.error(err)
     } finally {
       setLoading(false)
@@ -143,6 +161,59 @@ export default function LoginPage() {
                 'Войти как демо-пользователь'
               )}
             </Button>
+
+            {/* Quick login buttons for different roles */}
+            <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-gray-200">
+              <p className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Быстрый вход (демо-аккаунты)
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleQuickLogin('Администратор', 'admin@labpro.ru')}
+                  disabled={loading}
+                  className="text-xs"
+                >
+                  <User className="h-3 w-3 mr-1" />
+                  Админ
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleQuickLogin('Оператор', 'operator@labpro.ru')}
+                  disabled={loading}
+                  className="text-xs"
+                >
+                  <User className="h-3 w-3 mr-1" />
+                  Оператор
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleQuickLogin('Лаборант', 'laborant@labpro.ru')}
+                  disabled={loading}
+                  className="text-xs"
+                >
+                  <User className="h-3 w-3 mr-1" />
+                  Лаборант
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleQuickLogin('Менеджер', 'manager@labpro.ru')}
+                  disabled={loading}
+                  className="text-xs"
+                >
+                  <User className="h-3 w-3 mr-1" />
+                  Менеджер
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Пароль для всех: demo1234
+              </p>
+            </div>
           </CardContent>
         </Card>
 
