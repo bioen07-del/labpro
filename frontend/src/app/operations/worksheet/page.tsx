@@ -146,7 +146,7 @@ Generated: ${formatDate(worksheet.generated_at)}
 Дата создания: ${formatDate(worksheet.lot.created_at)}
 
 === КОНТЕЙНЕРЫ ===
-${worksheet.containers.map(c => 
+${worksheet.containers.map((c: any) => 
   `- ${c.code} | ${c.type} | Конфлюэнтность: ${c.confluent_percent}% | ${c.position}`
 ).join('\n')}
 
