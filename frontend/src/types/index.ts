@@ -93,14 +93,15 @@ export interface Container {
   lot_id: string
   lot?: Lot
   code: string
-  type_id: string
+  container_type_id: string
   type?: ContainerType
-  status: ContainerStatus
+  container_status: ContainerStatus
   parent_container_id?: string
   position_id?: string
   position?: Position
   confluent_percent?: number
   morphology?: string
+  passage_count?: number
   contaminated: boolean
   placed_at?: string
   created_by?: string

@@ -82,7 +82,7 @@ export default function ThawPage() {
       const [banksData, positionsData, containersData] = await Promise.all([
         getBanks({ status: 'ACTIVE' }),
         getPositions({ is_active: true }),
-        getContainers({ status: 'ACTIVE' })
+        getContainers({ container_status: 'ACTIVE' })
       ])
       setBanks(banksData || [])
       setPositions(positionsData || [])
@@ -160,7 +160,7 @@ export default function ThawPage() {
         lot_id: newLot.id,
         container_type_id: resultParams.containerType,
         position_id: resultParams.position?.id || null,
-        status: 'ACTIVE',
+        container_status: 'ACTIVE',
         code: `${lotInfo?.culture?.code}-L${newLot.lot_number || 1}-P${newPassage}-${containerType?.name?.slice(0, 2).toUpperCase()}-THW-001`,
         confluent_percent: 10, // Начальная конфлюэнтность после разморозки
         notes: `Разморозка из ${selectedVials.length} виал(ы). Метод: ${thawParams.thawMethod}. ${notes}`,

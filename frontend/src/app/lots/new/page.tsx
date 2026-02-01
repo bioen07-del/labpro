@@ -90,8 +90,8 @@ export default function NewLotPage() {
         const container = {
           lot_id: createdLot.id,
           code: `${culture?.code || 'CT'}-${createdLot.id.slice(0, 4)}-P${passageNumber}-${i + 1}`,
-          type_id: containerTypeId || null,
-          status: 'ACTIVE',
+          container_type_id: containerTypeId || null,
+          container_status: 'ACTIVE',
           confluent_percent: 0,
         }
         await createContainer(container)

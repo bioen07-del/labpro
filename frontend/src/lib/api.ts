@@ -199,7 +199,7 @@ export async function getBankById(id: string) {
 
 // ==================== CONTAINERS ====================
 
-export async function getContainers(filters?: { lot_id?: string; status?: string }) {
+export async function getContainers(filters?: { lot_id?: string; container_status?: string }) {
   let query = supabase
     .from('containers')
     .select(`
@@ -218,8 +218,8 @@ export async function getContainers(filters?: { lot_id?: string; status?: string
   if (filters?.lot_id) {
     query = query.eq('lot_id', filters.lot_id)
   }
-  if (filters?.status) {
-    query = query.eq('status', filters.status)
+  if (filters?.container_status) {
+    query = query.eq('container_status', filters.container_status)
   }
   
   const { data, error } = await query
@@ -407,9 +407,15 @@ export async function createOperationDispose(data: DisposeData) {
       throw new Error('Unknown target_type')
   }
   
+  // Для контейнеров используем container_status, для остальных - status
+  let updateField = 'status'
+  if (data.target_type === 'container') {
+    updateField = 'container_status'
+  }
+  
   const { error: updateError } = await supabase
     .from(tableName)
-    .update({ status: statusValue })
+    .update({ [updateField]: statusValue })
     .eq('id', data.target_id)
   
   if (updateError) throw updateError
@@ -420,7 +426,7 @@ export async function createOperationDispose(data: DisposeData) {
       .from('containers')
       .select('id')
       .eq('lot_id', lot_id)
-      .neq('status', 'DISPOSE')
+      .neq('container_status', 'DISPOSE')
     
     if (!remainingContainers || remainingContainers.length === 0) {
       await supabase
@@ -1759,7 +1765,7 @@ export async function createOperationFreeze(data: FreezeData) {
   // Обновляем контейнер - помечаем как замороженный
   await supabase
     .from('containers')
-    .update({ status: 'FROZEN' })
+    .update({ container_status: 'FROZEN' })
     .eq('id', data.container_id)
   
   return { operation, cryoVials }
