@@ -54,10 +54,10 @@ export const mockLots: Lot[] = [
 
 // Containers
 export const mockContainers: Container[] = [
-  { id: '1', lot_id: '1', code: 'CT-0001-L1-P1-FL75-001', container_type_id: '1', container_status: 'ACTIVE', position_id: '1', confluent_percent: 85, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
-  { id: '2', lot_id: '1', code: 'CT-0001-L1-P1-FL75-002', container_type_id: '1', container_status: 'ACTIVE', position_id: '2', confluent_percent: 80, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
-  { id: '3', lot_id: '2', code: 'CT-0001-L1-P2-FL75-001', container_type_id: '1', container_status: 'ACTIVE', position_id: '1', confluent_percent: 75, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-20T10:00:00Z', created_at: '2026-01-20T00:00:00Z' },
-  { id: '4', lot_id: '3', code: 'CT-0002-L1-P1-FL75-001', container_type_id: '1', container_status: 'ACTIVE', position_id: '2', confluent_percent: 70, morphology: 'Cobblestone', contaminated: false, placed_at: '2026-01-18T10:00:00Z', created_at: '2026-01-18T00:00:00Z' },
+  { id: '1', lot_id: '1', code: 'CT-0001-L1-P1-FL75-001', container_type_id: '1', status: 'IN_CULTURE', position_id: '1', confluent_percent: 85, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
+  { id: '2', lot_id: '1', code: 'CT-0001-L1-P1-FL75-002', container_type_id: '1', status: 'IN_CULTURE', position_id: '2', confluent_percent: 80, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
+  { id: '3', lot_id: '2', code: 'CT-0001-L1-P2-FL75-001', container_type_id: '1', status: 'IN_CULTURE', position_id: '1', confluent_percent: 75, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-20T10:00:00Z', created_at: '2026-01-20T00:00:00Z' },
+  { id: '4', lot_id: '3', code: 'CT-0002-L1-P1-FL75-001', container_type_id: '1', status: 'IN_CULTURE', position_id: '2', confluent_percent: 70, morphology: 'Cobblestone', contaminated: false, placed_at: '2026-01-18T10:00:00Z', created_at: '2026-01-18T00:00:00Z' },
 ]
 
 // Banks
@@ -173,13 +173,12 @@ export const mockCultures: Culture[] = [
 
 // Dashboard Stats
 export const mockDashboardStats: DashboardStats = {
-  total_cultures: 2,
-  active_cultures: 2,
-  total_banks: 2,
-  pending_orders: 1,
-  expiring_batches: 1,
-  pending_tasks: 4,
-  unread_notifications: 2,
+  totalCultures: 2,
+  activeCultures: 2,
+  totalBanks: 2,
+  pendingOrders: 1,
+  pendingTasks: 4,
+  activeContainers: 4,
 }
 
 // Helper functions for mock data
