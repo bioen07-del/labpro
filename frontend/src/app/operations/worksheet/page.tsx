@@ -156,7 +156,7 @@ ${worksheet.containers.map((c: any) =>
 Планируемый сбор: ${worksheet.schedule.estimated_harvest}
 
 === ПОСЛЕДНИЕ ОПЕРАЦИИ ===
-${worksheet.recent_operations.map(op => 
+${worksheet.recent_operations.map((op: any) => 
   `- ${op.type} | ${formatDate(op.date)}`
 ).join('\n')}
 
