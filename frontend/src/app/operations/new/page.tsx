@@ -68,11 +68,9 @@ const OPERATION_CONFIG: Record<OperationType, { title: string; description: stri
   },
 }
 
-export default function NewOperationPage() {
+// Компонент с логикой (содержит useSearchParams)
+function NewOperationContent({ initialType }: { initialType: OperationType }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const initialType = (searchParams.get('type')?.toUpperCase() as OperationType) || 'PASSAGE'
-  
   const [activeTab, setActiveTab] = useState<OperationType>(initialType)
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState(1)
@@ -185,14 +183,6 @@ export default function NewOperationPage() {
   }
   
   return (
-    <Suspense fallback={
-      <div className="container py-6 flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-muted-foreground">Загрузка...</p>
-        </div>
-      </div>
-    }>
     <div className="container py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -417,7 +407,7 @@ export default function NewOperationPage() {
                           <Select 
                             value={mu.batch?.id || ''} 
                             onValueChange={(v) => {
-                              const batch = containers.find(b => b.id === v) // Исправить на batches
+                              const batch = containers.find(b => b.id === v)
                               const updated = [...mediaUsage]
                               updated[index].batch = batch
                               setMediaUsage(updated)
@@ -543,6 +533,29 @@ export default function NewOperationPage() {
         </Button>
       </div>
     </div>
+  )
+}
+
+// Компонент-обёртка для получения searchParams
+function NewOperationWrapper() {
+  const searchParams = useSearchParams()
+  const initialType = (searchParams.get('type')?.toUpperCase() as OperationType) || 'PASSAGE'
+  
+  return <NewOperationContent initialType={initialType} />
+}
+
+// Главный экспорт с Suspense
+export default function NewOperationPage() {
+  return (
+    <Suspense fallback={
+      <div className="container py-6 flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    }>
+      <NewOperationWrapper />
     </Suspense>
   )
 }
