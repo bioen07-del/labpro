@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
+import { AuthProvider } from "@/lib/auth-context";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -22,9 +23,11 @@ export default function RootLayout({
     <html lang="ru" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased bg-gray-50 w-full overflow-x-hidden`}>
         <Header />
-        <main className="min-h-screen w-full">
-          {children}
-        </main>
+        <AuthProvider>
+          <main className="min-h-screen w-full">
+            {children}
+          </main>
+        </AuthProvider>
       </body>
     </html>
   );

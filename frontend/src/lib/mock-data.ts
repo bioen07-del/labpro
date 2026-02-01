@@ -63,7 +63,7 @@ export const mockContainers: Container[] = [
 // Banks
 export const mockBanks: Bank[] = [
   { id: '1', culture_id: '1', lot_id: '1', bank_type: 'MCB', status: 'APPROVED', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: true, freezing_date: '2026-01-25', expiration_date: '2031-01-25', created_at: '2026-01-25T00:00:00Z' },
-  { id: '2', culture_id: '1', lot_id: '2', bank_type: 'WCB', status: 'QUARANTINE', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: false, freezing_date: '2026-01-28', created_at: '2026-01-28T00:00:00Z' },
+  { id: '2', culture_id: '1', lot_id: '2', bank_type: 'WCB', status: 'QC_PENDING', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: false, freezing_date: '2026-01-28', created_at: '2026-01-28T00:00:00Z' },
 ]
 
 // CryoVials
@@ -76,7 +76,7 @@ export const mockCryoVials: CryoVial[] = [
 // Nomenclatures
 export const mockNomenclatures: Nomenclature[] = [
   { id: '1', name: 'DMEM/F12 (1:1)', category: 'MEDIUM', unit: 'мл', storage_temp: 4, is_active: true, created_at: '2026-01-01T00:00:00Z' },
-  { id: '2', name: 'FBS (эмбриональная бычья сыворотка)', category: 'SERUM', unit: 'мл', storage_temp: -20, is_active: true, created_at: '2026-01-01T00:00:00Z' },
+  { id: '2', name: 'FBS (эмбриональная бычья сыворотка)', category: 'REAGENT', unit: 'мл', storage_temp: -20, is_active: true, created_at: '2026-01-01T00:00:00Z' },
   { id: '3', name: 'Пенициллин-Стрептомицин', category: 'REAGENT', unit: 'мл', storage_temp: -20, is_active: true, created_at: '2026-01-01T00:00:00Z' },
   { id: '4', name: 'Флакон T-75', category: 'CONSUMABLE', unit: 'шт', storage_temp: 4, is_active: true, created_at: '2026-01-01T00:00:00Z' },
 ]

@@ -1,204 +1,502 @@
-ы в супабейс-- LabPro Database Migration
--- Date: 2026-02-01
--- Purpose: Align schema with frontend code
--- Safe migration with idempotent checks
+-- Schema Updates for LabPro
+-- Date: 30.01.2026
+-- Note: Updated to match actual database schema
 
--- 1. Check and rename containers.status -> container_status
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'containers' AND column_name = 'status') THEN
-    ALTER TABLE containers RENAME COLUMN status TO container_status;
-  END IF;
-END $$;
+-- ============================================
+-- ENUM TYPES
+-- ============================================
 
--- 2. Check and rename containers.type_id -> container_type_id
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'containers' AND column_name = 'type_id') THEN
-    ALTER TABLE containers RENAME COLUMN type_id TO container_type_id;
-  END IF;
-END $$;
+-- Drop existing enums if they exist
+DROP TYPE IF EXISTS container_status CASCADE;
+DROP TYPE IF EXISTS bank_type CASCADE;
+DROP TYPE IF EXISTS bank_status CASCADE;
+DROP TYPE IF EXISTS qc_status CASCADE;
+DROP TYPE IF EXISTS qc_result CASCADE;
+DROP TYPE IF EXISTS culture_status CASCADE;
+DROP TYPE IF EXISTS order_type CASCADE;
+DROP TYPE IF EXISTS order_status CASCADE;
+DROP TYPE IF EXISTS operation_type CASCADE;
+DROP TYPE IF EXISTS operation_status CASCADE;
+DROP TYPE IF EXISTS batch_status CASCADE;
 
--- 3. Add passage_count to containers if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'containers' AND column_name = 'passage_count') THEN
-    ALTER TABLE containers ADD COLUMN passage_count INTEGER DEFAULT 0;
-  END IF;
-END $$;
+-- Create enums
+CREATE TYPE container_status AS ENUM ('IN_CULTURE', 'IN_BANK', 'ISSUED', 'DISPOSE', 'QUARANTINE');
+CREATE TYPE bank_type AS ENUM ('MCB', 'WCB', 'RWB');
+CREATE TYPE bank_status AS ENUM ('QUARANTINE', 'APPROVED', 'RESERVED', 'ISSUED', 'DISPOSE');
+CREATE TYPE qc_status AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED');
+CREATE TYPE qc_result AS ENUM ('PASSED', 'FAILED', 'INCONCLUSIVE');
+CREATE TYPE culture_status AS ENUM ('ACTIVE', 'ARCHIVED', 'DISPOSE', 'QUARANTINE');
+CREATE TYPE order_type AS ENUM ('STANDARD', 'URGENT', 'RESEARCH');
+CREATE TYPE order_status AS ENUM ('PENDING', 'APPROVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD');
+CREATE TYPE operation_type AS ENUM ('FEEDING', 'PASSAGE', 'FREEZE', 'THAW', 'OBSERVE', 'QC', 'DISPOSE');
+CREATE TYPE operation_status AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ON_HOLD');
+CREATE TYPE batch_status AS ENUM ('AVAILABLE', 'RESERVED', 'USED', 'EXPIRED', 'QUARANTINE');
 
--- 4. Add freezing_date to cryo_vials if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cryo_vials' AND column_name = 'freezing_date') THEN
-    ALTER TABLE cryo_vials ADD COLUMN freezing_date DATE;
-  END IF;
-END $$;
+-- ============================================
+-- REFERENCE TABLES
+-- ============================================
 
--- 5. Add lot_id to cryo_vials if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cryo_vials' AND column_name = 'lot_id') THEN
-    ALTER TABLE cryo_vials ADD COLUMN lot_id UUID REFERENCES lots(id);
-  END IF;
-END $$;
+-- Culture Types
+CREATE TABLE IF NOT EXISTS culture_types (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 6. Add current_volume_ml to ready_media if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ready_media' AND column_name = 'current_volume_ml') THEN
-    ALTER TABLE ready_media ADD COLUMN current_volume_ml DECIMAL(10,2);
-  END IF;
-END $$;
+-- Container Types
+CREATE TABLE IF NOT EXISTS container_types (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    capacity_ml NUMERIC,
+    dimensions TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 7. Add current_temperature to equipment if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'equipment' AND column_name = 'current_temperature') THEN
-    ALTER TABLE equipment ADD COLUMN current_temperature DECIMAL(5,1);
-  END IF;
-END $$;
+-- Morphology Types
+CREATE TABLE IF NOT EXISTS morphology_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 8. Create equipment_logs table if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'equipment_logs') THEN
-    CREATE TABLE equipment_logs (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE,
-      temperature DECIMAL(5,1),
-      notes TEXT,
-      logged_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    );
-  END IF;
-END $$;
+-- Dispose Reasons
+CREATE TABLE IF NOT EXISTS dispose_reasons (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 9. Add missing fields to operation_containers
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operation_containers' AND column_name = 'notes') THEN ALTER TABLE operation_containers ADD COLUMN notes TEXT; END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operation_containers' AND column_name = 'medium_id') THEN ALTER TABLE operation_containers ADD COLUMN medium_id UUID REFERENCES ready_media(id); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operation_containers' AND column_name = 'volume_ml') THEN ALTER TABLE operation_containers ADD COLUMN volume_ml DECIMAL(10,2); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operation_containers' AND column_name = 'split_ratio') THEN ALTER TABLE operation_containers ADD COLUMN split_ratio VARCHAR(20); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operation_containers' AND column_name = 'new_confluent_percent') THEN ALTER TABLE operation_containers ADD COLUMN new_confluent_percent INTEGER; END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operation_containers' AND column_name = 'seeded_cells') THEN ALTER TABLE operation_containers ADD COLUMN seeded_cells DECIMAL(15,2); END IF; END $$;
+-- ============================================
+-- ENTITY TABLES
+-- ============================================
 
--- 10. Update check_lot_closure function
-DROP TRIGGER IF EXISTS trigger_check_lot_closure ON containers;
-DROP FUNCTION IF EXISTS check_lot_closure();
+-- Donors
+CREATE TABLE IF NOT EXISTS donors (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    first_name TEXT,
+    last_name TEXT,
+    birth_date DATE,
+    gender TEXT,
+    blood_type TEXT,
+    consent_date DATE,
+    consent_number TEXT,
+    status TEXT DEFAULT 'ACTIVE',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
 
-CREATE OR REPLACE FUNCTION check_lot_closure()
-RETURNS TRIGGER AS $$
-DECLARE
-  v_active_containers INTEGER;
-  v_lot_id UUID;
-BEGIN
-  IF TG_TABLE_NAME = 'containers' AND NEW.container_status = 'DISPOSE' THEN
-    v_lot_id := NEW.lot_id;
-    SELECT COUNT(*) INTO v_active_containers
-    FROM containers
-    WHERE lot_id = v_lot_id AND container_status != 'DISPOSE';
-    IF v_active_containers = 0 THEN
-      UPDATE lots SET status = 'CLOSED', end_date = NOW()::date WHERE id = v_lot_id;
-    END IF;
-  END IF;
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
+-- Users
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email TEXT NOT NULL UNIQUE,
+    full_name TEXT,
+    role TEXT DEFAULT 'OPERATOR',
+    department TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
 
-CREATE TRIGGER trigger_check_lot_closure
-  AFTER UPDATE ON containers
-  FOR EACH ROW
-  WHEN (NEW.container_status = 'DISPOSE')
-  EXECUTE FUNCTION check_lot_closure();
+-- Nomenclatures
+CREATE TABLE IF NOT EXISTS nomenclatures (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    category TEXT,
+    catalog_number TEXT,
+    manufacturer TEXT,
+    unit TEXT,
+    storage_requirements TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 11. Create increment_passage_count function
-CREATE OR REPLACE FUNCTION increment_passage_count(row_id UUID)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE containers SET passage_count = COALESCE(passage_count, 0) + 1 WHERE id = row_id;
-END;
-$$ language 'plpgsql';
+-- Equipment
+CREATE TABLE IF NOT EXISTS equipment (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    model TEXT,
+    serial_number TEXT,
+    location TEXT,
+    status TEXT DEFAULT 'ACTIVE',
+    last_maintenance DATE,
+    next_maintenance DATE,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    current_temperature NUMERIC
+);
 
--- 12. Create indexes
-CREATE INDEX IF NOT EXISTS idx_containers_container_status ON containers(container_status);
-CREATE INDEX IF NOT EXISTS idx_cryo_vials_lot ON cryo_vials(lot_id);
-CREATE INDEX IF NOT EXISTS idx_ready_media_current_volume ON ready_media(current_volume_ml) WHERE current_volume_ml IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_equipment_current_temp ON equipment(current_temperature) WHERE current_temperature IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_equipment_logs_equipment ON equipment_logs(equipment_id);
-CREATE INDEX IF NOT EXISTS idx_equipment_logs_logged_at ON equipment_logs(logged_at);
+-- Positions
+CREATE TABLE IF NOT EXISTS positions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    equipment_id UUID REFERENCES equipment(id),
+    path TEXT NOT NULL UNIQUE,
+    qr_code TEXT UNIQUE,
+    is_active BOOLEAN DEFAULT true,
+    capacity INTEGER,
+    current_load INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 13. Add cells_count to cryo_vials if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cryo_vials' AND column_name = 'cells_count') THEN
-    ALTER TABLE cryo_vials ADD COLUMN cells_count BIGINT;
-  END IF;
-END $$;
+-- ============================================
+-- SAMPLE & STORAGE TABLES
+-- ============================================
 
--- 14. Add status to cryo_vials if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cryo_vials' AND column_name = 'status') THEN
-    ALTER TABLE cryo_vials ADD COLUMN status VARCHAR(20) DEFAULT 'IN_STOCK';
-  END IF;
-END $$;
+-- Tissues
+CREATE TABLE IF NOT EXISTS tissues (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    donor_id UUID REFERENCES donors(id),
+    tissue_type TEXT NOT NULL,
+    collection_date DATE,
+    collection_location TEXT,
+    preservation_method TEXT,
+    quality_grade TEXT,
+    storage_requirements TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 15. Add cryo_vials_count and total_cells to banks if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'banks' AND column_name = 'cryo_vials_count') THEN
-    ALTER TABLE banks ADD COLUMN cryo_vials_count INTEGER DEFAULT 0;
-  END IF;
-END $$;
+-- Cultures
+CREATE TABLE IF NOT EXISTS cultures (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    type_id UUID REFERENCES culture_types(id),
+    donor_id UUID REFERENCES donors(id),
+    tissue_id UUID REFERENCES tissues(id),
+    passage_number INTEGER DEFAULT 0,
+    source TEXT,
+    received_date DATE,
+    status TEXT DEFAULT 'ACTIVE',
+    characteristics TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    coefficient NUMERIC,
+    coefficient_updated_at TIMESTAMPTZ
+);
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'banks' AND column_name = 'total_cells') THEN
-    ALTER TABLE banks ADD COLUMN total_cells BIGINT;
-  END IF;
-END $$;
+-- Lots
+CREATE TABLE IF NOT EXISTS lots (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    lot_number TEXT NOT NULL UNIQUE,
+    culture_id UUID REFERENCES cultures(id),
+    passage_number INTEGER NOT NULL,
+    seeded_at TIMESTAMPTZ,
+    harvest_at TIMESTAMPTZ,
+    initial_cells NUMERIC,
+    final_cells NUMERIC,
+    viability NUMERIC,
+    status TEXT DEFAULT 'ACTIVE',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 16. Add cells_per_vial to banks if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'banks' AND column_name = 'cells_per_vial') THEN
-    ALTER TABLE banks ADD COLUMN cells_per_vial BIGINT;
-  END IF;
-END $$;
+-- Banks
+CREATE TABLE IF NOT EXISTS banks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    culture_id UUID REFERENCES cultures(id),
+    lot_id UUID REFERENCES lots(id),
+    bank_type TEXT NOT NULL,
+    freezing_date DATE,
+    freezing_method TEXT,
+    cryo_vials_count INTEGER DEFAULT 0,
+    cells_per_vial NUMERIC,
+    total_cells NUMERIC,
+    storage_location TEXT,
+    shelf_position TEXT,
+    qc_passed BOOLEAN DEFAULT false,
+    qc_date DATE,
+    status TEXT DEFAULT 'QUARANTINE',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 17. Add missing fields to operations table
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operations' AND column_name = 'operator_id') THEN
-    ALTER TABLE operations ADD COLUMN operator_id UUID REFERENCES auth.users(id);
-  END IF;
-END $$;
+-- Cryo Vials
+CREATE TABLE IF NOT EXISTS cryo_vials (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    bank_id UUID REFERENCES banks(id),
+    vial_number TEXT,
+    position_in_box TEXT,
+    cells_count NUMERIC,
+    freezing_date DATE,
+    status TEXT DEFAULT 'AVAILABLE',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    lot_id UUID REFERENCES lots(id)
+);
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operations' AND column_name = 'completed_at') THEN
-    ALTER TABLE operations ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE;
-  END IF;
-END $$;
+-- Containers
+CREATE TABLE IF NOT EXISTS containers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    lot_id UUID REFERENCES lots(id),
+    bank_id UUID REFERENCES banks(id),
+    container_type_id UUID REFERENCES container_types(id),
+    position_id UUID REFERENCES positions(id),
+    status TEXT DEFAULT 'IN_CULTURE',
+    seeded_at TIMESTAMPTZ,
+    passage_number INTEGER,
+    cells_count NUMERIC,
+    viability NUMERIC,
+    media_type TEXT,
+    notes TEXT,
+    placed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    confluent_percent INTEGER,
+    morphology TEXT,
+    contaminated BOOLEAN DEFAULT false,
+    passage_count INTEGER DEFAULT 0
+);
 
--- 18. Create update_cryo_vial_status function
-CREATE OR REPLACE FUNCTION update_cryo_vial_status()
-RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.status = 'THAWED' THEN
-    UPDATE cryo_vials SET status = 'THAWED', thaw_date = NOW()::date WHERE id = NEW.id;
-  END IF;
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
+-- ============================================
+-- OPERATIONS TABLES
+-- ============================================
 
--- 19. Enable RLS for equipment_logs
-ALTER TABLE equipment_logs ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow authenticated access" ON equipment_logs FOR ALL USING (auth.role() IN ('authenticated'));
+-- Operations
+CREATE TABLE IF NOT EXISTS operations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    type TEXT NOT NULL,
+    container_id UUID REFERENCES containers(id),
+    bank_id UUID REFERENCES banks(id),
+    lot_id UUID REFERENCES lots(id),
+    operator_id UUID REFERENCES users(id),
+    status TEXT DEFAULT 'PENDING',
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    parameters JSONB,
+    notes TEXT,
+    result TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
 
--- 20. Enable RLS for cryo_vials
-ALTER TABLE cryo_vials ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow authenticated access" ON cryo_vials FOR ALL USING (auth.role() IN ('authenticated'));
+-- Operation Containers
+CREATE TABLE IF NOT EXISTS operation_containers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operation_id UUID REFERENCES operations(id),
+    container_id UUID REFERENCES containers(id),
+    role TEXT DEFAULT 'SOURCE',
+    confluent_percent INTEGER,
+    morphology TEXT,
+    contaminated BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    notes TEXT,
+    medium_id UUID,
+    volume_ml NUMERIC,
+    split_ratio VARCHAR(50),
+    new_confluent_percent INTEGER,
+    seeded_cells NUMERIC
+);
 
--- 21. Enable RLS for banks
-ALTER TABLE banks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow authenticated access" ON banks FOR ALL USING (auth.role() IN ('authenticated'));
+-- Operation Media
+CREATE TABLE IF NOT EXISTS operation_media (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operation_id UUID REFERENCES operations(id),
+    batch_id UUID,
+    ready_medium_id UUID,
+    quantity_ml NUMERIC,
+    purpose TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Operation Metrics
+CREATE TABLE IF NOT EXISTS operation_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    operation_id UUID REFERENCES operations(id),
+    concentration NUMERIC,
+    viability_percent NUMERIC,
+    total_cells NUMERIC,
+    volume_ml NUMERIC,
+    passage_yield NUMERIC,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================
+-- INVENTORY TABLES
+-- ============================================
+
+-- Batches
+CREATE TABLE IF NOT EXISTS batches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nomenclature_id UUID REFERENCES nomenclatures(id),
+    batch_number TEXT NOT NULL,
+    quantity NUMERIC NOT NULL,
+    unit TEXT DEFAULT 'шт',
+    expiration_date DATE,
+    manufacturing_date DATE,
+    supplier TEXT,
+    storage_location TEXT,
+    status TEXT DEFAULT 'AVAILABLE',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Batch Reservations
+CREATE TABLE IF NOT EXISTS batch_reservations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    batch_id UUID REFERENCES batches(id),
+    operation_id UUID REFERENCES operations(id),
+    quantity NUMERIC NOT NULL,
+    reserved_at TIMESTAMPTZ DEFAULT now(),
+    released_at TIMESTAMPTZ,
+    notes TEXT
+);
+
+-- Inventory Movements
+CREATE TABLE IF NOT EXISTS inventory_movements (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    batch_id UUID REFERENCES batches(id),
+    movement_type TEXT NOT NULL,
+    quantity NUMERIC NOT NULL,
+    from_location TEXT,
+    to_location TEXT,
+    moved_by_id UUID REFERENCES users(id),
+    reference_type TEXT,
+    reference_id UUID,
+    notes TEXT,
+    moved_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Ready Media
+CREATE TABLE IF NOT EXISTS ready_media (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT NOT NULL UNIQUE,
+    media_type TEXT NOT NULL,
+    lot_number TEXT,
+    preparation_date DATE,
+    expiration_date DATE,
+    volume_ml NUMERIC,
+    storage_position_id UUID REFERENCES positions(id),
+    status TEXT DEFAULT 'PREPARED',
+    activated_at TIMESTAMPTZ,
+    created_by_id UUID REFERENCES users(id),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    current_volume_ml NUMERIC
+);
+
+-- ============================================
+-- QC & TASKS TABLES
+-- ============================================
+
+-- QC Tests
+CREATE TABLE IF NOT EXISTS qc_tests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    test_type TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id UUID NOT NULL,
+    status TEXT DEFAULT 'PENDING',
+    result TEXT,
+    assigned_to UUID REFERENCES users(id),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    methodology TEXT,
+    results_data JSONB,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Tasks
+CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT DEFAULT 'MEDIUM',
+    status TEXT DEFAULT 'PENDING',
+    due_date DATE,
+    container_id UUID REFERENCES containers(id),
+    bank_id UUID REFERENCES banks(id),
+    order_id UUID,
+    assigned_to UUID REFERENCES users(id),
+    completed_at TIMESTAMPTZ,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================
+-- ORDERS TABLES
+-- ============================================
+
+-- Orders
+CREATE TABLE IF NOT EXISTS orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_number TEXT NOT NULL UNIQUE,
+    culture_type_id UUID REFERENCES culture_types(id),
+    bank_id UUID REFERENCES banks(id),
+    order_type TEXT DEFAULT 'STANDARD',
+    status TEXT DEFAULT 'PENDING',
+    quantity INTEGER NOT NULL,
+    volume_per_unit NUMERIC DEFAULT 1,
+    requester_name TEXT,
+    requester_department TEXT,
+    requester_email TEXT,
+    purpose TEXT,
+    due_date DATE,
+    approved_by UUID REFERENCES users(id),
+    approved_at TIMESTAMPTZ,
+    issued_at TIMESTAMPTZ,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Order Items
+CREATE TABLE IF NOT EXISTS order_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID REFERENCES orders(id),
+    bank_id UUID REFERENCES banks(id),
+    cryo_vial_id UUID REFERENCES cryo_vials(id),
+    quantity INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ============================================
+-- AUDIT & LOGS
+-- ============================================
+
+-- Audit Logs
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id),
+    action TEXT NOT NULL,
+    entity_type VARCHAR(100) NOT NULL,
+    entity_id UUID NOT NULL,
+    old_value JSONB,
+    new_value JSONB,
+    description TEXT,
+    ip_address VARCHAR(100),
+    user_agent VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Equipment Logs
+CREATE TABLE IF NOT EXISTS equipment_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipment_id UUID REFERENCES equipment(id),
+    temperature NUMERIC,
+    notes TEXT,
+    logged_at TIMESTAMPTZ DEFAULT now()
+);

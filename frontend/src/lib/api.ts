@@ -1,5 +1,5 @@
 // API functions for LabPro - Supabase integration
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
 import type { 
   CultureType, 
   Culture, 
@@ -13,15 +13,7 @@ import type {
   User
 } from '@/types'
 
-// Initialize Supabase client - uses environment variables from Vercel
-// Fallback значения для разработки (должны быть переопределены в Vercel Dashboard)
-const DEFAULT_SUPABASE_URL = 'https://cyyqzuuozuzlhdlzvohh.supabase.co'
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5eXF6dXVvenV6bGhkbHp2b2hoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4NDMwOTksImV4cCI6MjA4NTQxOTA5OX0.XsrKQc78LNYVZbqPpOlg4zSyFctgFTagUGOYrE5yn2k'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Supabase client is imported from '@/lib/supabase' - single client for the entire app
 
 // ==================== CULTURE TYPES ====================
 
@@ -747,6 +739,45 @@ export async function createTissue(tissue: Record<string, unknown>) {
 export async function getContainerTypes() {
   const { data, error } = await supabase
     .from('container_types')
+    .select('*')
+    .eq('is_active', true)
+    .order('name')
+  
+  if (error) throw error
+  return data
+}
+
+// ==================== MORPHOLOGY TYPES ====================
+
+export async function getMorphologyTypes() {
+  const { data, error } = await supabase
+    .from('morphology_types')
+    .select('*')
+    .eq('is_active', true)
+    .order('name')
+  
+  if (error) throw error
+  return data
+}
+
+// ==================== MEDIUM TYPES ====================
+
+export async function getMediumTypes() {
+  const { data, error } = await supabase
+    .from('medium_types')
+    .select('*')
+    .eq('is_active', true)
+    .order('name')
+  
+  if (error) throw error
+  return data
+}
+
+// ==================== DISPOSE REASONS ====================
+
+export async function getDisposeReasons() {
+  const { data, error } = await supabase
+    .from('dispose_reasons')
     .select('*')
     .eq('is_active', true)
     .order('name')
@@ -1667,23 +1698,57 @@ export async function getUnreadNotificationCount() {
 
 // ==================== PASSAGE OPERATIONS ====================
 
-export interface PassageContainerData {
+export interface PassageSourceData {
   container_id: string
-  split_ratio: number
-  new_confluent_percent: number
-  seeded_cells: number
-  notes?: string
+  split_ratio: number // 0-1, какая часть используется для passage
+  confluent_percent: number
+  viability_percent: number
+  concentration: number // клеток/мл
+  volume_ml: number
+}
+
+export interface PassageResultData {
+  container_type_id: string
+  target_count: number // количество новых контейнеров
+  position_id: string // позиция для новых контейнеров
+}
+
+export interface PassageMediaData {
+  dissociation_batch_id?: string
+  dissociation_rm_id?: string
+  wash_batch_id?: string
+  wash_rm_id?: string
 }
 
 export async function createOperationPassage(data: {
-  lot_id: string
-  containers: PassageContainerData[]
+  source_lot_id: string
+  source_containers: PassageSourceData[]
+  metrics: {
+    concentration: number // клеток/мл
+    volume_ml: number
+    viability_percent: number
+  }
+  media: PassageMediaData
+  result: PassageResultData
+  split_mode: 'full' | 'partial' // full = все контейнеры, partial = часть
   notes?: string
 }) {
+  // 1. Получить исходный лот для определения passage_number
+  const { data: sourceLot, error: lotError } = await supabase
+    .from('lots')
+    .select('*')
+    .eq('id', data.source_lot_id)
+    .single()
+  
+  if (lotError) throw lotError
+  
+  const newPassageNumber = (sourceLot.passage_number || 0) + 1
+  
+  // 2. Создать Operation
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
-      lot_id: data.lot_id,
+      lot_id: data.source_lot_id,
       operation_type: 'PASSAGE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
@@ -1695,43 +1760,171 @@ export async function createOperationPassage(data: {
   
   if (opError) throw opError
   
-  const operationContainers = data.containers.map(container => ({
+  // 3. Создать новый лот для результатов
+  const { data: newLot, error: newLotError } = await supabase
+    .from('lots')
+    .insert({
+      culture_id: sourceLot.culture_id,
+      passage_number: newPassageNumber,
+      parent_lot_id: data.split_mode === 'partial' ? data.source_lot_id : null,
+      status: 'ACTIVE',
+      start_date: new Date().toISOString().split('T')[0]
+    })
+    .select()
+    .single()
+  
+  if (newLotError) throw newLotError
+  
+  // 4. Записать SOURCE контейнеры в operation_containers
+  const sourceOperationContainers = data.source_containers.map(container => ({
     operation_id: operation.id,
     container_id: container.container_id,
     role: 'SOURCE',
-    split_ratio: container.split_ratio,
-    new_confluent_percent: container.new_confluent_percent,
-    seeded_cells: container.seeded_cells,
-    notes: container.notes
+    confluent_percent: container.confluent_percent
   }))
   
   const { error: ocError } = await supabase
     .from('operation_containers')
-    .insert(operationContainers)
+    .insert(sourceOperationContainers)
   
   if (ocError) throw ocError
   
-  for (const container of data.containers) {
-    const { data: currentContainer } = await supabase
+  // 5. Создать новые контейнеры-результаты
+  const resultContainers = []
+  for (let i = 0; i < data.result.target_count; i++) {
+    // Генерация кода контейнера
+    const { count: containerCount } = await supabase
       .from('containers')
-      .select('passage_count')
-      .eq('id', container.container_id)
+      .select('*', { count: 'exact', head: true })
+      .like('code', `CT-%`)
+    
+    const cultureCode = sourceLot.culture_id.substring(0, 4).toUpperCase()
+    const containerCode = `CT-${cultureCode}-L${newLot.id.substring(0, 1).toUpperCase()}-P${newPassageNumber}-${data.result.container_type_id.substring(0, 2).toUpperCase()}-${String((containerCount || 0) + i + 1).padStart(3, '0')}`
+    
+    const { data: newContainer, error: containerError } = await supabase
+      .from('containers')
+      .insert({
+        lot_id: newLot.id,
+        container_type_id: data.result.container_type_id,
+        position_id: data.result.position_id,
+        status: 'ACTIVE',
+        passage_count: newPassageNumber,
+        confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
+        code: containerCode,
+        qr_code: `CNT:${containerCode}`
+      })
+      .select()
       .single()
     
-    const newPassageCount = (currentContainer?.passage_count || 0) + 1
-    
-    const { error: updateError } = await supabase
-      .from('containers')
-      .update({
-        confluent_percent: container.new_confluent_percent,
-        passage_count: newPassageCount
-      })
-      .eq('id', container.container_id)
-    
-    if (updateError) throw updateError
+    if (containerError) throw containerError
+    resultContainers.push(newContainer)
   }
   
-  return operation
+  // 6. Записать RESULT контейнеры в operation_containers
+  const resultOperationContainers = resultContainers.map(container => ({
+    operation_id: operation.id,
+    container_id: container.id,
+    role: 'RESULT',
+    confluent_percent: 0
+  }))
+  
+  const { error: resultOcError } = await supabase
+    .from('operation_containers')
+    .insert(resultOperationContainers)
+  
+  if (resultOcError) throw resultOcError
+  
+  // 7. Обновить SOURCE контейнеры -> DISPOSE
+  for (const sourceContainer of data.source_containers) {
+    const { error: disposeError } = await supabase
+      .from('containers')
+      .update({ 
+        status: 'DISPOSE',
+        container_status: 'DISPOSE'
+      })
+      .eq('id', sourceContainer.container_id)
+    
+    if (disposeError) throw disposeError
+  }
+  
+  // 8. Создать Operation_Metrics
+  const { error: metricsError } = await supabase
+    .from('operation_metrics')
+    .insert({
+      operation_id: operation.id,
+      concentration: data.metrics.concentration,
+      viability_percent: data.metrics.viability_percent,
+      volume_ml: data.metrics.volume_ml,
+      passage_yield: data.result.target_count
+    })
+  
+  if (metricsError) throw metricsError
+  
+  // 9. Создать Operation_Media для сред
+  const operationMedia = []
+  
+  if (data.media.dissociation_batch_id) {
+    operationMedia.push({
+      operation_id: operation.id,
+      batch_id: data.media.dissociation_batch_id,
+      purpose: 'dissociation'
+    })
+  }
+  if (data.media.dissociation_rm_id) {
+    operationMedia.push({
+      operation_id: operation.id,
+      ready_medium_id: data.media.dissociation_rm_id,
+      purpose: 'dissociation'
+    })
+  }
+  if (data.media.wash_batch_id) {
+    operationMedia.push({
+      operation_id: operation.id,
+      batch_id: data.media.wash_batch_id,
+      purpose: 'wash'
+    })
+  }
+  if (data.media.wash_rm_id) {
+    operationMedia.push({
+      operation_id: operation.id,
+      ready_medium_id: data.media.wash_rm_id,
+      purpose: 'wash'
+    })
+  }
+  
+  if (operationMedia.length > 0) {
+    const { error: mediaError } = await supabase
+      .from('operation_media')
+      .insert(operationMedia)
+    
+    if (mediaError) throw mediaError
+  }
+  
+  // 10. Создать auto-task INSPECT для новых контейнеров
+  for (const newContainer of resultContainers) {
+    await createAutoTask({
+      type: 'OBSERVE',
+      target_id: newContainer.id,
+      target_type: 'CONTAINER',
+      due_days: 1
+    })
+  }
+  
+  // 11. Если split_mode === 'partial', создать задачу на следующий пассаж
+  if (data.split_mode === 'partial') {
+    await createAutoTask({
+      type: 'PASSAGE',
+      target_id: newLot.id,
+      target_type: 'LOT',
+      due_days: 3
+    })
+  }
+  
+  return {
+    operation,
+    newLot,
+    resultContainers
+  }
 }
 
 // ==================== FEED OPERATIONS ====================
@@ -1776,12 +1969,13 @@ export async function createOperationFeed(data: {
           const earliestMedium = availableMedia[0]
           if (earliestMedium.id !== container.medium_id) {
             console.warn(`FEFO Warning: Using ${selectedMedium.code} but ${earliestMedium.code} expires earlier`)
-            // In production, you might want to throw an error or show a warning
           }
         }
       }
     }
   }
+  
+  // 1. Создать Operation
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
@@ -1797,6 +1991,7 @@ export async function createOperationFeed(data: {
   
   if (opError) throw opError
   
+  // 2. Создать operation_containers
   const operationContainers = data.containers.map(container => ({
     operation_id: operation.id,
     container_id: container.container_id,
@@ -1809,6 +2004,7 @@ export async function createOperationFeed(data: {
   
   if (ocError) throw ocError
   
+  // 3. Создать operation_media
   const operationMedia = data.containers
     .filter(container => container.medium_id)
     .map(container => ({
@@ -1826,17 +2022,44 @@ export async function createOperationFeed(data: {
     if (omError) throw omError
   }
   
+  // 4. Обновить current_volume_ml у ReadyMedia
   for (const container of data.containers) {
     if (container.medium_id) {
       const medium = await getReadyMediumById(container.medium_id)
       if (medium) {
-        const newVolume = (medium.current_volume_ml || medium.volume_ml) - container.volume_ml
+        const currentVolume = medium.current_volume_ml || medium.volume_ml || 0
+        const newVolume = currentVolume - container.volume_ml
+        
+        // Обновить volume_ml в ReadyMedia
         await supabase
           .from('ready_media')
           .update({ current_volume_ml: Math.max(0, newVolume) })
           .eq('id', container.medium_id)
+        
+        // 5. Создать inventory_movement запись (расход)
+        await createInventoryMovement({
+          batch_id: medium.batch_id || null,
+          operation_id: operation.id,
+          movement_type: 'CONSUME',
+          quantity_change: -container.volume_ml,
+          quantity_after: Math.max(0, newVolume),
+          moved_at: new Date().toISOString()
+        })
       }
     }
+  }
+  
+  // 6. Создать auto-task FEED на следующую смену (через 2-3 дня)
+  const lot = await getLotById(data.lot_id)
+  if (lot?.culture_id) {
+    const culture = await getCultureById(lot.culture_id)
+    const intervalDays = culture?.culture_type?.passage_interval_days || 3
+    
+    await createFeedTask(
+      data.lot_id,
+      'feed',
+      intervalDays
+    )
   }
   
   return operation
@@ -1847,10 +2070,9 @@ export async function createOperationFeed(data: {
 export interface AutoTaskData {
   type: 'PASSAGE' | 'FEED' | 'OBSERVE' | 'QC' | 'BANK_CHECK' | 'MEDIA_PREP'
   target_id: string // container_id, lot_id, or bank_id
-  target_type: 'container' | 'lot' | 'bank'
-  priority: 'low' | 'medium' | 'high' | 'urgent'
+  target_type: 'CONTAINER' | 'LOT' | 'BANK' | 'CULTURE' | 'EQUIPMENT'
   due_days: number // days from now
-  notes?: string
+  interval_days?: number
 }
 
 // Create automatic task after operation completion
@@ -1858,24 +2080,32 @@ export async function createAutoTask(data: AutoTaskData) {
   const dueDate = new Date()
   dueDate.setDate(dueDate.getDate() + data.due_days)
   
+  // Map task types to DB enum values
   const taskTypeMap = {
-    PASSAGE: 'passage',
-    FEED: 'feed',
-    OBSERVE: 'observe',
-    QC: 'qc',
-    BANK_CHECK: 'bank_check',
-    MEDIA_PREP: 'media_prep'
+    PASSAGE: 'INSPECT',    // осмотр после пассажа
+    FEED: 'FEED',
+    OBSERVE: 'INSPECT',    // наблюдение = осмотр
+    QC: 'QC_DUE',
+    BANK_CHECK: 'INSPECT', // проверка банка = осмотр
+    MEDIA_PREP: 'MAINTENANCE'
+  }
+  
+  // Map target_type to uppercase for DB
+  const targetTypeMap = {
+    container: 'CONTAINER',
+    lot: 'LOT',
+    bank: 'BANK',
+    culture: 'CULTURE',
+    equipment: 'EQUIPMENT'
   }
   
   const taskData = {
     type: taskTypeMap[data.type],
+    target_type: targetTypeMap[data.target_type.toLowerCase()] || data.target_type.toUpperCase(),
+    target_id: data.target_id,
     status: 'PENDING',
-    priority: data.priority,
-    due_date: dueDate.toISOString(),
-    container_id: data.target_type === 'container' ? data.target_id : null,
-    lot_id: data.target_type === 'lot' ? data.target_id : null,
-    bank_id: data.target_type === 'bank' ? data.target_id : null,
-    notes: data.notes,
+    due_date: dueDate.toISOString().split('T')[0],
+    interval_days: data.interval_days || data.due_days,
     created_at: new Date().toISOString()
   }
   
@@ -1894,10 +2124,8 @@ export async function createPassageFollowUpTask(lotId: string, containerId: stri
   return createAutoTask({
     type: 'PASSAGE',
     target_id: containerId,
-    target_type: 'container',
-    priority: 'medium',
-    due_days: daysUntilNext,
-    notes: 'Автоматическая задача: следующий пассаж'
+    target_type: 'CONTAINER',
+    due_days: daysUntilNext
   })
 }
 
@@ -1906,10 +2134,8 @@ export async function createObserveTask(containerId: string, targetConfluence: n
   return createAutoTask({
     type: 'OBSERVE',
     target_id: containerId,
-    target_type: 'container',
-    priority: 'low',
-    due_days: 0,
-    notes: `Проверка при достижении ${targetConfluence}% конфлюэнтности`
+    target_type: 'CONTAINER',
+    due_days: 0
   })
 }
 
@@ -1918,10 +2144,8 @@ export async function createQCTask(bankId: string) {
   return createAutoTask({
     type: 'QC',
     target_id: bankId,
-    target_type: 'bank',
-    priority: 'high',
-    due_days: 1,
-    notes: 'Контроль качества после заморозки'
+    target_type: 'BANK',
+    due_days: 1
   })
 }
 
@@ -1930,10 +2154,8 @@ export async function createFeedTask(lotId: string, mediaType: string, scheduleD
   return createAutoTask({
     type: 'FEED',
     target_id: lotId,
-    target_type: 'lot',
-    priority: 'medium',
-    due_days: scheduleDays,
-    notes: `Кормление: ${mediaType}`
+    target_type: 'LOT',
+    due_days: scheduleDays
   })
 }
 
@@ -1941,20 +2163,272 @@ export async function createFeedTask(lotId: string, mediaType: string, scheduleD
 
 export interface FreezeData {
   lot_id: string
-  container_id: string
-  bank_id?: string
+  container_ids: string[]
+  bank_id?: string // если не передан - создать новый
   cryo_vial_count: number
-  freezer_position_id?: string
+  freezer_position_id: string
+  cells_per_vial: number
+  total_cells: number
   freezing_medium: string
+  viability_percent: number
+  concentration: number
   notes?: string
 }
 
 export async function createOperationFreeze(data: FreezeData) {
+  // 1. Получить лот и культуру для определения MCB/WCB
+  const { data: lot, error: lotError } = await supabase
+    .from('lots')
+    .select('*, culture:cultures(*)')
+    .eq('id', data.lot_id)
+    .single()
+  
+  if (lotError) throw lotError
+  
+  // 2. Автоопределение MCB/WCB: проверить есть ли уже банки у этой культуры
+  const { data: existingBanks } = await supabase
+    .from('banks')
+    .select('id')
+    .eq('culture_id', lot.culture_id)
+  
+  const bankType = (existingBanks && existingBanks.length > 0) ? 'WCB' : 'MCB'
+  
+  // 3. Создать новый банк если bank_id не передан
+  let bankId = data.bank_id
+  if (!bankId) {
+    const { data: newBank, error: bankError } = await supabase
+      .from('banks')
+      .insert({
+        culture_id: lot.culture_id,
+        lot_id: data.lot_id,
+        bank_type: bankType,
+        status: 'QC_PENDING', // Требует QC!
+        cryo_vials_count: data.cryo_vial_count,
+        cells_per_vial: data.cells_per_vial,
+        total_cells: data.total_cells,
+        position_id: data.freezer_position_id,
+        qc_passed: false,
+        freezing_date: new Date().toISOString().split('T')[0]
+      })
+      .select()
+      .single()
+    
+    if (bankError) throw bankError
+    bankId = newBank.id
+  } else {
+    // Обновить существующий банк
+    const { data: existingBank } = await supabase
+      .from('banks')
+      .select('cryo_vials_count, total_cells')
+      .eq('id', bankId)
+      .single()
+    
+    await supabase
+      .from('banks')
+      .update({
+        cryo_vials_count: (existingBank?.cryo_vials_count || 0) + data.cryo_vial_count,
+        total_cells: (existingBank?.total_cells || 0) + data.total_cells,
+        status: 'QC_PENDING' // Все равно требует QC!
+      })
+      .eq('id', bankId)
+  }
+  
+  // 4. Создать Operation
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
       lot_id: data.lot_id,
       operation_type: 'FREEZE',
+      status: 'COMPLETED',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      notes: `${data.notes || ''} | Bank type: ${bankType}`
+    })
+    .select()
+    .single()
+  
+  if (opError) throw opError
+  
+  // 5. Создать криовиалы
+  const cryoVials = []
+  const { count: baseVialCount } = await supabase
+    .from('cryo_vials')
+    .select('*', { count: 'exact', head: true })
+    .eq('bank_id', bankId)
+  
+  for (let i = 0; i < data.cryo_vial_count; i++) {
+    const vialNum = (baseVialCount || 0) + i + 1
+    const cultureCode = lot.culture?.name?.substring(0, 4).toUpperCase() || 'UNK'
+    const vialCode = `CV-${cultureCode}-${bankType}-V${String(vialNum).padStart(3, '0')}`
+    
+    const { data: vial, error: vialError } = await supabase
+      .from('cryo_vials')
+      .insert({
+        bank_id: bankId,
+        lot_id: data.lot_id,
+        code: vialCode,
+        vial_number: vialNum,
+        cells_count: data.cells_per_vial,
+        freezing_date: new Date().toISOString().split('T')[0],
+        position_id: data.freezer_position_id,
+        status: 'IN_STOCK',
+        qr_code: `CV:${vialCode}`
+      })
+      .select()
+      .single()
+    
+    if (vialError) throw vialError
+    cryoVials.push(vial)
+  }
+  
+  // 6. Записать SOURCE контейнеры в operation_containers
+  const operationContainers = data.container_ids.map(containerId => ({
+    operation_id: operation.id,
+    container_id: containerId,
+    role: 'SOURCE'
+  }))
+  
+  const { error: ocError } = await supabase
+    .from('operation_containers')
+    .insert(operationContainers)
+  
+  if (ocError) throw ocError
+  
+  // 7. Обновить контейнеры-источники -> FROZEN (не IN_BANK!)
+  for (const containerId of data.container_ids) {
+    await supabase
+      .from('containers')
+      .update({ 
+        status: 'IN_BANK',
+        container_status: 'IN_BANK'
+      })
+      .eq('id', containerId)
+  }
+  
+  // 8. Создать Operation_Metrics
+  await supabase
+    .from('operation_metrics')
+    .insert({
+      operation_id: operation.id,
+      concentration: data.concentration,
+      viability_percent: data.viability_percent,
+      total_cells: data.total_cells,
+      volume_ml: data.cryo_vial_count // примерно
+    })
+  
+  // 9. Создать QC-задачу через createQCTask()
+  await createQCTask(bankId)
+  
+  // 10. Создать уведомление о необходимости QC
+  await createNotification({
+    type: 'qc_required',
+    category: 'qc',
+    title: 'Требуется QC для банка',
+    message: `Банк ${bankType} создан и ожидает контроль качества`,
+    link_type: 'bank',
+    link_id: bankId,
+    is_read: false,
+    created_at: new Date().toISOString()
+  })
+  
+  return { 
+    operation, 
+    cryoVials, 
+    bankId,
+    bankType
+  }
+}
+
+// ==================== THAW OPERATIONS ====================
+
+export interface ThawData {
+  cryo_vial_id: string
+  lot_name?: string // имя нового лота
+  container_type_id: string
+  position_id: string
+  thaw_medium_id: string
+  viability_percent?: number
+  notes?: string
+}
+
+export async function createOperationThaw(data: ThawData) {
+  // 1. Получить криовиал и связанный банк
+  const { data: cryoVial, error: vialError } = await supabase
+    .from('cryo_vials')
+    .select('*, bank:banks(*), lot:lots(*)')
+    .eq('id', data.cryo_vial_id)
+    .single()
+  
+  if (vialError) throw vialError
+  
+  // Валидация: банк должен быть APPROVED, криовиал IN_STOCK
+  if (cryoVial.bank?.status !== 'APPROVED') {
+    throw new Error('Банк должен быть APPROVED для разморозки')
+  }
+  if (cryoVial.status !== 'IN_STOCK') {
+    throw new Error('Криовиал должен быть IN_STOCK для разморозки')
+  }
+  
+  // 2. Получить родительский лот для passage_number
+  const { data: parentLot, error: lotError } = await supabase
+    .from('lots')
+    .select('*')
+    .eq('id', cryoVial.lot_id)
+    .single()
+  
+  if (lotError) throw lotError
+  
+  const newPassageNumber = (parentLot?.passage_number || 0) + 1
+  
+  // 3. Создать новый лот
+  const { data: newLot, error: newLotError } = await supabase
+    .from('lots')
+    .insert({
+      culture_id: parentLot.culture_id,
+      passage_number: newPassageNumber,
+      parent_lot_id: parentLot.id,
+      status: 'ACTIVE',
+      start_date: new Date().toISOString().split('T')[0],
+      notes: `Thaw from bank ${cryoVial.bank?.bank_type}`
+    })
+    .select()
+    .single()
+  
+  if (newLotError) throw newLotError
+  
+  // 4. Создать Container для размороженной культуры
+  const { count: containerCount } = await supabase
+    .from('containers')
+    .select('*', { count: 'exact', head: true })
+    .like('code', `CT-%`)
+  
+  const cultureCode = parentLot.culture_id?.substring(0, 4).toUpperCase() || 'UNK'
+  const containerTypeCode = data.container_type_id ? data.container_type_id.substring(0, 2).toUpperCase() : 'CT'
+  const containerCode = `CT-${cultureCode}-L${newLot.id.substring(0, 1).toUpperCase()}-P${newPassageNumber}-${containerTypeCode}-${String((containerCount || 0) + 1).padStart(3, '0')}`
+  
+  const { data: newContainer, error: containerError } = await supabase
+    .from('containers')
+    .insert({
+      lot_id: newLot.id,
+      container_type_id: data.container_type_id,
+      position_id: data.position_id,
+      status: 'ACTIVE',
+      passage_count: newPassageNumber,
+      confluent_percent: 0,
+      code: containerCode,
+      qr_code: `CNT:${containerCode}`
+    })
+    .select()
+    .single()
+  
+  if (containerError) throw containerError
+  
+  // 5. Создать Operation THAW
+  const { data: operation, error: opError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id: newLot.id,
+      operation_type: 'THAW',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -1965,64 +2439,73 @@ export async function createOperationFreeze(data: FreezeData) {
   
   if (opError) throw opError
   
-  const cryoVials = []
-  for (let i = 0; i < data.cryo_vial_count; i++) {
-    const { count: vialCount } = await supabase
-      .from('cryo_vials')
-      .select('*', { count: 'exact', head: true })
-      .eq('bank_id', data.bank_id || null)
-    
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-    const vialCode = `CV-${String((vialCount || 0) + i + 1).padStart(3, '0')}-${today}`
-    
-    const { data: vial, error: vialError } = await supabase
-      .from('cryo_vials')
-      .insert({
-        bank_id: data.bank_id || null,
-        lot_id: data.lot_id,
-        code: vialCode,
-        freezing_date: new Date().toISOString().split('T')[0],
-        position_id: data.freezer_position_id || null,
-        status: 'IN_STOCK'
-      })
-      .select()
-      .single()
-    
-    if (vialError) throw vialError
-    cryoVials.push(vial)
-  }
-  
-  const { error: ocError } = await supabase
+  // 6. Записать cryo_vial как SOURCE в operation_containers
+  await supabase
     .from('operation_containers')
     .insert({
       operation_id: operation.id,
-      container_id: data.container_id,
-      role: 'SOURCE',
-      notes: `Заморозка ${data.cryo_vial_count} ампул, среда: ${data.freezing_medium}`
+      container_id: cryoVial.id, // Это cryo_vial, но связываем через таблицу
+      role: 'SOURCE'
     })
   
-  if (ocError) throw ocError
+  // 7. Записать новый контейнер как RESULT
+  await supabase
+    .from('operation_containers')
+    .insert({
+      operation_id: operation.id,
+      container_id: newContainer.id,
+      role: 'RESULT',
+      confluent_percent: 0
+    })
   
-  if (data.bank_id) {
-    const { data: bank } = await supabase
-      .from('banks')
-      .select('cryo_vials_count')
-      .eq('id', data.bank_id)
-      .single()
-    
-    await supabase
-      .from('banks')
-      .update({ 
-        cryo_vials_count: (bank?.cryo_vials_count || 0) + data.cryo_vial_count,
-        status: 'IN_STOCK'
-      })
-      .eq('id', data.bank_id)
+  // 8. Обновить крио_vial: status=THAWED, thaw_date=today
+  await supabase
+    .from('cryo_vials')
+    .update({ 
+      status: 'THAWED',
+      thaw_date: new Date().toISOString().split('T')[0]
+    })
+    .eq('id', data.cryo_vial_id)
+  
+  // 9. Создать Operation_Media для среды разморозки
+  await supabase
+    .from('operation_media')
+    .insert({
+      operation_id: operation.id,
+      ready_medium_id: data.thaw_medium_id,
+      purpose: 'thaw'
+    })
+  
+  // 10. Проверить банк: если все криовиалы THAWED -> status=EXPIRED
+  const { data: allVials } = await supabase
+    .from('cryo_vials')
+    .select('status')
+    .eq('bank_id', cryoVial.bank_id)
+  
+  if (allVials) {
+    const allThawed = allVials.every(v => v.status === 'THAWED')
+    if (allThawed) {
+      await supabase
+        .from('banks')
+        .update({ status: 'EXPIRED' })
+        .eq('id', cryoVial.bank_id)
+    }
   }
   
-  await supabase
-    .from('containers')
-    .update({ container_status: 'IN_BANK' })
-    .eq('id', data.container_id)
+  // 11. Создать auto-task INSPECT на 24 часа
+  await createAutoTask({
+    type: 'OBSERVE',
+    target_id: newContainer.id,
+    target_type: 'CONTAINER',
+    due_days: 1 // 24 часа
+  })
   
-  return { operation, cryoVials }
+  // 12. Создать auto-task FEED на 2-3 дня
+  await createFeedTask(newLot.id, 'feed', 2)
+  
+  return {
+    operation,
+    newLot,
+    newContainer
+  }
 }

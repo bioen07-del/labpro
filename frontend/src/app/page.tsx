@@ -204,7 +204,7 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-3">
                         <div className={`w-2 h-2 rounded-full ${getTaskPriorityColor(task.priority)}`} />
                         <div>
-                          <p className="font-medium">{task.title}</p>
+                          <p className="font-medium">{task.type}</p>
                           <p className="text-sm text-muted-foreground">
                             {task.type === 'FEED' && 'Кормление'}
                             {task.type === 'OBSERVE' && 'Наблюдение'}
@@ -274,10 +274,11 @@ export default function DashboardPage() {
                   >
                     <div className="flex items-start gap-3">
                       <div className={`mt-1 ${notification.is_read ? 'text-muted-foreground' : 'text-primary'}`}>
-                        {notification.category === 'ALERT' && <AlertCircle className="h-4 w-4" />}
-                        {notification.category === 'TASK' && <Clock className="h-4 w-4" />}
-                        {notification.category === 'SYSTEM' && <Bell className="h-4 w-4" />}
-                        {notification.category === 'QC' && <CheckCircle2 className="h-4 w-4" />}
+                        {notification.type === 'QC_READY' && <AlertCircle className="h-4 w-4" />}
+                        {notification.type === 'ORDER_DEADLINE' && <Clock className="h-4 w-4" />}
+                        {notification.type === 'CRITICAL_FEFO' && <AlertCircle className="h-4 w-4" />}
+                        {notification.type === 'EQUIPMENT_ALERT' && <Bell className="h-4 w-4" />}
+                        {notification.type === 'CONTAMINATION' && <CheckCircle2 className="h-4 w-4" />}
                       </div>
                       <div className="flex-1">
                         <p className="font-medium">{notification.title}</p>

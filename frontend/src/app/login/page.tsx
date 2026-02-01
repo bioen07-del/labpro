@@ -33,18 +33,21 @@ export default function LoginPage() {
     }
   }
 
-  // Demo login for testing without Supabase
-  const handleDemoLogin = () => {
-    // Store demo user in localStorage
-    localStorage.setItem('labpro_user', JSON.stringify({
-      id: 'demo-user',
-      email: 'demo@labpro.ru',
-      user_metadata: {
-        full_name: 'Демо Пользователь'
-      }
-    }))
-    router.push('/')
-    router.refresh()
+  // Demo login with Supabase auth (requires user to exist in Supabase Auth)
+  const handleDemoLogin = async () => {
+    setLoading(true)
+    setError('')
+
+    try {
+      await signIn('demo@labpro.ru', 'demo1234')
+      router.push('/')
+      router.refresh()
+    } catch (err: any) {
+      setError('Демо-аккаунт не существует. Создайте его в Supabase Dashboard → Authentication → Users → Add User')
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -129,8 +132,16 @@ export default function LoginPage() {
               className="w-full"
               onClick={handleDemoLogin}
               type="button"
+              disabled={loading}
             >
-              Демо-режим (без Supabase)
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Вход...
+                </>
+              ) : (
+                'Войти как демо-пользователь'
+              )}
             </Button>
           </CardContent>
         </Card>

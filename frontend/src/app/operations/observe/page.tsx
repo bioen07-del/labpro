@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { getLots, getContainers, createOperation, updateContainer } from '@/lib/api'
+import { getLots, getContainers, getMorphologyTypes, createOperation, updateContainer } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
 export default function ObservePage() {
@@ -20,21 +20,26 @@ export default function ObservePage() {
   const [containers, setContainers] = useState<any[]>([])
   const [selectedContainers, setSelectedContainers] = useState<string[]>([])
   const [morphology, setMorphology] = useState<string>('')
+  const [morphologyTypes, setMorphologyTypes] = useState<any[]>([])
   const [contamination, setContamination] = useState<boolean>(false)
   const [notes, setNotes] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   
   useEffect(() => {
-    loadLots()
+    loadData()
   }, [])
   
-  const loadLots = async () => {
+  const loadData = async () => {
     try {
-      const data = await getLots({ status: 'ACTIVE' })
-      setLots(data || [])
+      const [lotsData, morphologyData] = await Promise.all([
+        getLots({ status: 'ACTIVE' }),
+        getMorphologyTypes()
+      ])
+      setLots(lotsData || [])
+      setMorphologyTypes(morphologyData || [])
     } catch (error) {
-      console.error('Error loading lots:', error)
+      console.error('Error loading data:', error)
     }
   }
   
@@ -158,13 +163,11 @@ export default function ObservePage() {
                 <SelectValue placeholder="Выберите тип морфологии..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="SPINDLE">Веретенообразные клетки</SelectItem>
-                <SelectItem value="EPITHELIAL">Эпителиоподобные</SelectItem>
-                <SelectItem value="FIBROBLAST">Фибробластоподобные</SelectItem>
-                <SelectItem value="ROUND">Округлые клетки</SelectItem>
-                <SelectItem value="POLYGONAL">Полигональные</SelectItem>
-                <SelectItem value="MIXED">Смешанная</SelectItem>
-                <SelectItem value="UNUSUAL">Необычная</SelectItem>
+                {morphologyTypes.map(type => (
+                  <SelectItem key={type.id} value={type.code}>
+                    {type.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

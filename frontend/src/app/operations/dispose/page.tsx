@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { getLots, getContainers, createOperation, updateContainer } from '@/lib/api'
+import { getLots, getContainers, createOperation, updateContainer, getDisposeReasons } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
 export default function DisposePage() {
@@ -20,21 +20,26 @@ export default function DisposePage() {
   const [containers, setContainers] = useState<any[]>([])
   const [selectedContainers, setSelectedContainers] = useState<string[]>([])
   const [reason, setReason] = useState<string>('')
+  const [disposeReasons, setDisposeReasons] = useState<any[]>([])
   const [confirmed, setConfirmed] = useState(false)
   const [notes, setNotes] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   
   useEffect(() => {
-    loadLots()
+    loadData()
   }, [])
   
-  const loadLots = async () => {
+  const loadData = async () => {
     try {
-      const data = await getLots({ status: 'ACTIVE' })
-      setLots(data || [])
+      const [lotsData, reasonsData] = await Promise.all([
+        getLots({ status: 'ACTIVE' }),
+        getDisposeReasons()
+      ])
+      setLots(lotsData || [])
+      setDisposeReasons(reasonsData || [])
     } catch (error) {
-      console.error('Error loading lots:', error)
+      console.error('Error loading data:', error)
     }
   }
   
@@ -168,12 +173,11 @@ export default function DisposePage() {
                 <SelectValue placeholder="Выберите причину..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="CONTAMINATION">Контаминация</SelectItem>
-                <SelectItem value="DEATH">Гибель культуры</SelectItem>
-                <SelectItem value="PASSAGE_LIMIT">Достигнут лимит пассажей</SelectItem>
-                <SelectItem value="EXPERIMENT">Завершение эксперимента</SelectItem>
-                <SelectItem value="DAMAGE">Повреждение</SelectItem>
-                <SelectItem value="OTHER">Другая причина</SelectItem>
+                {disposeReasons.map(r => (
+                  <SelectItem key={r.id} value={r.code}>
+                    {r.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

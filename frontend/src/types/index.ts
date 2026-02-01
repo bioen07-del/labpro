@@ -123,7 +123,7 @@ export interface ContainerType {
 
 // Bank
 export type BankType = 'MCB' | 'WCB' | 'RWB'
-export type BankStatus = 'QUARANTINE' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'DISPOSE'
+export type BankStatus = 'QC_PENDING' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'DISPOSE'
 
 export interface Bank {
   id: string
@@ -162,7 +162,7 @@ export interface CryoVial {
 }
 
 // Inventory
-export type NomenclatureCategory = 'MEDIUM' | 'CONSUMABLE' | 'REAGENT' | 'EQUIP' | 'SERUM'
+export type NomenclatureCategory = 'MEDIUM' | 'CONSUMABLE' | 'REAGENT' | 'EQUIP'
 
 export interface Nomenclature {
   id: string

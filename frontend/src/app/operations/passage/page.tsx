@@ -26,6 +26,7 @@ import {
   getContainers, 
   getLots, 
   getPositions,
+  getContainerTypes,
   createOperation,
   createContainer,
   createLot,
@@ -69,13 +70,7 @@ export default function PassagePage() {
   const [containers, setContainers] = useState<any[]>([])
   const [lots, setLots] = useState<any[]>([])
   const [positions, setPositions] = useState<any[]>([])
-  const [containerTypes, setContainerTypes] = useState<any[]>([
-    { id: '1', name: 'T-25', volume_ml: 5 },
-    { id: '2', name: 'T-75', volume_ml: 15 },
-    { id: '3', name: 'T-175', volume_ml: 35 },
-    { id: '4', name: '6-well plate', volume_ml: 2 },
-    { id: '5', name: '12-well plate', volume_ml: 1 },
-  ])
+  const [containerTypes, setContainerTypes] = useState<any[]>([])
 
   useEffect(() => {
     loadData()
@@ -83,14 +78,16 @@ export default function PassagePage() {
   
   const loadData = async () => {
     try {
-      const [containersData, lotsData, positionsData] = await Promise.all([
+      const [containersData, lotsData, positionsData, containerTypesData] = await Promise.all([
         getContainers({ container_status: 'ACTIVE' }),
         getLots({ status: 'ACTIVE' }),
-        getPositions({ is_active: true })
+        getPositions({ is_active: true }),
+        getContainerTypes()
       ])
       setContainers(containersData || [])
       setLots(lotsData || [])
       setPositions(positionsData || [])
+      setContainerTypes(containerTypesData || [])
     } catch (error) {
       console.error('Error loading data:', error)
     }

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { getLots, getContainers, createOperationFeed, getReadyMedia } from '@/lib/api'
+import { getLots, getContainers, createOperationFeed, getMediumTypes } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
 export default function FeedPage() {
@@ -20,20 +20,25 @@ export default function FeedPage() {
   const [containers, setContainers] = useState<any[]>([])
   const [selectedContainers, setSelectedContainers] = useState<string[]>([])
   const [mediaType, setMediaType] = useState<string>('')
+  const [mediumTypes, setMediumTypes] = useState<any[]>([])
   const [notes, setNotes] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   
   useEffect(() => {
-    loadLots()
+    loadData()
   }, [])
   
-  const loadLots = async () => {
+  const loadData = async () => {
     try {
-      const data = await getLots({ status: 'ACTIVE' })
-      setLots(data || [])
+      const [lotsData, mediumData] = await Promise.all([
+        getLots({ status: 'ACTIVE' }),
+        getMediumTypes()
+      ])
+      setLots(lotsData || [])
+      setMediumTypes(mediumData || [])
     } catch (error) {
-      console.error('Error loading lots:', error)
+      console.error('Error loading data:', error)
     }
   }
   
@@ -162,13 +167,11 @@ export default function FeedPage() {
                 <SelectValue placeholder="Выберите тип среды..." />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="DMEM">DMEM</SelectItem>
-                <SelectItem value="DMEM/F12">DMEM/F12</SelectItem>
-                <SelectItem value="RPMI-1640">RPMI-1640</SelectItem>
-                <SelectItem value="MEM">MEM</SelectItem>
-                <SelectItem value="PBS">PBS (промывание)</SelectItem>
-                <SelectItem value="TRYPSIN">Трипсин</SelectItem>
-                <SelectItem value="OTHER">Другое</SelectItem>
+                {mediumTypes.map(type => (
+                  <SelectItem key={type.id} value={type.code}>
+                    {type.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
