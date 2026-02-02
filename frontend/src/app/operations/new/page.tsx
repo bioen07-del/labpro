@@ -102,7 +102,7 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
   const loadData = async () => {
     try {
       const [containersData, lotsData, positionsData, typesData] = await Promise.all([
-        getContainers({ container_status: 'ACTIVE' }),
+        getContainers({ status: 'IN_CULTURE' }),
         getLots({ status: 'ACTIVE' }),
         getPositions(),
         getCultureTypes()
@@ -240,7 +240,7 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
                     </div>
                   ) : (
                     <div className="grid gap-2">
-                      {containers.filter(c => c.status === 'ACTIVE').map(container => (
+                      {containers.filter(c => c.status === 'IN_CULTURE').map(container => (
                         <div 
                           key={container.id}
                           className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer"

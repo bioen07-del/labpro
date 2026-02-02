@@ -79,7 +79,7 @@ export default function PassagePage() {
   const loadData = async () => {
     try {
       const [containersData, lotsData, positionsData, containerTypesData] = await Promise.all([
-        getContainers({ container_status: 'ACTIVE' }),
+        getContainers({ status: 'IN_CULTURE' }),
         getLots({ status: 'ACTIVE' }),
         getPositions({ is_active: true }),
         getContainerTypes()
@@ -154,7 +154,7 @@ export default function PassagePage() {
     try {
       // 1. Обновляем статус исходного контейнера (помечаем как использованный)
       await updateContainer(selectedContainer.id, {
-        container_status: 'DISPOSE',
+        status: 'DISPOSE',
         morphology: metrics.morphology,
         confluent_percent: metrics.concentration > 0 ? Math.min(100, metrics.concentration / 10000) : 0,
       })
@@ -176,7 +176,7 @@ export default function PassagePage() {
           lot_id: newLot.id,
           container_type_id: target.containerType,
           position_id: target.position?.id || null,
-          container_status: 'ACTIVE',
+          status: 'IN_CULTURE',
           confluent_percent: 10, // Начальная конфлюэнтность после пассажа
           morphology: metrics.morphology,
         })
@@ -251,7 +251,7 @@ export default function PassagePage() {
               
               <div className="grid gap-3">
                 {containers
-                  .filter(c => c.container_status === 'ACTIVE' && (c.confluent_percent || 0) >= 70)
+                  .filter(c => c.status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70)
                   .map(container => (
                     <div 
                       key={container.id}
@@ -286,7 +286,7 @@ export default function PassagePage() {
                   ))}
               </div>
               
-              {containers.filter(c => c.container_status === 'ACTIVE' && (c.confluent_percent || 0) >= 70).length === 0 && (
+              {containers.filter(c => c.status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70).length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   Нет готовых к пассажу контейнеров (минимум 70% конфлюэнтности)
                 </div>

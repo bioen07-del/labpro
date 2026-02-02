@@ -95,7 +95,7 @@ export default function TasksPage() {
     try {
       const [tasksData, containersData, banksData] = await Promise.all([
         getTasks(),
-        getContainers({ container_status: 'ACTIVE' }),
+        getContainers({ status: 'IN_CULTURE' }),
         getBanks()
       ])
       setTasks(tasksData || [])

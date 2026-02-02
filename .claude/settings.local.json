@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la \"C:\\\\VSCline\\\\LabPro\\\\frontend\\\\src\\\\app\\\\lots\"\" 2>&1 || echo \"Directory does not exist \")",
+      "Bash(npx next:*)",
+      "Bash(git add:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase",
+    "github",
+    "vercel"
+  ]
+}

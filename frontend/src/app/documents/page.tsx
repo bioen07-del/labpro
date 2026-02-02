@@ -361,9 +361,9 @@ function DocumentsContent() {
             <Button 
               variant="link" 
               className="mt-4"
-              onClick={() => router.push("/lots")}
+              onClick={() => router.push("/cultures")}
             >
-              Перейти к лотам
+              Перейти к культурам
             </Button>
           </CardContent>
         </Card>

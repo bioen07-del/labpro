@@ -44,7 +44,7 @@ export default function FeedPage() {
   
   const loadContainers = async (lotId: string) => {
     try {
-      const data = await getContainers({ lot_id: lotId, container_status: 'ACTIVE' })
+      const data = await getContainers({ lot_id: lotId, status: 'IN_CULTURE' })
       setContainers(data || [])
       setSelectedContainers([])
     } catch (error) {

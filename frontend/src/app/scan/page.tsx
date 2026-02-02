@@ -407,7 +407,7 @@ export default function ScanPage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Статус</p>
-                      <Badge>{result.container_status || result.status}</Badge>
+                      <Badge>{result.status}</Badge>
                     </div>
                   </div>
                   {result.lot?.culture && (

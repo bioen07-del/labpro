@@ -79,7 +79,7 @@ export default function FreezePage() {
   const loadData = async () => {
     try {
       const [containersData, positionsData, banksData] = await Promise.all([
-        getContainers({ container_status: 'ACTIVE' }),
+        getContainers({ status: 'IN_CULTURE' }),
         getPositions({ is_active: true }),
         getBanks()
       ])
@@ -118,11 +118,20 @@ export default function FreezePage() {
   const handleSubmit = async () => {
     setLoading(true)
     try {
+      // Автоопределение MCB/WCB: первая заморозка культуры = MCB, последующие = WCB
+      let bankType = 'MCB'
+      if (lotInfo?.culture_id) {
+        const existingBanks = await getBanks({ culture_id: lotInfo.culture_id })
+        if (existingBanks && existingBanks.length > 0) {
+          bankType = 'WCB'
+        }
+      }
+
       // Создаем банк с правильным статусом QUARANTINE
       const bankData = {
         culture_id: lotInfo?.culture_id,
         lot_id: lotInfo?.id,
-        bank_type: 'MCB', // Master Cell Bank
+        bank_type: bankType, // MCB (первая заморозка) или WCB (последующие)
         cryo_vials_count: freezeParams.vials_count,
         cells_per_vial: freezeParams.cells_per_vial,
         total_cells: freezeParams.cells_per_vial * freezeParams.vials_count,
@@ -160,7 +169,7 @@ export default function FreezePage() {
       
       // Обновляем статус контейнера-донора на DISPOSE (использован для заморозки)
       if (selectedContainer) {
-        await updateContainer(selectedContainer.id, { container_status: 'DISPOSE' })
+        await updateContainer(selectedContainer.id, { status: 'DISPOSE' })
       }
       
       router.push(`/banks/${bank.id}`)
@@ -172,7 +181,7 @@ export default function FreezePage() {
   }
   
   const updateContainerStatus = async (id: string, status: string) => {
-    await updateContainer(id, { container_status: status })
+    await updateContainer(id, { status })
   }
   
   return (

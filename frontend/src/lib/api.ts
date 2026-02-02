@@ -132,18 +132,18 @@ export async function getLotById(id: string) {
     .select(`
       *,
       culture:cultures(*),
-      containers:containers(*)
+      containers:containers!lot_id(*)
     `)
     .eq('id', id)
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 // ==================== BANKS ====================
 
-export async function getBanks(filters?: { status?: string; type?: string }) {
+export async function getBanks(filters?: { status?: string; type?: string; culture_id?: string }) {
   let query = supabase
     .from('banks')
     .select(`
@@ -161,7 +161,10 @@ export async function getBanks(filters?: { status?: string; type?: string }) {
   if (filters?.type) {
     query = query.eq('bank_type', filters.type)
   }
-  
+  if (filters?.culture_id) {
+    query = query.eq('culture_id', filters.culture_id)
+  }
+
   const { data, error } = await query
   if (error) throw error
   return data
@@ -189,12 +192,12 @@ export async function getBankById(id: string) {
 
 // ==================== CONTAINERS ====================
 
-export async function getContainers(filters?: { lot_id?: string; container_status?: string }) {
+export async function getContainers(filters?: { lot_id?: string; container_status?: string; status?: string }) {
   let query = supabase
     .from('containers')
     .select(`
       *,
-      lot:lots(
+      lot:lots!lot_id(
         *,
         culture:cultures(
           *,
@@ -208,8 +211,8 @@ export async function getContainers(filters?: { lot_id?: string; container_statu
   if (filters?.lot_id) {
     query = query.eq('lot_id', filters.lot_id)
   }
-  if (filters?.container_status) {
-    query = query.eq('container_status', filters.container_status)
+  if (filters?.container_status || filters?.status) {
+    query = query.eq('status', filters.container_status || filters.status)
   }
   
   const { data, error } = await query
@@ -222,7 +225,7 @@ export async function getContainerById(id: string) {
     .from('containers')
     .select(`
       *,
-      lot:lots(*),
+      lot:lots!lot_id(*),
       bank:banks(*),
       operations:operations(*)
     `)
@@ -393,9 +396,6 @@ export async function createOperationDispose(data: DisposeData) {
   }
   
   let updateField = 'status'
-  if (data.target_type === 'container') {
-    updateField = 'container_status'
-  }
   
   const { error: updateError } = await supabase
     .from(tableName)
@@ -409,7 +409,7 @@ export async function createOperationDispose(data: DisposeData) {
       .from('containers')
       .select('id')
       .eq('lot_id', lot_id)
-      .neq('container_status', 'DISPOSE')
+      .neq('status', 'DISPOSE')
     
     if (!remainingContainers || remainingContainers.length === 0) {
       await supabase
@@ -518,13 +518,16 @@ export async function getBatches(filters?: { status?: string; category?: string 
       nomenclature:nomenclatures(*)
     `)
     .order('expiration_date')
-  
+
   if (filters?.status) {
     query = query.eq('status', filters.status)
   }
-  
+
   const { data, error } = await query
-  if (error) throw error
+  if (error) {
+    console.error('getBatches error:', error)
+    return [] as Batch[]
+  }
   return data as Batch[]
 }
 
@@ -680,10 +683,10 @@ export async function getDonors() {
 export async function getDonorById(id: string) {
   const { data, error } = await supabase
     .from('donors')
-    .select('*, tissues(*)')
+    .select('*')
     .eq('id', id)
     .single()
-  
+
   if (error) throw error
   return data
 }
@@ -837,9 +840,8 @@ export async function getMorphologyTypes() {
   const { data, error } = await supabase
     .from('morphology_types')
     .select('*')
-    .eq('is_active', true)
     .order('name')
-  
+
   if (error) throw error
   return data
 }
@@ -847,13 +849,19 @@ export async function getMorphologyTypes() {
 // ==================== MEDIUM TYPES ====================
 
 export async function getMediumTypes() {
+  // Note: medium_types table does not exist in current schema.
+  // Medium information is stored in nomenclatures with category filter.
   const { data, error } = await supabase
-    .from('medium_types')
+    .from('nomenclatures')
     .select('*')
+    .eq('category', 'MEDIUM')
     .eq('is_active', true)
     .order('name')
-  
-  if (error) throw error
+
+  if (error) {
+    console.error('getMediumTypes error:', error)
+    return []
+  }
   return data
 }
 
@@ -863,9 +871,8 @@ export async function getDisposeReasons() {
   const { data, error } = await supabase
     .from('dispose_reasons')
     .select('*')
-    .eq('is_active', true)
     .order('name')
-  
+
   if (error) throw error
   return data
 }
@@ -1165,7 +1172,7 @@ export async function getContainerByQR(qrCode: string) {
     .from('containers')
     .select(`
       *,
-      lot:lots(
+      lot:lots!lot_id(
         *,
         culture:cultures(
           *,
@@ -1216,7 +1223,7 @@ export async function getLotByQR(qrCode: string) {
         *,
         culture_type:culture_types(*)
       ),
-      containers:containers(*)
+      containers:containers!lot_id(*)
     `)
     .eq('qr_code', qrCode)
     .single()
@@ -1697,25 +1704,35 @@ export function subscribeToQCTests(callback: (payload: unknown) => void) {
 
 // ==================== NOTIFICATIONS ====================
 
+// Note: notifications table does not exist yet in current schema.
+// All notification functions return gracefully until the table is created.
+
 export async function getNotifications(filters?: { is_read?: boolean; category?: string; limit?: number }) {
-  let query = supabase
-    .from('notifications')
-    .select('*')
-    .order('created_at', { ascending: false })
-  
-  if (filters?.is_read !== undefined) {
-    query = query.eq('is_read', filters.is_read)
+  try {
+    let query = supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (filters?.is_read !== undefined) {
+      query = query.eq('is_read', filters.is_read)
+    }
+    if (filters?.category) {
+      query = query.eq('category', filters.category)
+    }
+    if (filters?.limit) {
+      query = query.limit(filters.limit)
+    }
+
+    const { data, error } = await query
+    if (error) {
+      console.warn('Notifications table not available:', error.message)
+      return []
+    }
+    return data
+  } catch {
+    return []
   }
-  if (filters?.category) {
-    query = query.eq('category', filters.category)
-  }
-  if (filters?.limit) {
-    query = query.limit(filters.limit)
-  }
-  
-  const { data, error } = await query
-  if (error) throw error
-  return data
 }
 
 export async function getNotificationById(id: string) {
@@ -1724,8 +1741,8 @@ export async function getNotificationById(id: string) {
     .select('*')
     .eq('id', id)
     .single()
-  
-  if (error) throw error
+
+  if (error) return null
   return data
 }
 
@@ -1735,8 +1752,11 @@ export async function createNotification(notification: Record<string, unknown>) 
     .insert(notification)
     .select()
     .single()
-  
-  if (error) throw error
+
+  if (error) {
+    console.warn('Cannot create notification:', error.message)
+    return null
+  }
   return data
 }
 
@@ -1747,8 +1767,8 @@ export async function markNotificationRead(id: string) {
     .eq('id', id)
     .select()
     .single()
-  
-  if (error) throw error
+
+  if (error) return null
   return data
 }
 
@@ -1757,8 +1777,8 @@ export async function markAllNotificationsRead() {
     .from('notifications')
     .update({ is_read: true, read_at: new Date().toISOString() })
     .eq('is_read', false)
-  
-  if (error) throw error
+
+  if (error) console.warn('Cannot mark notifications read:', error.message)
 }
 
 export async function deleteNotification(id: string) {
@@ -1766,18 +1786,22 @@ export async function deleteNotification(id: string) {
     .from('notifications')
     .delete()
     .eq('id', id)
-  
-  if (error) throw error
+
+  if (error) console.warn('Cannot delete notification:', error.message)
 }
 
 export async function getUnreadNotificationCount() {
-  const { count, error } = await supabase
-    .from('notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_read', false)
-  
-  if (error) throw error
-  return count || 0
+  try {
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_read', false)
+
+    if (error) return 0
+    return count || 0
+  } catch {
+    return 0
+  }
 }
 
 // ==================== PASSAGE OPERATIONS ====================
@@ -1922,10 +1946,7 @@ export async function createOperationPassage(data: {
   for (const sourceContainer of data.source_containers) {
     const { error: disposeError } = await supabase
       .from('containers')
-      .update({ 
-        status: 'DISPOSE',
-        container_status: 'DISPOSE'
-      })
+      .update({ status: 'DISPOSE' })
       .eq('id', sourceContainer.container_id)
     
     if (disposeError) throw disposeError
@@ -2382,10 +2403,7 @@ export async function createOperationFreeze(data: FreezeData) {
   for (const containerId of data.container_ids) {
     await supabase
       .from('containers')
-      .update({ 
-        status: 'IN_BANK',
-        container_status: 'IN_BANK'
-      })
+      .update({ status: 'IN_BANK' })
       .eq('id', containerId)
   }
   

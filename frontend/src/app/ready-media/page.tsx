@@ -89,7 +89,7 @@ export default function ReadyMediaPage() {
     try {
       const [mediaData, batchesData, positionsData] = await Promise.all([
         getReadyMedia(),
-        getBatches({ status: 'ACTIVE' }),
+        getBatches({ status: 'AVAILABLE' }),
         getPositions({ is_active: true })
       ])
       setReadyMedia(mediaData || [])
