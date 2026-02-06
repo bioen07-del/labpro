@@ -84,7 +84,7 @@ function DocumentsContent() {
   const generateWorksheetContent = () => {
     if (!lot) return null
 
-    const observeOperations = lot.operations?.filter((op: any) => op.operation_type === "OBSERVE") || []
+    const observeOperations = lot.operations?.filter((op: any) => op.type === "OBSERVE") || []
     
     return (
       <div className="space-y-6">

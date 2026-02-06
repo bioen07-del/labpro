@@ -84,7 +84,7 @@ export default function WorksheetPage() {
         position: c.position?.path,
       })),
       recent_operations: operationsData.slice(0, 5).map((op: any) => ({
-        type: op.operation_type,
+        type: op.type,
         date: op.completed_at,
         notes: op.notes,
       })),
@@ -98,7 +98,7 @@ export default function WorksheetPage() {
   }
   
   const calculateNextFeed = (operations: any[]) => {
-    const lastFeed = operations.find(op => op.operation_type === 'FEED')
+    const lastFeed = operations.find(op => op.type === 'FEED')
     if (lastFeed) {
       const next = new Date(lastFeed.completed_at)
       next.setHours(next.getHours() + 48)
@@ -109,7 +109,7 @@ export default function WorksheetPage() {
   
   const calculateNextPassage = (containers: any[]) => {
     const containersForPassage = containers.filter(c => 
-      (c.confluent_percent || 0) >= 70 && c.status === 'ACTIVE'
+      (c.confluent_percent || 0) >= 70 && c.container_status === 'IN_CULTURE'
     )
     if (containersForPassage.length > 0) {
       return `${containersForPassage.length} контейнеров готовы к пассажированию`
@@ -119,7 +119,7 @@ export default function WorksheetPage() {
   
   const calculateHarvest = (containers: any[]) => {
     const harvestable = containers.filter(c => 
-      (c.confluent_percent || 0) >= 90 && c.status === 'ACTIVE'
+      (c.confluent_percent || 0) >= 90 && c.container_status === 'IN_CULTURE'
     )
     if (harvestable.length > 0) {
       return `${harvestable.length} контейнеров готовы к сбору`

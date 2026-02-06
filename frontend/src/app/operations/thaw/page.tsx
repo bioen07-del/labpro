@@ -168,7 +168,7 @@ export default function ThawPage() {
       
       // 4. Создаём операцию разморозки
       await createOperation({
-        operation_type: 'THAW',
+        type: 'THAW',
         lot_id: newLot.id,
         container_id: newContainer.id,
         notes: `Разморозка ${selectedVials.length} виал(ы) из банка ${selectedBank.code}. Метод: ${thawParams.thawMethod}. Среда: ${thawParams.mediaBatch}. ${notes}`,

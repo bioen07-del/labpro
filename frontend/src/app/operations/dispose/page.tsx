@@ -80,7 +80,7 @@ export default function DisposePage() {
         })
         
         await createOperation({
-          operation_type: 'DISPOSE',
+          type: 'DISPOSE',
           lot_id: selectedLotId,
           notes: `Причина: ${reason}. ${notes}`,
           status: 'COMPLETED'
@@ -195,7 +195,7 @@ export default function DisposePage() {
               ) : (
                 <div className="grid gap-2 max-h-64 overflow-y-auto">
               {containers
-                    .filter(c => c.status === 'IN_CULTURE')
+                    .filter(c => c.container_status === 'IN_CULTURE')
                     .map(container => (
                     <div 
                       key={container.id}

@@ -184,7 +184,7 @@ export default function PassagePage() {
       
       // 4. Создаём операцию
       await createOperation({
-        operation_type: 'PASSAGE',
+        type: 'PASSAGE',
         lot_id: lotInfo?.id,
         container_id: selectedContainer.id,
         notes: `Пассаж P${lotInfo?.passage_number} → P${passageResult.newPassageNumber}. Split ${passageResult.splitRatio}. Создано ${targetContainers.length} контейнеров. ${notes}`,
@@ -251,7 +251,7 @@ export default function PassagePage() {
               
               <div className="grid gap-3">
                 {containers
-                  .filter(c => c.status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70)
+                  .filter(c => c.container_status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70)
                   .map(container => (
                     <div 
                       key={container.id}
@@ -286,7 +286,7 @@ export default function PassagePage() {
                   ))}
               </div>
               
-              {containers.filter(c => c.status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70).length === 0 && (
+              {containers.filter(c => c.container_status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70).length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   Нет готовых к пассажу контейнеров (минимум 70% конфлюэнтности)
                 </div>

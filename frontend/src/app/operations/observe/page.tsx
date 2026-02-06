@@ -81,7 +81,7 @@ export default function ObservePage() {
         })
         
         await createOperation({
-          operation_type: 'OBSERVE',
+          type: 'OBSERVE',
           container_id: containerId,
           lot_id: selectedLotId,
           notes: `Морфология: ${morphology}. Контаминация: ${contamination ? 'Да' : 'Нет'}. ${notes}`,

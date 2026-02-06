@@ -113,11 +113,11 @@ export default function CulturePassportPage() {
         totalLots: lotsData.length,
         totalContainers: allContainers.length,
         totalOperations: allOperations.length,
-        activeContainers: allContainers.filter(c => c.status === 'ACTIVE').length,
-        frozenContainers: allContainers.filter(c => c.status === 'FROZEN').length,
-        disposedContainers: allContainers.filter(c => c.status === 'DISPOSE').length,
+        activeContainers: allContainers.filter(c => c.container_status === 'IN_CULTURE').length,
+        frozenContainers: allContainers.filter(c => c.container_status === 'IN_BANK').length,
+        disposedContainers: allContainers.filter(c => c.container_status === 'DISPOSE').length,
         totalBanks: allBanks.length,
-        totalVials: allBanks.reduce((sum, b) => sum + (b.vial_count || 0), 0),
+        totalVials: allBanks.reduce((sum, b) => sum + (b.cryo_vials_count || 0), 0),
       },
       lots: lotsData.map(lot => ({
         id: lot.id,
@@ -139,7 +139,7 @@ export default function CulturePassportPage() {
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, 20)
         .map(op => ({
-          type: op.operation_type,
+          type: op.type,
           date: op.created_at,
           lot_code: op.lot?.code,
           notes: op.notes,
@@ -189,7 +189,7 @@ ${passport.lots.map((l: any) =>
 
 === БАНКИ ===
 ${passport.banks.map((b: any) => 
-  `- ${b.code} | ${b.vial_count} ампул | Тип: ${b.bank_type} | Статус: ${b.status}`
+  `- ${b.code} | ${b.cryo_vials_count} ампул | Тип: ${b.bank_type} | Статус: ${b.status}`
 ).join('\n')}
 
 === ИСТОРИЯ ОПЕРАЦИЙ ===
