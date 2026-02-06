@@ -212,7 +212,7 @@ export async function getContainers(filters?: { lot_id?: string; container_statu
     query = query.eq('lot_id', filters.lot_id)
   }
   if (filters?.container_status || filters?.status) {
-    query = query.eq('status', filters.container_status || filters.status)
+    query = query.eq('container_status', filters.container_status || filters.status)
   }
   
   const { data, error } = await query
@@ -261,7 +261,7 @@ export async function getOperations(filters?: { lot_id?: string; type?: string; 
     query = query.eq('lot_id', filters.lot_id)
   }
   if (filters?.type) {
-    query = query.eq('operation_type', filters.type)
+    query = query.eq('type', filters.type)
   }
   if (filters?.status) {
     query = query.eq('status', filters.status)
@@ -301,7 +301,7 @@ export async function createOperationObserve(data: {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      operation_type: 'OBSERVE',
+      type: 'OBSERVE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -364,7 +364,7 @@ export async function createOperationDispose(data: DisposeData) {
     .from('operations')
     .insert({
       lot_id,
-      operation_type: 'DISPOSE',
+      type: 'DISPOSE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -395,21 +395,21 @@ export async function createOperationDispose(data: DisposeData) {
       throw new Error('Unknown target_type')
   }
   
-  let updateField = 'status'
-  
+  const updateField = data.target_type === 'container' ? 'container_status' : 'status'
+
   const { error: updateError } = await supabase
     .from(tableName)
     .update({ [updateField]: statusValue })
     .eq('id', data.target_id)
-  
+
   if (updateError) throw updateError
-  
+
   if (data.target_type === 'container' && lot_id) {
     const { data: remainingContainers } = await supabase
       .from('containers')
       .select('id')
       .eq('lot_id', lot_id)
-      .neq('status', 'DISPOSE')
+      .neq('container_status', 'DISPOSE')
     
     if (!remainingContainers || remainingContainers.length === 0) {
       await supabase
@@ -621,7 +621,7 @@ export async function getDashboardStats() {
     supabase.from('banks').select('*', { count: 'exact', head: true }),
     supabase.from('orders').select('*', { count: 'exact', head: true }).in('status', ['PENDING', 'IN_PROGRESS']),
     supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
-    supabase.from('containers').select('*', { count: 'exact', head: true }).eq('status', 'IN_CULTURE'),
+    supabase.from('containers').select('*', { count: 'exact', head: true }).eq('container_status', 'IN_CULTURE'),
   ])
 
   return {
@@ -1857,7 +1857,7 @@ export async function createOperationPassage(data: {
     .from('operations')
     .insert({
       lot_id: data.source_lot_id,
-      operation_type: 'PASSAGE',
+      type: 'PASSAGE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -1876,7 +1876,7 @@ export async function createOperationPassage(data: {
       passage_number: newPassageNumber,
       parent_lot_id: data.split_mode === 'partial' ? data.source_lot_id : null,
       status: 'ACTIVE',
-      start_date: new Date().toISOString().split('T')[0]
+      seeded_at: new Date().toISOString()
     })
     .select()
     .single()
@@ -1915,38 +1915,38 @@ export async function createOperationPassage(data: {
         lot_id: newLot.id,
         container_type_id: data.result.container_type_id,
         position_id: data.result.position_id,
-        status: 'ACTIVE',
+        container_status: 'IN_CULTURE',
         passage_count: newPassageNumber,
-        confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
+        confluent_percent: 0,
         code: containerCode,
         qr_code: `CNT:${containerCode}`
       })
       .select()
       .single()
-    
+
     if (containerError) throw containerError
     resultContainers.push(newContainer)
   }
-  
+
   // 6. Записать RESULT контейнеры в operation_containers
   const resultOperationContainers = resultContainers.map(container => ({
     operation_id: operation.id,
     container_id: container.id,
-    role: 'RESULT',
+    role: 'TARGET',
     confluent_percent: 0
   }))
-  
+
   const { error: resultOcError } = await supabase
     .from('operation_containers')
     .insert(resultOperationContainers)
-  
+
   if (resultOcError) throw resultOcError
-  
+
   // 7. Обновить SOURCE контейнеры -> DISPOSE
   for (const sourceContainer of data.source_containers) {
     const { error: disposeError } = await supabase
       .from('containers')
-      .update({ status: 'DISPOSE' })
+      .update({ container_status: 'DISPOSE' })
       .eq('id', sourceContainer.container_id)
     
     if (disposeError) throw disposeError
@@ -2085,7 +2085,7 @@ export async function createOperationFeed(data: {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      operation_type: 'FEED',
+      type: 'FEED',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -2184,43 +2184,57 @@ export interface AutoTaskData {
 export async function createAutoTask(data: AutoTaskData) {
   const dueDate = new Date()
   dueDate.setDate(dueDate.getDate() + data.due_days)
-  
-  // Map task types to DB enum values
-  const taskTypeMap = {
-    PASSAGE: 'INSPECT',    // осмотр после пассажа
+
+  // Map task types
+  const taskTypeMap: Record<string, string> = {
+    PASSAGE: 'INSPECT',
     FEED: 'FEED',
-    OBSERVE: 'INSPECT',    // наблюдение = осмотр
+    OBSERVE: 'INSPECT',
     QC: 'QC_DUE',
-    BANK_CHECK: 'INSPECT', // проверка банка = осмотр
+    BANK_CHECK: 'INSPECT',
     MEDIA_PREP: 'MAINTENANCE'
   }
-  
-  // Map target_type to uppercase for DB
-  const targetTypeMap = {
-    container: 'CONTAINER',
-    lot: 'LOT',
-    bank: 'BANK',
-    culture: 'CULTURE',
-    equipment: 'EQUIPMENT'
+
+  // Title map
+  const titleMap: Record<string, string> = {
+    PASSAGE: 'Осмотр после пассажа',
+    FEED: 'Подкормка',
+    OBSERVE: 'Наблюдение',
+    QC: 'Контроль качества',
+    BANK_CHECK: 'Проверка банка',
+    MEDIA_PREP: 'Подготовка среды'
   }
-  
-  const taskData = {
-    type: taskTypeMap[data.type as keyof typeof taskTypeMap],
-    target_type: targetTypeMap[data.target_type.toLowerCase() as keyof typeof targetTypeMap] || data.target_type.toUpperCase(),
-    target_id: data.target_id,
+
+  // Build task data with real DB fields
+  const taskData: Record<string, unknown> = {
+    type: taskTypeMap[data.type] || data.type,
+    title: titleMap[data.type] || data.type,
+    description: `Auto-task: ${data.target_type} ${data.target_id}`,
     status: 'PENDING',
+    priority: 'MEDIUM',
     due_date: dueDate.toISOString().split('T')[0],
-    interval_days: data.interval_days || data.due_days,
-    created_at: new Date().toISOString()
+    target_type: data.target_type.toUpperCase(),
+    target_id: data.target_id,
+    interval_days: data.interval_days || data.due_days
   }
-  
+
+  // Set specific FK fields based on target_type
+  if (data.target_type.toUpperCase() === 'CONTAINER') {
+    taskData.container_id = data.target_id
+  } else if (data.target_type.toUpperCase() === 'BANK') {
+    taskData.bank_id = data.target_id
+  }
+
   const { data: task, error } = await supabase
     .from('tasks')
     .insert(taskData)
     .select()
     .single()
-  
-  if (error) throw error
+
+  if (error) {
+    console.warn('createAutoTask error:', error.message)
+    return null
+  }
   return task
 }
 
@@ -2343,7 +2357,7 @@ export async function createOperationFreeze(data: FreezeData) {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      operation_type: 'FREEZE',
+      type: 'FREEZE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -2399,11 +2413,11 @@ export async function createOperationFreeze(data: FreezeData) {
   
   if (ocError) throw ocError
   
-  // 7. Обновить контейнеры-источники -> FROZEN (не IN_BANK!)
+  // 7. Обновить контейнеры-источники -> IN_BANK
   for (const containerId of data.container_ids) {
     await supabase
       .from('containers')
-      .update({ status: 'IN_BANK' })
+      .update({ container_status: 'IN_BANK' })
       .eq('id', containerId)
   }
   
@@ -2494,7 +2508,7 @@ export async function createOperationThaw(data: ThawData) {
       passage_number: newPassageNumber,
       parent_lot_id: parentLot.id,
       status: 'ACTIVE',
-      start_date: new Date().toISOString().split('T')[0],
+      seeded_at: new Date().toISOString(),
       notes: `Thaw from bank ${cryoVial.bank?.bank_type}`
     })
     .select()
@@ -2518,7 +2532,7 @@ export async function createOperationThaw(data: ThawData) {
       lot_id: newLot.id,
       container_type_id: data.container_type_id,
       position_id: data.position_id,
-      status: 'ACTIVE',
+      container_status: 'IN_CULTURE',
       passage_count: newPassageNumber,
       confluent_percent: 0,
       code: containerCode,
@@ -2526,15 +2540,15 @@ export async function createOperationThaw(data: ThawData) {
     })
     .select()
     .single()
-  
+
   if (containerError) throw containerError
-  
+
   // 5. Создать Operation THAW
   const { data: operation, error: opError } = await supabase
     .from('operations')
     .insert({
       lot_id: newLot.id,
-      operation_type: 'THAW',
+      type: 'THAW',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),

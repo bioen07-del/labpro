@@ -122,16 +122,21 @@ export type LotStatus = 'ACTIVE' | 'DISPOSE' | 'CLOSED'
 
 export interface Lot {
   id: string
+  lot_number: string
   culture_id: string
   culture?: Culture
-  passage_number: number
-  status: LotStatus
   parent_lot_id?: string
   source_container_id?: string
-  start_date: string
-  end_date?: string
+  passage_number: number
+  seeded_at?: string
+  harvest_at?: string
+  initial_cells?: number
+  final_cells?: number
+  viability?: number
+  status: LotStatus
   notes?: string
   created_at: string
+  updated_at?: string
   containers?: Container[]
 }
 
@@ -144,19 +149,26 @@ export interface Container {
   lot?: Lot
   code: string
   container_type_id: string
-  type?: ContainerType
-  status: ContainerStatus
-  parent_container_id?: string
+  container_type?: ContainerType
+  container_status: ContainerStatus
   position_id?: string
   position?: Position
+  bank_id?: string
+  bank?: Bank
   confluent_percent?: number
   morphology?: string
+  passage_number?: number
   passage_count?: number
+  cells_count?: number
+  viability?: number
+  media_type?: string
   contaminated: boolean
+  seeded_at?: string
   placed_at?: string
-  created_by?: string
-  created_by_user?: User
+  qr_code?: string
+  notes?: string
   created_at: string
+  updated_at?: string
 }
 
 export interface ContainerType {
@@ -177,6 +189,7 @@ export type BankStatus = 'QC_PENDING' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'DI
 
 export interface Bank {
   id: string
+  code: string
   culture_id?: string
   culture?: Culture
   lot_id?: string
@@ -186,28 +199,39 @@ export interface Bank {
   cryo_vials_count: number
   cells_per_vial?: number
   total_cells?: number
+  storage_location?: string
+  shelf_position?: string
   position_id?: string
   position?: Position
   qc_passed: boolean
+  qc_date?: string
   freezing_date?: string
-  expiration_date?: string
+  freezing_method?: string
   notes?: string
   created_at: string
+  updated_at?: string
   cryo_vials?: CryoVial[]
   qc_tests?: QCTest[]
 }
 
-export type CryoVialStatus = 'IN_STOCK' | 'RESERVED' | 'ISSUED'
+export type CryoVialStatus = 'IN_STOCK' | 'RESERVED' | 'ISSUED' | 'THAWED' | 'AVAILABLE'
 
 export interface CryoVial {
   id: string
   bank_id: string
   bank?: Bank
-  code: string
+  lot_id?: string
+  code?: string
+  vial_number?: string
+  position_in_box?: string
   position_id?: string
   position?: Position
   status: CryoVialStatus
   cells_count?: number
+  freezing_date?: string
+  thaw_date?: string
+  qr_code?: string
+  notes?: string
   created_at: string
 }
 
@@ -286,17 +310,21 @@ export type OperationStatus = 'IN_PROGRESS' | 'COMPLETED'
 
 export interface Operation {
   id: string
+  type: OperationType
+  container_id?: string
+  bank_id?: string
   lot_id?: string
   lot?: Lot
-  operation_type: OperationType
+  operator_id?: string
   status: OperationStatus
   started_at: string
   completed_at?: string
+  parameters?: Record<string, unknown>
   notes?: string
-  created_by?: string
-  created_by_user?: User
+  result?: string
   created_at: string
-  containers?: OperationContainer[]
+  updated_at?: string
+  operation_containers?: OperationContainer[]
   media?: OperationMedia[]
   metrics?: OperationMetrics
 }
@@ -446,13 +474,23 @@ export type TaskStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED'
 export interface Task {
   id: string
   type: TaskType
-  target_type: TaskTargetType
-  target_id: string
+  title: string
+  description?: string
+  priority?: string
   status: TaskStatus
   due_date?: string
-  last_done_date?: string
+  container_id?: string
+  bank_id?: string
+  order_id?: string
+  assigned_to?: string
+  completed_at?: string
+  target_type?: TaskTargetType
+  target_id?: string
   interval_days?: number
+  last_done_date?: string
+  notes?: string
   created_at: string
+  updated_at?: string
 }
 
 export type NotificationType = 'QC_READY' | 'ORDER_DEADLINE' | 'CRITICAL_FEFO' | 'EQUIPMENT_ALERT' | 'CONTAMINATION'

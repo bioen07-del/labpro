@@ -147,7 +147,7 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
     setLoading(true)
     try {
       const operationData = {
-        operation_type: activeTab,
+        type: activeTab,
         lot_id: selectedLot?.id,
         containers: [
           {
@@ -240,7 +240,7 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
                     </div>
                   ) : (
                     <div className="grid gap-2">
-                      {containers.filter(c => c.status === 'IN_CULTURE').map(container => (
+                      {containers.filter(c => c.container_status === 'IN_CULTURE').map(container => (
                         <div 
                           key={container.id}
                           className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer"

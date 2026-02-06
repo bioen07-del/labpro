@@ -92,7 +92,7 @@ export default function LotDetailPage() {
   }
 
   const culture = lot.culture
-  const activeContainers = containers.filter(c => c.status === "ACTIVE")
+  const activeContainers = containers.filter(c => c.container_status === "IN_CULTURE")
   const avgConfluent = activeContainers.length > 0
     ? Math.round(activeContainers.reduce((sum, c) => sum + (c.confluent_percent || 0), 0) / activeContainers.length)
     : 0
@@ -301,8 +301,8 @@ export default function LotDetailPage() {
                         </div>
                         <p className="text-xs text-muted-foreground">{container.morphology}</p>
                       </div>
-                      <Badge className={STATUS_COLORS[container.status]}>
-                        {STATUS_LABELS[container.status] || container.status}
+                      <Badge className={STATUS_COLORS[container.container_status]}>
+                        {STATUS_LABELS[container.container_status] || container.container_status}
                       </Badge>
                     </div>
                   </div>

@@ -158,7 +158,7 @@ export default function FreezePage() {
       // Создаем операцию заморозки
       const operationData = {
         lot_id: lotInfo?.id,
-        operation_type: 'FREEZE',
+        type: 'FREEZE',
         status: 'COMPLETED',
         started_at: new Date().toISOString(),
         completed_at: new Date().toISOString(),
@@ -169,7 +169,7 @@ export default function FreezePage() {
       
       // Обновляем статус контейнера-донора на DISPOSE (использован для заморозки)
       if (selectedContainer) {
-        await updateContainer(selectedContainer.id, { status: 'DISPOSE' })
+        await updateContainer(selectedContainer.id, { container_status: 'DISPOSE' })
       }
       
       router.push(`/banks/${bank.id}`)
@@ -234,7 +234,7 @@ export default function FreezePage() {
               
               <div className="grid gap-3">
                 {containers
-                  .filter(c => c.status === 'ACTIVE' && c.confluent_percent >= 70)
+                  .filter(c => c.container_status === 'IN_CULTURE' && c.confluent_percent >= 70)
                   .map(container => (
                     <div 
                       key={container.id}
@@ -271,7 +271,7 @@ export default function FreezePage() {
                   ))}
               </div>
               
-              {containers.filter(c => c.status === 'ACTIVE' && c.confluent_percent >= 70).length === 0 && (
+              {containers.filter(c => c.container_status === 'IN_CULTURE' && c.confluent_percent >= 70).length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   Нет подходящих контейнеров для заморозки (минимум 70% конфлюэнтности)
                 </div>

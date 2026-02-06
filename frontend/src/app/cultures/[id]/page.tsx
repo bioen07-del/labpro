@@ -401,7 +401,7 @@ export default function CultureDetailPage() {
                           </Link>
                         </TableCell>
                         <TableCell>P{lot.passage_number}</TableCell>
-                        <TableCell>{formatDate(lot.start_date)}</TableCell>
+                        <TableCell>{lot.seeded_at ? formatDate(lot.seeded_at) : '—'}</TableCell>
                         <TableCell>
                           <Badge className={getLotStatusColor(lot.status)}>
                             {getLotStatusLabel(lot.status)}

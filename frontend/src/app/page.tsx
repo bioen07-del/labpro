@@ -339,12 +339,12 @@ export default function DashboardPage() {
                 >
                   <div className="flex items-center gap-3">
                     <Badge variant="outline">
-                      {operation.operation_type === 'OBSERVE' && '👁️ Наблюдение'}
-                      {operation.operation_type === 'FEED' && '🧪 Кормление'}
-                      {operation.operation_type === 'PASSAGE' && '🔄 Пассаж'}
-                      {operation.operation_type === 'FREEZE' && '❄️ Заморозка'}
-                      {operation.operation_type === 'THAW' && '🔥 Размораживание'}
-                      {operation.operation_type === 'DISPOSE' && '🗑️ Утилизация'}
+                      {operation.type === 'OBSERVE' && '👁️ Наблюдение'}
+                      {operation.type === 'FEED' && '🧪 Кормление'}
+                      {operation.type === 'PASSAGE' && '🔄 Пассаж'}
+                      {operation.type === 'FREEZE' && '❄️ Заморозка'}
+                      {operation.type === 'THAW' && '🔥 Размораживание'}
+                      {operation.type === 'DISPOSE' && '🗑️ Утилизация'}
                     </Badge>
                     <div>
                       <p className="font-medium">

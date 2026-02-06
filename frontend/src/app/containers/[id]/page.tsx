@@ -107,8 +107,8 @@ export default function ContainerDetailPage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">{container.code}</h1>
-            <Badge className={STATUS_COLORS[container.status] || "bg-gray-500"}>
-              {STATUS_LABELS[container.status] || container.status}
+            <Badge className={STATUS_COLORS[container.container_status] || "bg-gray-500"}>
+              {STATUS_LABELS[container.container_status] || container.container_status}
             </Badge>
           </div>
           <p className="text-muted-foreground">
@@ -275,7 +275,7 @@ export default function ContainerDetailPage() {
                 </Button>
               </Link>
               
-              {container.status === "ACTIVE" && (
+              {container.container_status === "ACTIVE" && (
                 <>
                   <Link href={`/operations/new?container_id=${containerId}&type=passage`}>
                     <Button variant="outline">

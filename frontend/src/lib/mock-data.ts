@@ -47,23 +47,23 @@ export const mockPositions: Position[] = [
 
 // Lots
 export const mockLots: Lot[] = [
-  { id: '1', culture_id: '1', passage_number: 1, status: 'ACTIVE', start_date: '2026-01-15', notes: '', created_at: '2026-01-15T00:00:00Z' },
-  { id: '2', culture_id: '1', passage_number: 2, status: 'ACTIVE', start_date: '2026-01-20', notes: '', created_at: '2026-01-20T00:00:00Z' },
-  { id: '3', culture_id: '2', passage_number: 1, status: 'ACTIVE', start_date: '2026-01-18', notes: '', created_at: '2026-01-18T00:00:00Z' },
+  { id: '1', lot_number: 'LOT-0001-1', culture_id: '1', passage_number: 1, status: 'ACTIVE', seeded_at: '2026-01-15T00:00:00Z', notes: '', created_at: '2026-01-15T00:00:00Z' },
+  { id: '2', lot_number: 'LOT-0001-2', culture_id: '1', passage_number: 2, status: 'ACTIVE', seeded_at: '2026-01-20T00:00:00Z', notes: '', created_at: '2026-01-20T00:00:00Z' },
+  { id: '3', lot_number: 'LOT-0002-1', culture_id: '2', passage_number: 1, status: 'ACTIVE', seeded_at: '2026-01-18T00:00:00Z', notes: '', created_at: '2026-01-18T00:00:00Z' },
 ]
 
 // Containers
 export const mockContainers: Container[] = [
-  { id: '1', lot_id: '1', code: 'CT-0001-L1-P1-FL75-001', container_type_id: '1', status: 'IN_CULTURE', position_id: '1', confluent_percent: 85, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
-  { id: '2', lot_id: '1', code: 'CT-0001-L1-P1-FL75-002', container_type_id: '1', status: 'IN_CULTURE', position_id: '2', confluent_percent: 80, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
-  { id: '3', lot_id: '2', code: 'CT-0001-L1-P2-FL75-001', container_type_id: '1', status: 'IN_CULTURE', position_id: '1', confluent_percent: 75, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-20T10:00:00Z', created_at: '2026-01-20T00:00:00Z' },
-  { id: '4', lot_id: '3', code: 'CT-0002-L1-P1-FL75-001', container_type_id: '1', status: 'IN_CULTURE', position_id: '2', confluent_percent: 70, morphology: 'Cobblestone', contaminated: false, placed_at: '2026-01-18T10:00:00Z', created_at: '2026-01-18T00:00:00Z' },
+  { id: '1', lot_id: '1', code: 'CT-0001-L1-P1-FL75-001', container_type_id: '1', container_status: 'IN_CULTURE', position_id: '1', confluent_percent: 85, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
+  { id: '2', lot_id: '1', code: 'CT-0001-L1-P1-FL75-002', container_type_id: '1', container_status: 'IN_CULTURE', position_id: '2', confluent_percent: 80, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-15T10:00:00Z', created_at: '2026-01-15T00:00:00Z' },
+  { id: '3', lot_id: '2', code: 'CT-0001-L1-P2-FL75-001', container_type_id: '1', container_status: 'IN_CULTURE', position_id: '1', confluent_percent: 75, morphology: 'Spindle', contaminated: false, placed_at: '2026-01-20T10:00:00Z', created_at: '2026-01-20T00:00:00Z' },
+  { id: '4', lot_id: '3', code: 'CT-0002-L1-P1-FL75-001', container_type_id: '1', container_status: 'IN_CULTURE', position_id: '2', confluent_percent: 70, morphology: 'Cobblestone', contaminated: false, placed_at: '2026-01-18T10:00:00Z', created_at: '2026-01-18T00:00:00Z' },
 ]
 
 // Banks
 export const mockBanks: Bank[] = [
-  { id: '1', culture_id: '1', lot_id: '1', bank_type: 'MCB', status: 'APPROVED', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: true, freezing_date: '2026-01-25', expiration_date: '2031-01-25', created_at: '2026-01-25T00:00:00Z' },
-  { id: '2', culture_id: '1', lot_id: '2', bank_type: 'WCB', status: 'QC_PENDING', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: false, freezing_date: '2026-01-28', created_at: '2026-01-28T00:00:00Z' },
+  { id: '1', code: 'MCB-001', culture_id: '1', lot_id: '1', bank_type: 'MCB', status: 'APPROVED', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: true, freezing_date: '2026-01-25', qc_date: '2031-01-25', created_at: '2026-01-25T00:00:00Z' },
+  { id: '2', code: 'WCB-001', culture_id: '1', lot_id: '2', bank_type: 'WCB', status: 'QC_PENDING', cryo_vials_count: 20, cells_per_vial: 4_000_000, total_cells: 80_000_000, qc_passed: false, freezing_date: '2026-01-28', created_at: '2026-01-28T00:00:00Z' },
 ]
 
 // CryoVials
@@ -110,10 +110,10 @@ export const mockOrders: Order[] = [
 
 // Tasks
 export const mockTasks: Task[] = [
-  { id: '1', type: 'INSPECT', target_type: 'CULTURE', target_id: '1', status: 'PENDING', due_date: '2026-02-02', interval_days: 3, created_at: '2026-01-27T00:00:00Z' },
-  { id: '2', type: 'FEED', target_type: 'CULTURE', target_id: '1', status: 'PENDING', due_date: '2026-02-02', interval_days: 3, created_at: '2026-01-27T00:00:00Z' },
-  { id: '3', type: 'QC_DUE', target_type: 'BANK', target_id: '2', status: 'PENDING', due_date: '2026-02-01', created_at: '2026-01-28T00:00:00Z' },
-  { id: '4', type: 'FEFO', target_type: 'BATCH', target_id: '1', status: 'PENDING', due_date: '2026-02-10', created_at: '2026-01-27T00:00:00Z' },
+  { id: '1', type: 'INSPECT', title: 'Осмотр культуры HeLa', target_type: 'CULTURE', target_id: '1', status: 'PENDING', due_date: '2026-02-02', interval_days: 3, created_at: '2026-01-27T00:00:00Z' },
+  { id: '2', type: 'FEED', title: 'Кормление культуры HeLa', target_type: 'CULTURE', target_id: '1', status: 'PENDING', due_date: '2026-02-02', interval_days: 3, created_at: '2026-01-27T00:00:00Z' },
+  { id: '3', type: 'QC_DUE', title: 'QC банка WCB-001', target_type: 'BANK', target_id: '2', status: 'PENDING', due_date: '2026-02-01', created_at: '2026-01-28T00:00:00Z' },
+  { id: '4', type: 'FEFO', title: 'Проверка сроков FEFO', target_type: 'BATCH', target_id: '1', status: 'PENDING', due_date: '2026-02-10', created_at: '2026-01-27T00:00:00Z' },
 ]
 
 // Notifications
