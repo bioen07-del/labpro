@@ -131,9 +131,7 @@ export function Header() {
             <NavLink href="/banks" pathname={pathname}>Банки</NavLink>
             <NavLink href="/operations" pathname={pathname}>Операции</NavLink>
             <NavLink href="/qc" pathname={pathname}>QC</NavLink>
-            <NavLink href="/ready-media" pathname={pathname}>Среды</NavLink>
-            <NavLink href="/inventory" pathname={pathname}>Склад</NavLink>
-            <NavLink href="/equipment" pathname={pathname}>Оборудование</NavLink>
+            <NavLink href="/references" pathname={pathname}>Справочники</NavLink>
             <NavLink href="/orders" pathname={pathname}>Заявки</NavLink>
             <NavLink href="/tasks" pathname={pathname}>Задачи</NavLink>
             <NavLink href="/audit" pathname={pathname}>Аудит</NavLink>
@@ -271,9 +269,7 @@ export function Header() {
             <MobileNavLink href="/banks" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Банки</MobileNavLink>
             <MobileNavLink href="/operations" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Операции</MobileNavLink>
             <MobileNavLink href="/qc" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>QC</MobileNavLink>
-            <MobileNavLink href="/ready-media" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Среды</MobileNavLink>
-            <MobileNavLink href="/inventory" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Склад</MobileNavLink>
-            <MobileNavLink href="/equipment" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Оборудование</MobileNavLink>
+            <MobileNavLink href="/references" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Справочники</MobileNavLink>
             <MobileNavLink href="/orders" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Заявки</MobileNavLink>
             <MobileNavLink href="/tasks" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Задачи</MobileNavLink>
             <MobileNavLink href="/audit" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Аудит</MobileNavLink>
@@ -288,7 +284,10 @@ export function Header() {
 }
 
 function NavLink({ href, pathname, children }: { href: string; pathname: string; children: React.ReactNode }) {
-  const isActive = pathname === href || pathname.startsWith(href + '/')
+  const refPaths = ['/references', '/equipment', '/inventory', '/ready-media']
+  const isActive = href === '/references'
+    ? refPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
+    : pathname === href || pathname.startsWith(href + '/')
   
   return (
     <Link

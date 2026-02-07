@@ -24,7 +24,6 @@ import {
 import {
   getDonations,
   getCultureTypesByTissueType,
-  getCultureTypes,
   getContainerTypes,
   getPositions,
   getAvailableMediaForFeed,
@@ -216,18 +215,9 @@ function NewCultureForm() {
         is_primary: l.is_primary,
       }))
 
-      // Fallback: if no tissue-type links exist, load ALL culture types
       if (mapped.length === 0) {
-        const allTypes = await getCultureTypes()
-        const allMapped = ((allTypes || []) as any[]).map((ct) => ({
-          id: ct.id,
-          code: ct.code,
-          name: ct.name,
-        }))
-        setCultureTypeOptions(allMapped)
-        if (allMapped.length === 1) {
-          setCultureTypeId(allMapped[0].id)
-        }
+        toast.warning('Для данного типа ткани не определены типы клеток. Обратитесь к администратору.')
+        setCultureTypeOptions([])
       } else {
         setCultureTypeOptions(mapped)
         // Auto-select primary or single option
@@ -375,8 +365,8 @@ function NewCultureForm() {
           <Link href="/cultures"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Новая культура из донации</h1>
-          <p className="text-muted-foreground">Выделение клеточной культуры из биоматериала</p>
+          <h1 className="text-2xl font-bold">Создание первичной культуры</h1>
+          <p className="text-muted-foreground">Выделение клеточной культуры из биоматериала донации</p>
         </div>
       </div>
 

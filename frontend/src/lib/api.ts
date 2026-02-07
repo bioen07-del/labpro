@@ -1039,6 +1039,26 @@ export async function createDonation(donation: Record<string, unknown>) {
   return data
 }
 
+// Создать QC-задачи для анализов донации со статусом PENDING
+export async function createDonationInfectionTasks(donationId: string, donationCode: string) {
+  const tests = ['ВИЧ', 'Гепатит B', 'Гепатит C', 'Сифилис']
+  const testCodes = ['HIV', 'HBV', 'HCV', 'SYPHILIS']
+
+  for (let i = 0; i < tests.length; i++) {
+    try {
+      await supabase.from('tasks').insert({
+        type: 'QC_DUE',
+        target_type: 'DONATION' as any,
+        target_id: donationId,
+        status: 'PENDING',
+        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // +7 дней
+      })
+    } catch {
+      // Ignore errors for individual tasks
+    }
+  }
+}
+
 export async function updateDonation(id: string, updates: Record<string, unknown>) {
   const { data, error } = await supabase
     .from('donations')
@@ -2348,7 +2368,7 @@ export async function getConsumableBatchesForContainerType(containerTypeName: st
     .from('batches')
     .select('*, nomenclature:nomenclatures(*)')
     .gt('quantity', 0)
-    .in('status', ['ACTIVE', 'AVAILABLE'])
+    .in('status', ['AVAILABLE', 'RESERVED'])
     .order('expiration_date', { ascending: true }) // FEFO
 
   if (error) throw error

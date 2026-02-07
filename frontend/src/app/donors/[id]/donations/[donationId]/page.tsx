@@ -15,6 +15,8 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Save,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -82,6 +84,18 @@ function donationStatusBadge(status: string) {
   }
 }
 
+const INFECTION_OPTIONS: { value: string; label: string }[] = [
+  { value: "PENDING", label: "Ожидает" },
+  { value: "NEGATIVE", label: "Отрицательный" },
+  { value: "POSITIVE", label: "Положительный" },
+]
+
+const DONATION_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "QUARANTINE", label: "Карантин" },
+  { value: "APPROVED", label: "Одобрена" },
+  { value: "REJECTED", label: "Отклонена" },
+]
+
 // ---------------------------------------------------------------------------
 // Page Component
 // ---------------------------------------------------------------------------
@@ -97,6 +111,17 @@ export default function DonationDetailPage({
   const [loading, setLoading] = useState(true)
   const [donation, setDonation] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // Edit form state
+  const [editInfHiv, setEditInfHiv] = useState<string>("")
+  const [editInfHbv, setEditInfHbv] = useState<string>("")
+  const [editInfHcv, setEditInfHcv] = useState<string>("")
+  const [editInfSyphilis, setEditInfSyphilis] = useState<string>("")
+  const [editStatus, setEditStatus] = useState<string>("")
 
   useEffect(() => {
     loadData()
@@ -114,6 +139,98 @@ export default function DonationDetailPage({
       setLoading(false)
     }
   }
+
+  // Enter edit mode — populate form fields from current donation data
+  function enterEdit() {
+    if (!donation) return
+    setEditInfHiv(donation.inf_hiv || "PENDING")
+    setEditInfHbv(donation.inf_hbv || "PENDING")
+    setEditInfHcv(donation.inf_hcv || "PENDING")
+    setEditInfSyphilis(donation.inf_syphilis || "PENDING")
+    setEditStatus(donation.status)
+    setEditing(true)
+  }
+
+  function cancelEdit() {
+    setEditing(false)
+  }
+
+  // Auto-suggest: if all infections are NEGATIVE, suggest APPROVED
+  function handleInfectionChange(
+    field: "hiv" | "hbv" | "hcv" | "syphilis",
+    value: string,
+  ) {
+    const next = {
+      hiv: editInfHiv,
+      hbv: editInfHbv,
+      hcv: editInfHcv,
+      syphilis: editInfSyphilis,
+    }
+    next[field] = value
+
+    switch (field) {
+      case "hiv":
+        setEditInfHiv(value)
+        break
+      case "hbv":
+        setEditInfHbv(value)
+        break
+      case "hcv":
+        setEditInfHcv(value)
+        break
+      case "syphilis":
+        setEditInfSyphilis(value)
+        break
+    }
+
+    // Auto-suggest APPROVED when all tests are NEGATIVE
+    const allNegative =
+      next.hiv === "NEGATIVE" &&
+      next.hbv === "NEGATIVE" &&
+      next.hcv === "NEGATIVE" &&
+      next.syphilis === "NEGATIVE"
+
+    if (allNegative && editStatus === "QUARANTINE") {
+      setEditStatus("APPROVED")
+      toast.info("Все тесты отрицательны — статус изменён на «Одобрена»")
+    }
+
+    // If any test is POSITIVE and status was auto-set to APPROVED, suggest REJECTED
+    const anyPositive =
+      next.hiv === "POSITIVE" ||
+      next.hbv === "POSITIVE" ||
+      next.hcv === "POSITIVE" ||
+      next.syphilis === "POSITIVE"
+
+    if (anyPositive && editStatus === "APPROVED") {
+      setEditStatus("REJECTED")
+      toast.info("Обнаружен положительный результат — статус изменён на «Отклонена»")
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await updateDonation(donationId, {
+        inf_hiv: editInfHiv,
+        inf_hbv: editInfHbv,
+        inf_hcv: editInfHcv,
+        inf_syphilis: editInfSyphilis,
+        status: editStatus,
+      })
+      toast.success("Донация обновлена")
+      setEditing(false)
+      loadData()
+    } catch (err: any) {
+      toast.error("Ошибка сохранения")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Loading / Error states
+  // ---------------------------------------------------------------------------
 
   if (loading) {
     return (
@@ -146,6 +263,9 @@ export default function DonationDetailPage({
         .join(" ")
     : "---"
 
+  // "Создать первичную культуру" visible for APPROVED and QUARANTINE (not REJECTED)
+  const canCreateCulture = donation.status === "APPROVED" || donation.status === "QUARANTINE"
+
   return (
     <div className="container py-6 space-y-6">
       {/* Header */}
@@ -169,7 +289,30 @@ export default function DonationDetailPage({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {donation.status === "APPROVED" && (
+          {/* Edit / Save / Cancel buttons */}
+          {!editing ? (
+            <Button variant="outline" onClick={enterEdit}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Редактировать
+            </Button>
+          ) : (
+            <>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-2 h-4 w-4" />
+                )}
+                Сохранить
+              </Button>
+              <Button variant="outline" onClick={cancelEdit} disabled={saving}>
+                <X className="mr-2 h-4 w-4" />
+                Отмена
+              </Button>
+            </>
+          )}
+
+          {canCreateCulture && !editing && (
             <Button asChild>
               <Link href={`/cultures/new?donor_id=${donorId}&donation_id=${donationId}`}>
                 <Dna className="mr-2 h-4 w-4" />
@@ -223,21 +366,100 @@ export default function DonationDetailPage({
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {/* HIV */}
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">ВИЧ</p>
-                  {infectionBadge(donation.inf_hiv)}
+                  {editing ? (
+                    <Select
+                      value={editInfHiv}
+                      onValueChange={(v) => handleInfectionChange("hiv", v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INFECTION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    infectionBadge(donation.inf_hiv)
+                  )}
                 </div>
+
+                {/* HBV */}
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Гепатит B</p>
-                  {infectionBadge(donation.inf_hbv)}
+                  {editing ? (
+                    <Select
+                      value={editInfHbv}
+                      onValueChange={(v) => handleInfectionChange("hbv", v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INFECTION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    infectionBadge(donation.inf_hbv)
+                  )}
                 </div>
+
+                {/* HCV */}
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Гепатит C</p>
-                  {infectionBadge(donation.inf_hcv)}
+                  {editing ? (
+                    <Select
+                      value={editInfHcv}
+                      onValueChange={(v) => handleInfectionChange("hcv", v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INFECTION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    infectionBadge(donation.inf_hcv)
+                  )}
                 </div>
+
+                {/* Syphilis */}
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Сифилис</p>
-                  {infectionBadge(donation.inf_syphilis)}
+                  {editing ? (
+                    <Select
+                      value={editInfSyphilis}
+                      onValueChange={(v) => handleInfectionChange("syphilis", v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INFECTION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    infectionBadge(donation.inf_syphilis)
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -290,7 +512,22 @@ export default function DonationDetailPage({
             <CardContent className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Статус донации</span>
-                {donationStatusBadge(donation.status)}
+                {editing ? (
+                  <Select value={editStatus} onValueChange={setEditStatus}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DONATION_STATUS_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  donationStatusBadge(donation.status)
+                )}
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Код</span>
