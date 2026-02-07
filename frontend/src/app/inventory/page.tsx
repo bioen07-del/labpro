@@ -88,9 +88,11 @@ export default function InventoryPage() {
             Реагенты, расходные материалы и номенклатура
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Добавить партию
+        <Button asChild>
+          <Link href="/inventory/new">
+            <Plus className="mr-2 h-4 w-4" />
+            Добавить партию
+          </Link>
         </Button>
       </div>
 

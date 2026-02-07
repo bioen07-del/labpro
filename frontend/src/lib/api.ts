@@ -399,6 +399,36 @@ export async function getOperations(filters?: { lot_id?: string; type?: string; 
   return data
 }
 
+export async function getOperationById(id: string) {
+  const { data, error } = await supabase
+    .from('operations')
+    .select(`
+      *,
+      lot:lots(
+        *,
+        culture:cultures(
+          *,
+          culture_type:culture_types(*)
+        )
+      ),
+      operation_containers:operation_containers(
+        *,
+        container:containers(*)
+      ),
+      operation_media:operation_media(
+        *,
+        batch:batches(*),
+        ready_medium:ready_media(*)
+      ),
+      operation_metrics:operation_metrics(*)
+    `)
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function createOperation(operation: Record<string, unknown>) {
   const { data, error } = await supabase
     .from('operations')
@@ -679,6 +709,27 @@ export async function updateBatch(id: string, updates: Record<string, unknown>) 
   
   if (error) throw error
   return data
+}
+
+export async function getBatchById(id: string) {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*)')
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function getNomenclatures() {
+  const { data, error } = await supabase
+    .from('nomenclatures')
+    .select('*')
+    .order('name')
+
+  if (error) throw error
+  return data ?? []
 }
 
 // ==================== TASKS ====================
