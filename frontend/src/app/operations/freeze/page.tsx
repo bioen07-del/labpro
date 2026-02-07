@@ -1,19 +1,20 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { 
-  ArrowLeft, 
-  ThermometerSnowflake, 
-  Save, 
-  Plus,
-  Trash2,
-  Search,
-  Beaker,
-  AlertTriangle,
-  CheckCircle2
+import {
+  ArrowLeft,
+  ArrowRight,
+  ThermometerSnowflake,
+  CheckCircle2,
+  RefreshCw,
+  AlertCircle,
+  Snowflake,
+  MapPin,
 } from 'lucide-react'
+import { toast } from 'sonner'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,171 +22,337 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  getContainers, 
-  getBanks,
+import { Checkbox } from '@/components/ui/checkbox'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  getLots,
+  getContainersByLot,
+  getAvailableMediaForFeed,
   getPositions,
-  createBank,
-  createCryoVial,
-  createOperation,
-  updateContainer
+  getBanks,
+  createOperationFreeze,
 } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface StepDef {
+  label: string
+  shortLabel: string
+}
+
+const STEPS: StepDef[] = [
+  { label: 'Источник', shortLabel: 'Источник' },
+  { label: 'Параметры', shortLabel: 'Параметры' },
+  { label: 'Среды и метрики', shortLabel: 'Среды' },
+  { label: 'Размещение', shortLabel: 'Размещение' },
+  { label: 'Подтверждение', shortLabel: 'Итого' },
+]
+
+const FREEZING_METHODS = [
+  { value: 'PROGRAMMED', label: 'Программное замораживание' },
+  { value: 'MANUAL_80', label: 'Ручное (-80 C)' },
+]
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatNumber(n: number): string {
+  return n.toLocaleString('ru-RU')
+}
+
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '---'
+  try {
+    return new Date(dateStr).toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  } catch {
+    return String(dateStr)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function FreezePage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState(1)
-  
-  // Данные формы
-  const [selectedContainer, setSelectedContainer] = useState<any>(null)
-  const [lotInfo, setLotInfo] = useState<any>(null)
-  
-  // Параметры заморозки
-  const [freezeParams, setFreezeParams] = useState({
-    passage_number: 0,
-    population_doubling: 0,
-    vials_count: 1,
-    cells_per_vial: 1000000,
-    cryoprotectant: 'DMSO_10',
-    freezingRate: '1',
-    finalVolume: 1.0,
-  })
-  
-  // QC параметры
-  const [qcData, setQcData] = useState({
-    viability_before: 0,
-    morphology: '',
-    mycoplasma: 'PENDING',
-    sterility: 'PENDING',
-    contamination: false,
-  })
-  
-  // Целевой банк
-  const [targetBank, setTargetBank] = useState<any>(null)
-  const [vials, setVials] = useState<any[]>([])
-  const [notes, setNotes] = useState('')
-  
-  // Данные для выбора
-  const [containers, setContainers] = useState<any[]>([])
-  const [positions, setPositions] = useState<any[]>([])
-  const [banks, setBanks] = useState<any[]>([])
-  
-  useEffect(() => {
-    loadData()
-  }, [])
-  
-  const loadData = async () => {
-    try {
-      const [containersData, positionsData, banksData] = await Promise.all([
-        getContainers({ status: 'IN_CULTURE' }),
-        getPositions({ is_active: true }),
-        getBanks()
-      ])
-      setContainers(containersData || [])
-      setPositions(positionsData || [])
-      setBanks(banksData || [])
-    } catch (error) {
-      console.error('Error loading data:', error)
-    }
-  }
-  
-  const handleContainerSelect = (container: any) => {
-    setSelectedContainer(container)
-    if (container.lot) {
-      setLotInfo(container.lot)
-      setFreezeParams(prev => ({
-        ...prev,
-        passage_number: (container.lot.passage_number || 0) + 1,
-        population_doubling: container.lot.population_doubling || 0,
-      }))
-    }
-    // Загружаем QC данные из последнего наблюдения
-    if (container.morphology) {
-      setQcData(prev => ({ ...prev, morphology: container.morphology }))
-    }
-  }
-  
-  const addVial = () => {
-    setVials([...vials, { id: vials.length + 1, position: null, label: '' }])
-  }
-  
-  const removeVial = (id: number) => {
-    setVials(vials.filter(v => v.id !== id))
-  }
-  
-  const handleSubmit = async () => {
-    setLoading(true)
-    try {
-      // Автоопределение MCB/WCB: первая заморозка культуры = MCB, последующие = WCB
-      let bankType = 'MCB'
-      if (lotInfo?.culture_id) {
-        const existingBanks = await getBanks({ culture_id: lotInfo.culture_id })
-        if (existingBanks && existingBanks.length > 0) {
-          bankType = 'WCB'
-        }
-      }
 
-      // Создаем банк с правильным статусом QUARANTINE
-      const bankData = {
-        culture_id: lotInfo?.culture_id,
-        lot_id: lotInfo?.id,
-        bank_type: bankType, // MCB (первая заморозка) или WCB (последующие)
-        cryo_vials_count: freezeParams.vials_count,
-        cells_per_vial: freezeParams.cells_per_vial,
-        total_cells: freezeParams.cells_per_vial * freezeParams.vials_count,
-        status: 'QUARANTINE', // Банк создается на карантине до QC
-        freezing_date: new Date().toISOString().split('T')[0],
-        notes: `Криопротектор: ${freezeParams.cryoprotectant}. ${notes}`,
+  // --- wizard step (1-based) ---
+  const [step, setStep] = useState(1)
+
+  // --- reference data ---
+  const [lots, setLots] = useState<any[]>([])
+  const [containers, setContainers] = useState<any[]>([])
+  const [media, setMedia] = useState<any[]>([])
+  const [positions, setPositions] = useState<any[]>([])
+
+  // --- loading flags ---
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [containersLoading, setContainersLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // --- Step 1: Source ---
+  const [selectedLotId, setSelectedLotId] = useState('')
+  const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([])
+
+  // --- Step 2: Parameters ---
+  const [bankType, setBankType] = useState<'MCB' | 'WCB' | null>(null)
+  const [bankTypeLoading, setBankTypeLoading] = useState(false)
+  const [freezingMethod, setFreezingMethod] = useState('')
+  const [volumePerVial, setVolumePerVial] = useState('')
+  const [cryoVialCount, setCryoVialCount] = useState('')
+
+  // --- Step 3: Media & Metrics ---
+  const [freezingMediumId, setFreezingMediumId] = useState('')
+  const [dissociationMediumId, setDissociationMediumId] = useState('')
+  const [washMediumId, setWashMediumId] = useState('')
+  const [concentration, setConcentration] = useState('')
+  const [totalVolume, setTotalVolume] = useState('')
+  const [viability, setViability] = useState('')
+
+  // --- Step 4: Placement ---
+  const [positionId, setPositionId] = useState('')
+
+  // --- Step 5: Notes ---
+  const [notes, setNotes] = useState('')
+
+  // ---------------------------------------------------------------------------
+  // Derived values
+  // ---------------------------------------------------------------------------
+
+  const selectedLot = useMemo(
+    () => lots.find((l: any) => l.id === selectedLotId),
+    [lots, selectedLotId],
+  )
+
+  const selectedPosition = useMemo(
+    () => positions.find((p: any) => p.id === positionId),
+    [positions, positionId],
+  )
+
+  // Auto-calculated cell metrics
+  const totalCells = useMemo(() => {
+    const conc = Number(concentration)
+    const vol = Number(totalVolume)
+    if (conc > 0 && vol > 0) return conc * vol
+    return 0
+  }, [concentration, totalVolume])
+
+  const cellsPerVial = useMemo(() => {
+    const count = Number(cryoVialCount)
+    if (totalCells > 0 && count > 0) return Math.round(totalCells / count)
+    return 0
+  }, [totalCells, cryoVialCount])
+
+  // ---------------------------------------------------------------------------
+  // Initial data load
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [lotsData, mediaData, positionsData] = await Promise.all([
+          getLots({ status: 'ACTIVE' }),
+          getAvailableMediaForFeed(),
+          getPositions({ is_active: true }),
+        ])
+        setLots(lotsData || [])
+        setMedia(mediaData || [])
+        setPositions(positionsData || [])
+      } catch (error) {
+        console.error('Error loading initial data:', error)
+        toast.error('Ошибка загрузки данных')
+      } finally {
+        setInitialLoading(false)
       }
-      
-      const bank = await createBank(bankData)
-      
-      // Создаем криопробирки
-      for (let i = 0; i < freezeParams.vials_count; i++) {
-        const vialData = {
-          bank_id: bank.id,
-          lot_id: lotInfo?.id,
-          position_id: vials[i]?.position?.id || null,
-          cells_count: freezeParams.cells_per_vial,
-          freezing_date: new Date().toISOString().split('T')[0],
-          status: 'IN_STOCK',
-        }
-        await createCryoVial(vialData)
-      }
-      
-      // Создаем операцию заморозки
-      const operationData = {
-        lot_id: lotInfo?.id,
-        operation_type: 'FREEZE',
-        status: 'COMPLETED',
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        notes: `Заморозка ${freezeParams.vials_count} пробирок. Криопротектор: ${freezeParams.cryoprotectant}`,
-      }
-      
-      await createOperation(operationData)
-      
-      // Обновляем статус контейнера-донора на DISPOSE (использован для заморозки)
-      if (selectedContainer) {
-        await updateContainer(selectedContainer.id, { status: 'DISPOSE' })
-      }
-      
-      router.push(`/banks/${bank.id}`)
+    }
+    load()
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Load containers when lot changes
+  // ---------------------------------------------------------------------------
+
+  const loadContainers = useCallback(async (lotId: string) => {
+    setContainersLoading(true)
+    try {
+      const data = await getContainersByLot(lotId)
+      setContainers(data || [])
+      setSelectedContainerIds([])
     } catch (error) {
-      console.error('Error creating freeze:', error)
+      console.error('Error loading containers:', error)
+      toast.error('Ошибка загрузки контейнеров')
+      setContainers([])
     } finally {
-      setLoading(false)
+      setContainersLoading(false)
+    }
+  }, [])
+
+  const handleLotChange = (lotId: string) => {
+    setSelectedLotId(lotId)
+    setSelectedContainerIds([])
+    setBankType(null)
+    loadContainers(lotId)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Determine MCB / WCB when lot is selected and user proceeds to step 2
+  // ---------------------------------------------------------------------------
+
+  const determineBankType = useCallback(async () => {
+    if (!selectedLot) return
+    const cultureId = selectedLot.culture_id || selectedLot.culture?.id
+    if (!cultureId) return
+
+    setBankTypeLoading(true)
+    try {
+      const existingBanks = await getBanks({ culture_id: cultureId })
+      setBankType(existingBanks && existingBanks.length > 0 ? 'WCB' : 'MCB')
+    } catch (error) {
+      console.error('Error determining bank type:', error)
+      setBankType('MCB')
+    } finally {
+      setBankTypeLoading(false)
+    }
+  }, [selectedLot])
+
+  // ---------------------------------------------------------------------------
+  // Container selection helpers
+  // ---------------------------------------------------------------------------
+
+  const toggleContainer = (id: string) => {
+    setSelectedContainerIds((prev) =>
+      prev.includes(id) ? prev.filter((cid) => cid !== id) : [...prev, id],
+    )
+  }
+
+  const toggleAll = () => {
+    if (selectedContainerIds.length === containers.length) {
+      setSelectedContainerIds([])
+    } else {
+      setSelectedContainerIds(containers.map((c: any) => c.id))
     }
   }
-  
-  const updateContainerStatus = async (id: string, status: string) => {
-    await updateContainer(id, { status })
+
+  // ---------------------------------------------------------------------------
+  // Step validation
+  // ---------------------------------------------------------------------------
+
+  const isStep1Valid =
+    selectedLotId !== '' && selectedContainerIds.length > 0
+
+  const isStep2Valid =
+    bankType !== null &&
+    freezingMethod !== '' &&
+    volumePerVial !== '' &&
+    Number(volumePerVial) > 0 &&
+    cryoVialCount !== '' &&
+    Number(cryoVialCount) >= 1
+
+  const isStep3Valid =
+    freezingMediumId !== '' &&
+    concentration !== '' &&
+    Number(concentration) > 0 &&
+    totalVolume !== '' &&
+    Number(totalVolume) > 0 &&
+    viability !== '' &&
+    Number(viability) >= 0 &&
+    Number(viability) <= 100
+
+  const isStep4Valid = positionId !== ''
+
+  const canProceed = (): boolean => {
+    switch (step) {
+      case 1:
+        return isStep1Valid
+      case 2:
+        return isStep2Valid
+      case 3:
+        return isStep3Valid
+      case 4:
+        return isStep4Valid
+      default:
+        return true
+    }
   }
-  
+
+  // ---------------------------------------------------------------------------
+  // Navigation
+  // ---------------------------------------------------------------------------
+
+  const goNext = () => {
+    if (step === 1 && bankType === null) {
+      determineBankType()
+    }
+    setStep((s) => Math.min(5, s + 1))
+  }
+
+  const goBack = () => setStep((s) => Math.max(1, s - 1))
+
+  // ---------------------------------------------------------------------------
+  // Submit
+  // ---------------------------------------------------------------------------
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    try {
+      const result = await createOperationFreeze({
+        lot_id: selectedLotId,
+        container_ids: selectedContainerIds,
+        cryo_vial_count: Number(cryoVialCount),
+        freezer_position_id: positionId,
+        cells_per_vial: cellsPerVial,
+        total_cells: totalCells,
+        freezing_medium: freezingMediumId,
+        viability_percent: Number(viability),
+        concentration: Number(concentration),
+        notes: notes || undefined,
+      })
+
+      toast.success('Заморозка выполнена', {
+        description: `Банк ${result.bankType} создан. Криовиалов: ${Number(cryoVialCount)}`,
+      })
+
+      router.push('/operations')
+    } catch (error: any) {
+      console.error('Error creating freeze operation:', error)
+      toast.error('Ошибка выполнения заморозки', {
+        description: error?.message || 'Попробуйте ещё раз',
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render: loading state
+  // ---------------------------------------------------------------------------
+
+  if (initialLoading) {
+    return (
+      <div className="container py-6">
+        <Card className="max-w-3xl mx-auto">
+          <CardContent className="pt-6 text-center">
+            <RefreshCw className="h-8 w-8 mx-auto animate-spin text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">Загрузка данных...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
-    <div className="container py-6 space-y-6">
+    <div className="container py-6 space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
@@ -194,386 +361,746 @@ export default function FreezePage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Заморозка культуры</h1>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Snowflake className="h-7 w-7" />
+            Заморозка культуры
+          </h1>
           <p className="text-muted-foreground">
-            Создание клеточного банка (Master/Working Bank)
+            Создание клеточного банка (MCB / WCB) и криовиалов
           </p>
         </div>
       </div>
-      
-      {/* Progress Steps */}
-      <div className="flex items-center gap-4">
-        {['Выбор культуры', 'Параметры заморозки', 'Маркировка', 'Подтверждение'].map((s, i) => (
-          <div key={i} className={`flex items-center gap-2 ${step > i ? 'text-primary' : 'text-muted-foreground'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              step > i ? 'bg-primary text-primary-foreground' : step === i + 1 ? 'bg-primary text-primary-foreground' : 'bg-muted'
-            }`}>
-              {step > i ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+
+      {/* Step indicator */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-2">
+        {STEPS.map((s, i) => {
+          const stepNum = i + 1
+          const isCompleted = step > stepNum
+          const isCurrent = step === stepNum
+          return (
+            <div key={i} className="flex items-center gap-1 shrink-0">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
+                  isCompleted
+                    ? 'bg-primary text-primary-foreground'
+                    : isCurrent
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
+              </div>
+              <span
+                className={`text-sm whitespace-nowrap ${
+                  isCurrent ? 'font-medium' : 'text-muted-foreground'
+                }`}
+              >
+                {s.label}
+              </span>
+              {i < STEPS.length - 1 && (
+                <div className="w-6 h-0.5 bg-border mx-1" />
+              )}
             </div>
-            <span className="text-sm">{s}</span>
-            {i < 3 && <div className="w-8 h-0.5 bg-border" />}
-          </div>
-        ))}
+          )
+        })}
       </div>
-      
-      {/* Step 1: Select Container */}
+
+      {/* ================================================================== */}
+      {/* STEP 1 : SOURCE                                                    */}
+      {/* ================================================================== */}
       {step === 1 && (
         <Card>
           <CardHeader>
-            <CardTitle>Выберите контейнер для заморозки</CardTitle>
+            <CardTitle>Шаг 1. Источник</CardTitle>
             <CardDescription>
-              Выберите контейнер с культурой, которую необходимо заморозить
+              Выберите лот и контейнеры для заморозки
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Поиск по коду контейнера..." className="pl-9" />
-              </div>
-              
-              <div className="grid gap-3">
-                {containers
-                  .filter(c => c.status === 'ACTIVE' && c.confluent_percent >= 70)
-                  .map(container => (
-                    <div 
-                      key={container.id}
-                      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                        selectedContainer?.id === container.id 
-                          ? 'border-primary bg-primary/5' 
-                          : 'hover:border-muted-foreground'
-                      }`}
-                      onClick={() => handleContainerSelect(container)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{container.code}</Badge>
-                            <Badge variant="secondary">
-                              P{container.lot?.passage_number || 0}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 text-sm">
-                            {container.lot?.culture?.name} • {container.lot?.culture?.culture_type?.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Конфлюэнтность: {container.confluent_percent}% • 
-                            Морфология: {container.morphology || 'не указана'}
-                          </p>
-                        </div>
-                        {container.viability_percent && (
-                          <Badge variant={container.viability_percent >= 80 ? 'default' : 'destructive'}>
-                            {container.viability_percent}% жизнеспособность
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+          <CardContent className="space-y-6">
+            {/* Lot selection */}
+            <div className="space-y-2">
+              <Label htmlFor="lot">Лот</Label>
+              <Select value={selectedLotId} onValueChange={handleLotChange}>
+                <SelectTrigger id="lot">
+                  <SelectValue placeholder="Выберите лот..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {lots.map((lot: any) => (
+                    <SelectItem key={lot.id} value={lot.id}>
+                      {lot.lot_number} &mdash;{' '}
+                      {lot.culture?.name ||
+                        lot.culture?.culture_type?.name ||
+                        'Культура'}
+                      {lot.passage_number != null && ` (P${lot.passage_number})`}
+                    </SelectItem>
                   ))}
-              </div>
-              
-              {containers.filter(c => c.status === 'ACTIVE' && c.confluent_percent >= 70).length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  Нет подходящих контейнеров для заморозки (минимум 70% конфлюэнтности)
-                </div>
-              )}
+                </SelectContent>
+              </Select>
             </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {/* Step 2: Freeze Parameters */}
-      {step === 2 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Параметры заморозки</CardTitle>
-            <CardDescription>
-              Укажите параметры криоконсервации культуры
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Номер пассажа</Label>
-                <Input 
-                  type="number" 
-                  value={freezeParams.passage_number}
-                  onChange={(e) => setFreezeParams({...freezeParams, passage_number: parseInt(e.target.value) || 0})}
-                  disabled
-                />
-                <p className="text-xs text-muted-foreground">Будет создан пассаж P{lotInfo?.passage_number + 1}</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Population Doubling</Label>
-                <Input 
-                  type="number" 
-                  value={freezeParams.population_doubling}
-                  onChange={(e) => setFreezeParams({...freezeParams, population_doubling: parseInt(e.target.value) || 0})}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Количество пробирок</Label>
-                <Input 
-                  type="number" 
-                  min="1"
-                  max="20"
-                  value={freezeParams.vials_count}
-                  onChange={(e) => setFreezeParams({...freezeParams, vials_count: parseInt(e.target.value) || 1})}
-                />
-              </div>
-            </div>
-            
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Клеток на пробирку</Label>
-                <Input 
-                  type="number"
-                  value={freezeParams.cells_per_vial}
-                  onChange={(e) => setFreezeParams({...freezeParams, cells_per_vial: parseInt(e.target.value) || 0})}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Криопротектор</Label>
-                <Select 
-                  value={freezeParams.cryoprotectant}
-                  onValueChange={(v) => setFreezeParams({...freezeParams, cryoprotectant: v})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DMSO_10">10% DMSO (стандарт)</SelectItem>
-                    <SelectItem value="DMSO_5">5% DMSO</SelectItem>
-                    <SelectItem value="Glycerol_10">10% Glycerol</SelectItem>
-                    <SelectItem value="PROH_1">1M PROH</SelectItem>
-                    <SelectItem value="Custom">Другое</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Скорость охлаждения</Label>
-                <Select 
-                  value={freezeParams.freezingRate}
-                  onValueChange={(v) => setFreezeParams({...freezeParams, freezingRate: v})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1°C/мин (стандарт)</SelectItem>
-                    <SelectItem value="0.5">0.5°C/мин</SelectItem>
-                    <SelectItem value="2">2°C/мин</SelectItem>
-                    <SelectItem value="controlled">Контролируемое охлаждение</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            <div className="border-t pt-4">
-              <h3 className="font-medium mb-4">QC показатели</h3>
-              <div className="grid gap-4 md:grid-cols-4">
-                <div className="space-y-2">
-                  <Label>Жизнеспособность (%)</Label>
-                  <Input 
-                    type="number"
-                    value={qcData.viability_before}
-                    onChange={(e) => setQcData({...qcData, viability_before: parseInt(e.target.value) || 0})}
-                  />
+
+            {/* Container list */}
+            {selectedLotId && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>
+                    Контейнеры
+                    {containers.length > 0 && (
+                      <span className="text-muted-foreground font-normal ml-1">
+                        ({selectedContainerIds.length} / {containers.length})
+                      </span>
+                    )}
+                  </Label>
+                  {containers.length > 1 && (
+                    <Button variant="outline" size="sm" onClick={toggleAll}>
+                      {selectedContainerIds.length === containers.length
+                        ? 'Снять все'
+                        : 'Выбрать все'}
+                    </Button>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label>Морфология</Label>
-                  <Select 
-                    value={qcData.morphology}
-                    onValueChange={(v) => setQcData({...qcData, morphology: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Spindle">Веретенообразная</SelectItem>
-                      <SelectItem value="Cobblestone">Булыжная</SelectItem>
-                      <SelectItem value="Fibroblast">Фибробластоподобная</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Микоплазма</Label>
-                  <Select 
-                    value={qcData.mycoplasma}
-                    onValueChange={(v) => setQcData({...qcData, mycoplasma: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PASSED">Отрицательно</SelectItem>
-                      <SelectItem value="PENDING">В ожидании</SelectItem>
-                      <SelectItem value="FAILED">Положительно</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Стерильность</Label>
-                  <Select 
-                    value={qcData.sterility}
-                    onValueChange={(v) => setQcData({...qcData, sterility: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PASSED">Стерильно</SelectItem>
-                      <SelectItem value="PENDING">В ожидании</SelectItem>
-                      <SelectItem value="FAILED">Контаминация</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-2 mt-4">
-                <input 
-                  type="checkbox" 
-                  id="contamination"
-                  checked={qcData.contamination}
-                  onChange={(e) => setQcData({...qcData, contamination: e.target.checked})}
-                  className="w-4 h-4"
-                />
-                <Label htmlFor="contamination" className="text-red-600">
-                  Есть признаки контаминации
-                </Label>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {/* Step 3: Vial Labeling */}
-      {step === 3 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Маркировка пробирок</CardTitle>
-            <CardDescription>
-              Укажите позиции для хранения пробирок в криобоксе
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Всего пробирок: {freezeParams.vials_count}
-              </p>
-              <Button variant="outline" size="sm" onClick={() => {
-                setVials(Array.from({ length: freezeParams.vials_count }, (_, i) => ({
-                  id: i + 1,
-                  position: null,
-                  label: ''
-                })))
-              }}>
-                Автозаполнить
-              </Button>
-            </div>
-            
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: freezeParams.vials_count }, (_, i) => (
-                <div key={i} className="p-3 border rounded-lg space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Пробирка #{i + 1}</Label>
-                    <Badge variant="outline">MB-{lotInfo?.passage_number + 1}-{String(i + 1).padStart(2, '0')}</Badge>
+
+                {containersLoading ? (
+                  <div className="text-center py-6 text-muted-foreground border rounded-lg">
+                    <RefreshCw className="h-5 w-5 mx-auto animate-spin mb-2" />
+                    <p className="text-sm">Загрузка контейнеров...</p>
                   </div>
-                  <Select 
-                    value={vials[i]?.position?.id || ''}
-                    onValueChange={(v) => {
-                      const updated = [...vials]
-                      const pos = positions.find(p => p.id === v)
-                      updated[i] = { ...updated[i], position: pos }
-                      setVials(updated)
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Позиция..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {positions.filter(p => p.equipment?.type === 'CRYO_BOX' && p.is_active).map(pos => (
-                        <SelectItem key={pos.id} value={pos.id}>
-                          {pos.path}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-            
-            {freezeParams.vials_count > 12 && (
-              <div className="flex items-center gap-2 p-3 bg-yellow-50 text-yellow-800 rounded-lg">
-                <AlertTriangle className="h-4 w-4" />
-                <p className="text-sm">Внимание: количество пробирок превышает стандартный криобокс (12 шт.)</p>
+                ) : containers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border rounded-lg">
+                    <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                    <p>Нет контейнеров в выбранном лоте</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 max-h-72 overflow-y-auto border rounded-lg p-2">
+                    {containers.map((container: any) => {
+                      const isSelected = selectedContainerIds.includes(
+                        container.id,
+                      )
+                      return (
+                        <div
+                          key={container.id}
+                          className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'border-primary bg-primary/5'
+                              : 'hover:bg-muted'
+                          }`}
+                          onClick={() => toggleContainer(container.id)}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleContainer(container.id)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline">{container.code}</Badge>
+                              {container.status && (
+                                <Badge variant="secondary">
+                                  {container.status}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          {container.confluent_percent != null && (
+                            <div className="text-sm text-right whitespace-nowrap">
+                              <span className="text-muted-foreground">
+                                Конф.&nbsp;
+                              </span>
+                              <span
+                                className={
+                                  container.confluent_percent >= 90
+                                    ? 'text-green-600 font-medium'
+                                    : container.confluent_percent >= 70
+                                      ? 'text-orange-600 font-medium'
+                                      : ''
+                                }
+                              >
+                                {container.confluent_percent}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
       )}
-      
-      {/* Step 4: Confirmation */}
-      {step === 4 && (
+
+      {/* ================================================================== */}
+      {/* STEP 2 : PARAMETERS                                                */}
+      {/* ================================================================== */}
+      {step === 2 && (
         <Card>
           <CardHeader>
-            <CardTitle>Подтверждение заморозки</CardTitle>
+            <CardTitle>Шаг 2. Параметры заморозки</CardTitle>
             <CardDescription>
-              Проверьте данные перед сохранением
+              Укажите метод замораживания и количество криовиалов
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-4">
-                <h3 className="font-medium">Исходная культура</h3>
-                <div className="p-3 bg-muted rounded-lg space-y-2">
-                  <p><span className="text-muted-foreground">Контейнер:</span> {selectedContainer?.code}</p>
-                  <p><span className="text-muted-foreground">Культура:</span> {lotInfo?.culture?.name}</p>
-                  <p><span className="text-muted-foreground">Пассаж:</span> P{lotInfo?.passage_number} → P{freezeParams.passage_number}</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <h3 className="font-medium">Параметры заморозки</h3>
-                <div className="p-3 bg-muted rounded-lg space-y-2">
-                  <p><span className="text-muted-foreground">Пробирок:</span> {freezeParams.vials_count}</p>
-                  <p><span className="text-muted-foreground">Криопротектор:</span> {freezeParams.cryoprotectant}</p>
-                  <p><span className="text-muted-foreground">Клеток/пробирка:</span> {freezeParams.cells_per_vial.toLocaleString()}</p>
-                </div>
-              </div>
-            </div>
-            
+            {/* Bank type badge (auto-determined) */}
             <div className="space-y-2">
-              <Label>Примечания</Label>
-              <Textarea 
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Дополнительные заметки..."
+              <Label>Тип банка (определяется автоматически)</Label>
+              <div className="flex items-center gap-3">
+                {bankTypeLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Определение типа...</span>
+                  </div>
+                ) : bankType === 'MCB' ? (
+                  <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-base px-4 py-1">
+                    MCB (Master Cell Bank)
+                  </Badge>
+                ) : bankType === 'WCB' ? (
+                  <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-base px-4 py-1">
+                    WCB (Working Cell Bank)
+                  </Badge>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Тип будет определен после выбора лота
+                  </span>
+                )}
+              </div>
+              {bankType && (
+                <p className="text-xs text-muted-foreground">
+                  {bankType === 'MCB'
+                    ? 'Первая заморозка для этой культуры - создается Master Cell Bank'
+                    : 'У культуры уже есть банк - создается Working Cell Bank'}
+                </p>
+              )}
+            </div>
+
+            {/* Freezing method */}
+            <div className="space-y-2">
+              <Label htmlFor="freezingMethod">Метод заморозки</Label>
+              <Select value={freezingMethod} onValueChange={setFreezingMethod}>
+                <SelectTrigger id="freezingMethod">
+                  <SelectValue placeholder="Выберите метод..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {FREEZING_METHODS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Volume per vial */}
+            <div className="space-y-2">
+              <Label htmlFor="volumePerVial">Объем на криовиал, мл</Label>
+              <Input
+                id="volumePerVial"
+                type="number"
+                min={0}
+                step="0.1"
+                placeholder="Например: 1.0"
+                value={volumePerVial}
+                onChange={(e) => setVolumePerVial(e.target.value)}
               />
             </div>
-            
-            <div className="flex items-center gap-2 p-3 bg-green-50 text-green-800 rounded-lg">
-              <CheckCircle2 className="h-4 w-4" />
-              <p className="text-sm">
-                Банк будет создан со статусом "ACTIVE" и направлен на QC тестирование
-              </p>
+
+            {/* Number of cryovials */}
+            <div className="space-y-2">
+              <Label htmlFor="cryoVialCount">Количество криовиалов</Label>
+              <Input
+                id="cryoVialCount"
+                type="number"
+                min={1}
+                step={1}
+                placeholder="Например: 10"
+                value={cryoVialCount}
+                onChange={(e) => setCryoVialCount(e.target.value)}
+              />
             </div>
           </CardContent>
         </Card>
       )}
-      
-      {/* Navigation */}
+
+      {/* ================================================================== */}
+      {/* STEP 3 : MEDIA & METRICS                                           */}
+      {/* ================================================================== */}
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Шаг 3. Среды и метрики</CardTitle>
+            <CardDescription>
+              Укажите использованные среды и показатели подсчета клеток
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* --- Media --- */}
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* Freezing medium (required) */}
+              <div className="space-y-2">
+                <Label htmlFor="freezingMedium">
+                  Среда для заморозки <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={freezingMediumId}
+                  onValueChange={setFreezingMediumId}
+                >
+                  <SelectTrigger id="freezingMedium">
+                    <SelectValue placeholder="Выберите..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {media.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code || m.name}
+                        {m.expiration_date &&
+                          ` | до ${formatDate(m.expiration_date)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Dissociation medium (optional) */}
+              <div className="space-y-2">
+                <Label htmlFor="dissociationMedium">
+                  Среда диссоциации
+                </Label>
+                <Select
+                  value={dissociationMediumId}
+                  onValueChange={setDissociationMediumId}
+                >
+                  <SelectTrigger id="dissociationMedium">
+                    <SelectValue placeholder="(необязательно)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">-- Не выбрано --</SelectItem>
+                    {media.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code || m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Wash medium (optional) */}
+              <div className="space-y-2">
+                <Label htmlFor="washMedium">Среда для промывки</Label>
+                <Select value={washMediumId} onValueChange={setWashMediumId}>
+                  <SelectTrigger id="washMedium">
+                    <SelectValue placeholder="(необязательно)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">-- Не выбрано --</SelectItem>
+                    {media.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code || m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* --- Metrics --- */}
+            <div className="border-t pt-4">
+              <h3 className="font-medium mb-4">Метрики подсчета клеток</h3>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="concentration">
+                    Концентрация (клеток/мл){' '}
+                    <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="concentration"
+                    type="number"
+                    min={0}
+                    step={1000}
+                    placeholder="Например: 1000000"
+                    value={concentration}
+                    onChange={(e) => setConcentration(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="totalVolume">
+                    Общий объем (мл) <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="totalVolume"
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    placeholder="Например: 10.0"
+                    value={totalVolume}
+                    onChange={(e) => setTotalVolume(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="viability">
+                    Жизнеспособность (%) <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="viability"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    placeholder="Например: 95"
+                    value={viability}
+                    onChange={(e) => setViability(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Auto-calculated */}
+            {(totalCells > 0 || cellsPerVial > 0) && (
+              <div className="border-t pt-4">
+                <h3 className="font-medium mb-3">Расчетные показатели</h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      Всего клеток
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {formatNumber(totalCells)}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm text-muted-foreground">
+                      Клеток на криовиал
+                    </p>
+                    <p className="text-lg font-semibold">
+                      {cellsPerVial > 0 ? formatNumber(cellsPerVial) : '---'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEP 4 : PLACEMENT                                                 */}
+      {/* ================================================================== */}
+      {step === 4 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5" />
+              Шаг 4. Размещение в криохранилище
+            </CardTitle>
+            <CardDescription>
+              Выберите позицию для хранения криовиалов
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="position">
+                Позиция <span className="text-red-500">*</span>
+              </Label>
+              <Select value={positionId} onValueChange={setPositionId}>
+                <SelectTrigger id="position">
+                  <SelectValue placeholder="Выберите позицию..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {positions.map((pos: any) => (
+                    <SelectItem key={pos.id} value={pos.id}>
+                      {pos.equipment?.name ? `${pos.equipment.name} / ` : ''}
+                      {pos.path || pos.name || pos.id}
+                      {pos.capacity != null && ` [${pos.capacity} мест]`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Position details */}
+            {selectedPosition && (
+              <div className="p-4 border rounded-lg space-y-2 bg-muted/50">
+                <h4 className="font-medium">Информация о позиции</h4>
+                <div className="grid gap-2 text-sm">
+                  {selectedPosition.equipment?.name && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Оборудование:</span>
+                      <span className="font-medium">
+                        {selectedPosition.equipment.name}
+                      </span>
+                    </div>
+                  )}
+                  {selectedPosition.path && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Путь:</span>
+                      <span className="font-medium">
+                        {selectedPosition.path}
+                      </span>
+                    </div>
+                  )}
+                  {selectedPosition.capacity != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Ёмкость:</span>
+                      <span className="font-medium">
+                        {selectedPosition.capacity} мест
+                      </span>
+                    </div>
+                  )}
+                  {selectedPosition.equipment?.current_temperature != null && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        Температура:
+                      </span>
+                      <span className="font-medium">
+                        {selectedPosition.equipment.current_temperature}&#176;C
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEP 5 : CONFIRMATION                                              */}
+      {/* ================================================================== */}
+      {step === 5 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ThermometerSnowflake className="h-5 w-5" />
+              Шаг 5. Подтверждение заморозки
+            </CardTitle>
+            <CardDescription>
+              Проверьте все данные перед сохранением
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Source */}
+            <div className="space-y-2">
+              <h3 className="font-medium">Источник</h3>
+              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Лот:</span>
+                  <span className="font-medium">
+                    {selectedLot?.lot_number || selectedLotId}
+                  </span>
+                </div>
+                {selectedLot?.culture?.name && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Культура:</span>
+                    <span className="font-medium">
+                      {selectedLot.culture.name}
+                    </span>
+                  </div>
+                )}
+                {selectedLot?.passage_number != null && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Пассаж:</span>
+                    <span className="font-medium">
+                      P{selectedLot.passage_number}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Контейнеров:</span>
+                  <span className="font-medium">
+                    {selectedContainerIds.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Parameters */}
+            <div className="space-y-2">
+              <h3 className="font-medium">Параметры</h3>
+              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Тип банка:</span>
+                  {bankType === 'MCB' ? (
+                    <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+                      MCB
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
+                      WCB
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Метод заморозки:</span>
+                  <span className="font-medium">
+                    {FREEZING_METHODS.find((m) => m.value === freezingMethod)
+                      ?.label || freezingMethod}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Объем на виал:
+                  </span>
+                  <span className="font-medium">{volumePerVial} мл</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Криовиалов:</span>
+                  <span className="font-medium">{cryoVialCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Media & Metrics */}
+            <div className="space-y-2">
+              <h3 className="font-medium">Среды и метрики</h3>
+              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Среда для заморозки:
+                  </span>
+                  <span className="font-medium">
+                    {media.find((m: any) => m.id === freezingMediumId)?.code ||
+                      media.find((m: any) => m.id === freezingMediumId)?.name ||
+                      '---'}
+                  </span>
+                </div>
+                {dissociationMediumId &&
+                  dissociationMediumId !== '__none__' && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        Среда диссоциации:
+                      </span>
+                      <span className="font-medium">
+                        {media.find(
+                          (m: any) => m.id === dissociationMediumId,
+                        )?.code ||
+                          media.find(
+                            (m: any) => m.id === dissociationMediumId,
+                          )?.name ||
+                          '---'}
+                      </span>
+                    </div>
+                  )}
+                {washMediumId && washMediumId !== '__none__' && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Среда для промывки:
+                    </span>
+                    <span className="font-medium">
+                      {media.find((m: any) => m.id === washMediumId)?.code ||
+                        media.find((m: any) => m.id === washMediumId)?.name ||
+                        '---'}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Концентрация:</span>
+                  <span className="font-medium">
+                    {formatNumber(Number(concentration))} клеток/мл
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Общий объем:</span>
+                  <span className="font-medium">{totalVolume} мл</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Жизнеспособность:
+                  </span>
+                  <span className="font-medium">{viability}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Всего клеток:</span>
+                  <span className="font-medium">
+                    {formatNumber(totalCells)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Клеток на виал:
+                  </span>
+                  <span className="font-medium">
+                    {formatNumber(cellsPerVial)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Placement */}
+            <div className="space-y-2">
+              <h3 className="font-medium">Размещение</h3>
+              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                {selectedPosition?.equipment?.name && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Оборудование:
+                    </span>
+                    <span className="font-medium">
+                      {selectedPosition.equipment.name}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Позиция:</span>
+                  <span className="font-medium">
+                    {selectedPosition?.path ||
+                      selectedPosition?.name ||
+                      positionId}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label htmlFor="notes">Примечания</Label>
+              <Textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Дополнительная информация (необязательно)..."
+                rows={3}
+              />
+            </div>
+
+            {/* Info alert */}
+            <Alert className="border-green-300 bg-green-50">
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                Банк будет создан со статусом &laquo;QC_PENDING&raquo; и
+                направлен на контроль качества. Будет создана задача QC и
+                отправлено уведомление.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* NAVIGATION                                                         */}
+      {/* ================================================================== */}
       <div className="flex justify-between">
-        <Button variant="outline" onClick={() => setStep(s => Math.max(1, s - 1))} disabled={step === 1}>
+        <Button variant="outline" onClick={goBack} disabled={step === 1}>
+          <ArrowLeft className="h-4 w-4 mr-2" />
           Назад
         </Button>
-        {step < 4 ? (
-          <Button onClick={() => setStep(s => Math.min(4, s + 1))} disabled={step === 1 && !selectedContainer}>
+
+        {step < 5 ? (
+          <Button onClick={goNext} disabled={!canProceed()}>
             Далее
+            <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
-          <Button onClick={handleSubmit} disabled={loading}>
-            <ThermometerSnowflake className="h-4 w-4 mr-2" />
-            {loading ? 'Сохранение...' : 'Создать банк'}
+          <Button onClick={handleSubmit} disabled={submitting}>
+            {submitting ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Сохранение...
+              </>
+            ) : (
+              <>
+                <ThermometerSnowflake className="h-4 w-4 mr-2" />
+                Создать банк и заморозить
+              </>
+            )}
           </Button>
         )}
       </div>

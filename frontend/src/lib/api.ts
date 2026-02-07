@@ -28,6 +28,29 @@ export async function getCultureTypeById(id: string) {
   return data as CultureType
 }
 
+// ==================== CULTURE TYPE ↔ TISSUE TYPE ====================
+
+export async function getCultureTypesByTissueType(tissueTypeId: string) {
+  const { data, error } = await supabase
+    .from('culture_type_tissue_types')
+    .select('*, culture_type:culture_types(*), tissue_type:tissue_types(*)')
+    .eq('tissue_type_id', tissueTypeId)
+    .order('is_primary', { ascending: false })
+
+  if (error) throw error
+  return data
+}
+
+export async function getTissueTypesByCultureType(cultureTypeId: string) {
+  const { data, error } = await supabase
+    .from('culture_type_tissue_types')
+    .select('*, culture_type:culture_types(*), tissue_type:tissue_types(*)')
+    .eq('culture_type_id', cultureTypeId)
+
+  if (error) throw error
+  return data
+}
+
 // ==================== CULTURES ====================
 
 export async function getCultures(filters?: { status?: string; type_id?: string }) {
@@ -35,17 +58,19 @@ export async function getCultures(filters?: { status?: string; type_id?: string 
     .from('cultures')
     .select(`
       *,
-      culture_type:culture_types(*)
+      culture_type:culture_types(*),
+      donor:donors(*),
+      lots:lots(passage_number)
     `)
     .order('created_at', { ascending: false })
-  
+
   if (filters?.status) {
     query = query.eq('status', filters.status)
   }
   if (filters?.type_id) {
     query = query.eq('type_id', filters.type_id)
   }
-  
+
   const { data, error } = await query
   if (error) throw error
   return data as (Culture & { culture_type: CultureType })[]
@@ -75,6 +100,100 @@ export async function createCulture(culture: Record<string, unknown>) {
   
   if (error) throw error
   return data
+}
+
+// Создание культуры из донации с автоматическим P0 лотом и контейнерами
+export async function createCultureFromDonation(data: {
+  donation_id: string
+  culture_type_id: string
+  extraction_method: string
+  container_type_id: string
+  container_count: number
+  position_id?: string
+  notes?: string
+}) {
+  // 1. Получить донацию для donor_id и tissue_id
+  const donation = await getDonationById(data.donation_id)
+  if (!donation) throw new Error('Донация не найдена')
+
+  // 2. Генерация кода культуры CT-XXXX
+  const { count: cultCount } = await supabase
+    .from('cultures')
+    .select('*', { count: 'exact', head: true })
+
+  const cultureCode = `CT-${String((cultCount || 0) + 1).padStart(4, '0')}`
+
+  // 3. Создать культуру
+  const { data: culture, error: cultError } = await supabase
+    .from('cultures')
+    .insert({
+      name: cultureCode,
+      type_id: data.culture_type_id,
+      donor_id: donation.donor_id,
+      donation_id: data.donation_id,
+      tissue_id: donation.tissue_type_id,
+      extraction_method: data.extraction_method,
+      passage_number: 0,
+      status: 'ACTIVE',
+      received_date: new Date().toISOString().split('T')[0],
+      notes: data.notes
+    })
+    .select()
+    .single()
+
+  if (cultError) throw cultError
+
+  // 4. Создать лот P0
+  const { data: lot, error: lotError } = await supabase
+    .from('lots')
+    .insert({
+      lot_number: `${cultureCode}-L1`,
+      culture_id: culture.id,
+      passage_number: 0, // P0 — первичная культура
+      status: 'ACTIVE',
+      seeded_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+
+  if (lotError) throw lotError
+
+  // 5. Создать контейнеры
+  const containers = []
+  for (let i = 0; i < data.container_count; i++) {
+    const containerCode = `${cultureCode}-L1-P0-${String(i + 1).padStart(3, '0')}`
+
+    const { data: container, error: contError } = await supabase
+      .from('containers')
+      .insert({
+        code: containerCode,
+        lot_id: lot.id,
+        container_type_id: data.container_type_id,
+        position_id: data.position_id || null,
+        status: 'IN_CULTURE',
+        passage_number: 0,
+        confluent_percent: 0,
+        contaminated: false,
+        seeded_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (contError) throw contError
+    containers.push(container)
+  }
+
+  // 6. Создать auto-task INSPECT через 1 день
+  for (const container of containers) {
+    await createAutoTask({
+      type: 'OBSERVE',
+      target_id: container.id,
+      target_type: 'CONTAINER',
+      due_days: 1
+    })
+  }
+
+  return { culture, lot, containers }
 }
 
 export async function updateCulture(id: string, updates: Record<string, unknown>) {
@@ -225,13 +344,21 @@ export async function getContainerById(id: string) {
     .from('containers')
     .select(`
       *,
-      lot:lots!lot_id(*),
+      lot:lots!lot_id(
+        *,
+        culture:cultures(*)
+      ),
       bank:banks(*),
+      container_type:container_types(*),
+      position:positions(
+        *,
+        equipment:equipment(*)
+      ),
       operations:operations(*)
     `)
     .eq('id', id)
     .single()
-  
+
   if (error) throw error
   return data
 }
@@ -261,7 +388,7 @@ export async function getOperations(filters?: { lot_id?: string; type?: string; 
     query = query.eq('lot_id', filters.lot_id)
   }
   if (filters?.type) {
-    query = query.eq('operation_type', filters.type)
+    query = query.eq('type', filters.type)
   }
   if (filters?.status) {
     query = query.eq('status', filters.status)
@@ -301,7 +428,7 @@ export async function createOperationObserve(data: {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      operation_type: 'OBSERVE',
+      type: 'OBSERVE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -364,7 +491,7 @@ export async function createOperationDispose(data: DisposeData) {
     .from('operations')
     .insert({
       lot_id,
-      operation_type: 'DISPOSE',
+      type: 'DISPOSE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -1168,6 +1295,7 @@ export async function getPositionByQR(qrCode: string) {
 // ==================== QR CODE LOOKUPS ====================
 
 export async function getContainerByQR(qrCode: string) {
+  // containers не имеют qr_code — ищем по code
   const { data, error } = await supabase
     .from('containers')
     .select(`
@@ -1181,25 +1309,27 @@ export async function getContainerByQR(qrCode: string) {
       ),
       position:positions(*)
     `)
-    .eq('qr_code', qrCode)
+    .eq('code', qrCode)
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 export async function getEquipmentByQR(qrCode: string) {
+  // equipment не имеет qr_code — ищем по code
   const { data, error } = await supabase
     .from('equipment')
     .select('*')
-    .eq('qr_code', qrCode)
+    .eq('code', qrCode)
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 export async function getCultureByQR(qrCode: string) {
+  // cultures не имеют qr_code — ищем по name (код культуры)
   const { data, error } = await supabase
     .from('cultures')
     .select(`
@@ -1207,14 +1337,15 @@ export async function getCultureByQR(qrCode: string) {
       culture_type:culture_types(*),
       lots:lots(*)
     `)
-    .eq('qr_code', qrCode)
+    .eq('name', qrCode)
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 export async function getLotByQR(qrCode: string) {
+  // lots не имеют qr_code — ищем по lot_number
   const { data, error } = await supabase
     .from('lots')
     .select(`
@@ -1225,14 +1356,15 @@ export async function getLotByQR(qrCode: string) {
       ),
       containers:containers!lot_id(*)
     `)
-    .eq('qr_code', qrCode)
+    .eq('lot_number', qrCode)
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 export async function getBankByQR(qrCode: string) {
+  // banks не имеют qr_code — ищем по code
   const { data, error } = await supabase
     .from('banks')
     .select(`
@@ -1244,20 +1376,21 @@ export async function getBankByQR(qrCode: string) {
       lot:lots(*),
       cryo_vials:cryo_vials(*)
     `)
-    .eq('qr_code', qrCode)
+    .eq('code', qrCode)
     .single()
-  
+
   if (error) throw error
   return data
 }
 
 export async function getReadyMediumByQR(qrCode: string) {
+  // ready_media не имеет qr_code — ищем по code
   const { data, error } = await supabase
     .from('ready_media')
     .select('*, storage_position:positions(*)')
-    .eq('qr_code', qrCode)
+    .eq('code', qrCode)
     .single()
-  
+
   if (error) throw error
   return data
 }
@@ -1704,35 +1837,28 @@ export function subscribeToQCTests(callback: (payload: unknown) => void) {
 
 // ==================== NOTIFICATIONS ====================
 
-// Note: notifications table does not exist yet in current schema.
-// All notification functions return gracefully until the table is created.
+export async function getNotifications(filters?: { is_read?: boolean; type?: string; user_id?: string; limit?: number }) {
+  let query = supabase
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
 
-export async function getNotifications(filters?: { is_read?: boolean; category?: string; limit?: number }) {
-  try {
-    let query = supabase
-      .from('notifications')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (filters?.is_read !== undefined) {
-      query = query.eq('is_read', filters.is_read)
-    }
-    if (filters?.category) {
-      query = query.eq('category', filters.category)
-    }
-    if (filters?.limit) {
-      query = query.limit(filters.limit)
-    }
-
-    const { data, error } = await query
-    if (error) {
-      console.warn('Notifications table not available:', error.message)
-      return []
-    }
-    return data
-  } catch {
-    return []
+  if (filters?.is_read !== undefined) {
+    query = query.eq('is_read', filters.is_read)
   }
+  if (filters?.type) {
+    query = query.eq('type', filters.type)
+  }
+  if (filters?.user_id) {
+    query = query.eq('user_id', filters.user_id)
+  }
+  if (filters?.limit) {
+    query = query.limit(filters.limit)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return data
 }
 
 export async function getNotificationById(id: string) {
@@ -1753,32 +1879,35 @@ export async function createNotification(notification: Record<string, unknown>) 
     .select()
     .single()
 
-  if (error) {
-    console.warn('Cannot create notification:', error.message)
-    return null
-  }
+  if (error) throw error
   return data
 }
 
 export async function markNotificationRead(id: string) {
+  // В БД нет поля read_at, только is_read
   const { data, error } = await supabase
     .from('notifications')
-    .update({ is_read: true, read_at: new Date().toISOString() })
+    .update({ is_read: true })
     .eq('id', id)
     .select()
     .single()
 
-  if (error) return null
+  if (error) throw error
   return data
 }
 
-export async function markAllNotificationsRead() {
-  const { error } = await supabase
+export async function markAllNotificationsRead(userId?: string) {
+  let query = supabase
     .from('notifications')
-    .update({ is_read: true, read_at: new Date().toISOString() })
+    .update({ is_read: true })
     .eq('is_read', false)
 
-  if (error) console.warn('Cannot mark notifications read:', error.message)
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { error } = await query
+  if (error) throw error
 }
 
 export async function deleteNotification(id: string) {
@@ -1787,21 +1916,22 @@ export async function deleteNotification(id: string) {
     .delete()
     .eq('id', id)
 
-  if (error) console.warn('Cannot delete notification:', error.message)
+  if (error) throw error
 }
 
-export async function getUnreadNotificationCount() {
-  try {
-    const { count, error } = await supabase
-      .from('notifications')
-      .select('*', { count: 'exact', head: true })
-      .eq('is_read', false)
+export async function getUnreadNotificationCount(userId?: string) {
+  let query = supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('is_read', false)
 
-    if (error) return 0
-    return count || 0
-  } catch {
-    return 0
+  if (userId) {
+    query = query.eq('user_id', userId)
   }
+
+  const { count, error } = await query
+  if (error) return 0
+  return count || 0
 }
 
 // ==================== PASSAGE OPERATIONS ====================
@@ -1857,7 +1987,7 @@ export async function createOperationPassage(data: {
     .from('operations')
     .insert({
       lot_id: data.source_lot_id,
-      operation_type: 'PASSAGE',
+      type: 'PASSAGE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -1868,15 +1998,24 @@ export async function createOperationPassage(data: {
   
   if (opError) throw opError
   
-  // 3. Создать новый лот для результатов
+  // 3. Генерация lot_number
+  const { count: lotCount } = await supabase
+    .from('lots')
+    .select('*', { count: 'exact', head: true })
+    .eq('culture_id', sourceLot.culture_id)
+
+  const lotNumber = `L${(lotCount || 0) + 1}`
+
+  // 4. Создать новый лот для результатов
   const { data: newLot, error: newLotError } = await supabase
     .from('lots')
     .insert({
+      lot_number: lotNumber,
       culture_id: sourceLot.culture_id,
       passage_number: newPassageNumber,
       parent_lot_id: data.split_mode === 'partial' ? data.source_lot_id : null,
       status: 'ACTIVE',
-      start_date: new Date().toISOString().split('T')[0]
+      seeded_at: new Date().toISOString()
     })
     .select()
     .single()
@@ -1916,7 +2055,7 @@ export async function createOperationPassage(data: {
         container_type_id: data.result.container_type_id,
         position_id: data.result.position_id,
         status: 'ACTIVE',
-        passage_count: newPassageNumber,
+        passage_number: newPassageNumber,
         confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
         code: containerCode,
         qr_code: `CNT:${containerCode}`
@@ -2085,7 +2224,7 @@ export async function createOperationFeed(data: {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      operation_type: 'FEED',
+      type: 'FEED',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -2184,9 +2323,9 @@ export interface AutoTaskData {
 export async function createAutoTask(data: AutoTaskData) {
   const dueDate = new Date()
   dueDate.setDate(dueDate.getDate() + data.due_days)
-  
+
   // Map task types to DB enum values
-  const taskTypeMap = {
+  const taskTypeMap: Record<string, string> = {
     PASSAGE: 'INSPECT',    // осмотр после пассажа
     FEED: 'FEED',
     OBSERVE: 'INSPECT',    // наблюдение = осмотр
@@ -2194,32 +2333,33 @@ export async function createAutoTask(data: AutoTaskData) {
     BANK_CHECK: 'INSPECT', // проверка банка = осмотр
     MEDIA_PREP: 'MAINTENANCE'
   }
-  
-  // Map target_type to uppercase for DB
-  const targetTypeMap = {
-    container: 'CONTAINER',
-    lot: 'LOT',
-    bank: 'BANK',
-    culture: 'CULTURE',
-    equipment: 'EQUIPMENT'
+
+  // Auto-generate title based on type
+  const titleMap: Record<string, string> = {
+    PASSAGE: 'Осмотр после пассажа',
+    FEED: 'Подкормка',
+    OBSERVE: 'Осмотр',
+    QC: 'Контроль качества',
+    BANK_CHECK: 'Проверка банка',
+    MEDIA_PREP: 'Подготовка среды'
   }
-  
+
   const taskData = {
-    type: taskTypeMap[data.type as keyof typeof taskTypeMap],
-    target_type: targetTypeMap[data.target_type.toLowerCase() as keyof typeof targetTypeMap] || data.target_type.toUpperCase(),
+    type: taskTypeMap[data.type] || data.type,
+    title: titleMap[data.type] || data.type,
+    target_type: data.target_type,
     target_id: data.target_id,
     status: 'PENDING',
     due_date: dueDate.toISOString().split('T')[0],
-    interval_days: data.interval_days || data.due_days,
-    created_at: new Date().toISOString()
+    interval_days: data.interval_days || data.due_days
   }
-  
+
   const { data: task, error } = await supabase
     .from('tasks')
     .insert(taskData)
     .select()
     .single()
-  
+
   if (error) throw error
   return task
 }
@@ -2343,7 +2483,7 @@ export async function createOperationFreeze(data: FreezeData) {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      operation_type: 'FREEZE',
+      type: 'FREEZE',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -2372,7 +2512,7 @@ export async function createOperationFreeze(data: FreezeData) {
         bank_id: bankId,
         lot_id: data.lot_id,
         code: vialCode,
-        vial_number: vialNum,
+        vial_number: String(vialNum),
         cells_count: data.cells_per_vial,
         freezing_date: new Date().toISOString().split('T')[0],
         position_id: data.freezer_position_id,
@@ -2426,14 +2566,12 @@ export async function createOperationFreeze(data: FreezeData) {
   // 10. Создать уведомление о необходимости QC
   if (bankId) {
     await createNotification({
-      type: 'qc_required',
-      category: 'qc',
+      type: 'QC_READY',
       title: 'Требуется QC для банка',
       message: `Банк ${bankType} создан и ожидает контроль качества`,
-      link_type: 'bank',
+      link_type: 'BANK',
       link_id: bankId,
-      is_read: false,
-      created_at: new Date().toISOString()
+      is_read: false
     })
   }
   
@@ -2486,15 +2624,24 @@ export async function createOperationThaw(data: ThawData) {
   
   const newPassageNumber = (parentLot?.passage_number || 0) + 1
   
-  // 3. Создать новый лот
+  // 3. Генерация lot_number для нового лота
+  const { count: thawLotCount } = await supabase
+    .from('lots')
+    .select('*', { count: 'exact', head: true })
+    .eq('culture_id', parentLot.culture_id)
+
+  const thawLotNumber = `L${(thawLotCount || 0) + 1}`
+
+  // 4. Создать новый лот
   const { data: newLot, error: newLotError } = await supabase
     .from('lots')
     .insert({
+      lot_number: thawLotNumber,
       culture_id: parentLot.culture_id,
       passage_number: newPassageNumber,
       parent_lot_id: parentLot.id,
       status: 'ACTIVE',
-      start_date: new Date().toISOString().split('T')[0],
+      seeded_at: new Date().toISOString(),
       notes: `Thaw from bank ${cryoVial.bank?.bank_type}`
     })
     .select()
@@ -2519,7 +2666,7 @@ export async function createOperationThaw(data: ThawData) {
       container_type_id: data.container_type_id,
       position_id: data.position_id,
       status: 'ACTIVE',
-      passage_count: newPassageNumber,
+      passage_number: newPassageNumber,
       confluent_percent: 0,
       code: containerCode,
       qr_code: `CNT:${containerCode}`
@@ -2534,7 +2681,7 @@ export async function createOperationThaw(data: ThawData) {
     .from('operations')
     .insert({
       lot_id: newLot.id,
-      operation_type: 'THAW',
+      type: 'THAW',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -2589,7 +2736,7 @@ export async function createOperationThaw(data: ThawData) {
     .eq('bank_id', cryoVial.bank_id)
   
   if (allVials) {
-    const allThawed = allVials.every(v => v.status === 'THAWED')
+    const allThawed = allVials.every((v: { status: string }) => v.status === 'THAWED')
     if (allThawed) {
       await supabase
         .from('banks')
@@ -2614,4 +2761,178 @@ export async function createOperationThaw(data: ThawData) {
     newLot,
     newContainer
   }
+}
+
+// ==================== BUSINESS LOGIC ====================
+
+// Каскад REJECTED: при отклонении донации блокируем связанные банки
+export async function cascadeRejectedDonation(donationId: string) {
+  // 1. Получить все культуры из этой донации
+  const { data: cultures } = await supabase
+    .from('cultures')
+    .select('id')
+    .eq('donation_id', donationId)
+
+  if (!cultures || cultures.length === 0) return
+
+  for (const culture of cultures) {
+    // 2. Получить банки этой культуры со статусом QUARANTINE
+    const { data: banks } = await supabase
+      .from('banks')
+      .select('id')
+      .eq('culture_id', culture.id)
+      .eq('status', 'QUARANTINE')
+
+    if (banks) {
+      for (const bank of banks) {
+        // 3. Перевести банки в DISPOSE
+        await supabase
+          .from('banks')
+          .update({ status: 'DISPOSE' })
+          .eq('id', bank.id)
+
+        // 4. Перевести все криовиалы банка в DISPOSED
+        await supabase
+          .from('cryo_vials')
+          .update({ status: 'DISPOSED' })
+          .eq('bank_id', bank.id)
+      }
+    }
+
+    // 5. Создать уведомление
+    await createNotification({
+      type: 'CONTAMINATION',
+      title: 'Донация отклонена',
+      message: `Донация отклонена. Банки культуры заблокированы.`,
+      link_type: 'CULTURE',
+      link_id: culture.id,
+      is_read: false
+    })
+  }
+}
+
+// Каскад APPROVED: при одобрении донации разблокируем банки QUARANTINE → QC_PENDING
+export async function cascadeApprovedDonation(donationId: string) {
+  const { data: cultures } = await supabase
+    .from('cultures')
+    .select('id')
+    .eq('donation_id', donationId)
+
+  if (!cultures || cultures.length === 0) return
+
+  for (const culture of cultures) {
+    const { data: banks } = await supabase
+      .from('banks')
+      .select('id')
+      .eq('culture_id', culture.id)
+      .eq('status', 'QUARANTINE')
+
+    if (banks) {
+      for (const bank of banks) {
+        await supabase
+          .from('banks')
+          .update({ status: 'QC_PENDING' })
+          .eq('id', bank.id)
+
+        // Создать QC задачу
+        await createQCTask(bank.id)
+      }
+    }
+  }
+}
+
+// Обновление статуса донации с каскадом
+export async function updateDonationStatusWithCascade(id: string, status: 'APPROVED' | 'REJECTED') {
+  // 1. Обновить статус донации
+  const { data, error } = await supabase
+    .from('donations')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+
+  // 2. Каскад
+  if (status === 'REJECTED') {
+    await cascadeRejectedDonation(id)
+  } else if (status === 'APPROVED') {
+    await cascadeApprovedDonation(id)
+  }
+
+  return data
+}
+
+// Проверка и авто-закрытие лота (когда все контейнеры утилизированы/заморожены)
+export async function checkAndCloseLot(lotId: string) {
+  const { data: containers } = await supabase
+    .from('containers')
+    .select('id, status')
+    .eq('lot_id', lotId)
+
+  if (!containers || containers.length === 0) return
+
+  const allDisposed = containers.every((c: { status: string }) =>
+    c.status === 'DISPOSE' || c.status === 'IN_BANK' || c.status === 'ISSUED'
+  )
+
+  if (allDisposed) {
+    await supabase
+      .from('lots')
+      .update({ status: 'CLOSED', harvest_at: new Date().toISOString() })
+      .eq('id', lotId)
+  }
+}
+
+// Проверка донации: можно ли замораживать/выдавать (не QUARANTINE)
+export function canFreezeOrIssue(donationStatus: string): boolean {
+  return donationStatus === 'APPROVED'
+}
+
+// Проверка донации: можно ли культивировать (не REJECTED)
+export function canCultivate(donationStatus: string): boolean {
+  return donationStatus !== 'REJECTED'
+}
+
+// Получить FEFO-оптимальную партию по номенклатуре
+export async function getFefoBatch(nomenclatureId: string) {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*)')
+    .eq('nomenclature_id', nomenclatureId)
+    .eq('status', 'ACTIVE')
+    .gt('quantity', 0)
+    .gt('expiration_date', new Date().toISOString().split('T')[0])
+    .order('expiration_date', { ascending: true })
+    .limit(1)
+    .single()
+
+  if (error) return null
+  return data
+}
+
+// Проверка оборудования: нужна ли валидация
+export async function checkEquipmentValidation(equipmentId: string): Promise<{needsValidation: boolean; urgency: 'ok' | 'soon' | 'urgent' | 'overdue'}> {
+  const { data: equipment } = await supabase
+    .from('equipment')
+    .select('next_validation, next_maintenance')
+    .eq('id', equipmentId)
+    .single()
+
+  if (!equipment) return { needsValidation: false, urgency: 'ok' }
+
+  const today = new Date()
+  const oneMonth = new Date(today)
+  oneMonth.setMonth(oneMonth.getMonth() + 1)
+  const oneWeek = new Date(today)
+  oneWeek.setDate(oneWeek.getDate() + 7)
+
+  if (equipment.next_validation) {
+    const validationDate = new Date(equipment.next_validation)
+    if (validationDate < today) return { needsValidation: true, urgency: 'overdue' }
+    if (validationDate < oneWeek) return { needsValidation: true, urgency: 'urgent' }
+    if (validationDate < oneMonth) return { needsValidation: true, urgency: 'soon' }
+  }
+
+  return { needsValidation: false, urgency: 'ok' }
 }

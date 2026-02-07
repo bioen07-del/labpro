@@ -1,209 +1,331 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { 
-  ArrowLeft, 
-  FlaskConical, 
-  Save, 
-  Plus,
-  Trash2,
-  Search,
+import {
+  ArrowLeft,
+  ArrowRight,
+  FlaskConical,
   CheckCircle2,
   AlertTriangle,
-  Calculator
+  Calculator,
+  Loader2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { 
-  getContainers, 
-  getLots, 
-  getPositions,
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Separator } from '@/components/ui/separator'
+import {
+  getLots,
+  getContainersByLot,
   getContainerTypes,
-  createOperation,
-  createContainer,
-  createLot,
-  updateContainer
+  getAvailableMediaForFeed,
+  getPositions,
+  createOperationPassage,
 } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface LotItem {
+  id: string
+  lot_number: string
+  passage_number: number
+  status: string
+  culture_id: string
+  culture?: {
+    id: string
+    name: string
+    culture_type?: { name: string }
+  }
+}
+
+interface ContainerItem {
+  id: string
+  code: string
+  status: string
+  confluent_percent?: number
+  passage_number?: number
+  position?: { id: string; path: string } | null
+}
+
+interface ContainerTypeItem {
+  id: string
+  name: string
+  is_cryo?: boolean
+  is_active?: boolean
+}
+
+interface ReadyMediumItem {
+  id: string
+  code: string
+  name?: string
+  current_volume_ml?: number
+  expiration_date?: string
+}
+
+interface PositionItem {
+  id: string
+  path: string
+  is_active?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Step labels
+// ---------------------------------------------------------------------------
+
+const STEPS = [
+  'Источник',
+  'Метрики',
+  'Среды и результат',
+  'Подтверждение',
+] as const
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function PassagePage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
+
+  // --- wizard state ---
   const [step, setStep] = useState(1)
-  
-  // Данные формы
-  const [selectedContainer, setSelectedContainer] = useState<any>(null)
-  const [lotInfo, setLotInfo] = useState<any>(null)
-  
-  // Метрики
-  const [metrics, setMetrics] = useState({
-    concentration: 0,
-    viability_percent: 0,
-    morphology: '',
-    contaminated: false,
-  })
-  
-  // Результат пассажа
-  const [passageResult, setPassageResult] = useState({
-    splitRatio: '1:2',
-    newContainers: 2,
-    newPassageNumber: 1,
-  })
-  
-  // Целевые контейнеры
-  const [targetContainers, setTargetContainers] = useState<any[]>([])
-  
-  // Расход материалов
-  const [materials, setMaterials] = useState<any[]>([])
-  
+  const [submitting, setSubmitting] = useState(false)
+
+  // --- reference data ---
+  const [lots, setLots] = useState<LotItem[]>([])
+  const [containers, setContainers] = useState<ContainerItem[]>([])
+  const [containerTypes, setContainerTypes] = useState<ContainerTypeItem[]>([])
+  const [readyMedia, setReadyMedia] = useState<ReadyMediumItem[]>([])
+  const [positions, setPositions] = useState<PositionItem[]>([])
+  const [loadingData, setLoadingData] = useState(true)
+
+  // --- Step 1: source ---
+  const [selectedLotId, setSelectedLotId] = useState<string>('')
+  const [selectedContainerIds, setSelectedContainerIds] = useState<Set<string>>(new Set())
+
+  // --- Step 2: metrics (per passage, NOT per container) ---
+  const [concentration, setConcentration] = useState<string>('')
+  const [volumeMl, setVolumeMl] = useState<string>('')
+  const [viability, setViability] = useState<string>('')
+
+  // --- Step 3: media & result ---
+  const [newContainerTypeId, setNewContainerTypeId] = useState<string>('')
+  const [newContainerCount, setNewContainerCount] = useState<string>('1')
+  const [dissociationMediumId, setDissociationMediumId] = useState<string>('')
+  const [washMediumId, setWashMediumId] = useState<string>('')
+  const [positionId, setPositionId] = useState<string>('')
+
+  // --- Step 4: confirmation ---
   const [notes, setNotes] = useState('')
-  
-  // Данные для выбора
-  const [containers, setContainers] = useState<any[]>([])
-  const [lots, setLots] = useState<any[]>([])
-  const [positions, setPositions] = useState<any[]>([])
-  const [containerTypes, setContainerTypes] = useState<any[]>([])
+
+  // =========================================================================
+  // Load reference data
+  // =========================================================================
 
   useEffect(() => {
-    loadData()
+    ;(async () => {
+      try {
+        const [lotsData, typesData, mediaData, posData] = await Promise.all([
+          getLots({ status: 'ACTIVE' }),
+          getContainerTypes(),
+          getAvailableMediaForFeed(),
+          getPositions(),
+        ])
+        setLots((lotsData as LotItem[]) || [])
+        setContainerTypes((typesData as ContainerTypeItem[]) || [])
+        setReadyMedia((mediaData as ReadyMediumItem[]) || [])
+        setPositions((posData as PositionItem[]) || [])
+      } catch (err) {
+        console.error('Error loading reference data:', err)
+        toast.error('Ошибка загрузки справочных данных')
+      } finally {
+        setLoadingData(false)
+      }
+    })()
   }, [])
-  
-  const loadData = async () => {
-    try {
-      const [containersData, lotsData, positionsData, containerTypesData] = await Promise.all([
-        getContainers({ status: 'IN_CULTURE' }),
-        getLots({ status: 'ACTIVE' }),
-        getPositions({ is_active: true }),
-        getContainerTypes()
-      ])
-      setContainers(containersData || [])
-      setLots(lotsData || [])
-      setPositions(positionsData || [])
-      setContainerTypes(containerTypesData || [])
-    } catch (error) {
-      console.error('Error loading data:', error)
+
+  // Load containers when lot changes
+  useEffect(() => {
+    if (!selectedLotId) {
+      setContainers([])
+      setSelectedContainerIds(new Set())
+      return
     }
-  }
-  
-  const handleContainerSelect = (container: any) => {
-    setSelectedContainer(container)
-    if (container.lot) {
-      setLotInfo(container.lot)
-      setPassageResult(prev => ({
-        ...prev,
-        newPassageNumber: (container.lot.passage_number || 0) + 1
-      }))
-      // Автоматически заполняем морфологию
-      if (container.morphology) {
-        setMetrics(prev => ({ ...prev, morphology: container.morphology }))
+    ;(async () => {
+      try {
+        const data = await getContainersByLot(selectedLotId)
+        setContainers((data as ContainerItem[]) || [])
+        setSelectedContainerIds(new Set())
+      } catch (err) {
+        console.error('Error loading containers:', err)
+        toast.error('Ошибка загрузки контейнеров')
       }
+    })()
+  }, [selectedLotId])
+
+  // =========================================================================
+  // Derived values
+  // =========================================================================
+
+  const selectedLot = useMemo(
+    () => lots.find((l) => l.id === selectedLotId) ?? null,
+    [lots, selectedLotId],
+  )
+
+  const activeContainers = useMemo(
+    () => containers.filter((c) => c.status === 'IN_CULTURE' || c.status === 'ACTIVE'),
+    [containers],
+  )
+
+  const allSelected =
+    activeContainers.length > 0 &&
+    activeContainers.every((c) => selectedContainerIds.has(c.id))
+
+  const splitMode: 'full' | 'partial' =
+    activeContainers.length > 0 && allSelected ? 'full' : 'partial'
+
+  const concentrationNum = parseFloat(concentration) || 0
+  const volumeNum = parseFloat(volumeMl) || 0
+  const viabilityNum = parseFloat(viability) || 0
+  const totalCellsMillions = (concentrationNum * volumeNum) / 1_000_000
+  const newContainerCountNum = parseInt(newContainerCount, 10) || 0
+  const cellsPerContainer =
+    newContainerCountNum > 0 ? totalCellsMillions / newContainerCountNum : 0
+
+  // Non-cryo container types
+  const filteredContainerTypes = useMemo(
+    () => containerTypes.filter((t) => !t.is_cryo),
+    [containerTypes],
+  )
+
+  const selectedContainerType = useMemo(
+    () => filteredContainerTypes.find((t) => t.id === newContainerTypeId) ?? null,
+    [filteredContainerTypes, newContainerTypeId],
+  )
+
+  // =========================================================================
+  // Step validation
+  // =========================================================================
+
+  const canProceedStep1 = selectedLotId !== '' && selectedContainerIds.size > 0
+  const canProceedStep2 =
+    concentrationNum > 0 && volumeNum > 0 && viabilityNum > 0 && viabilityNum <= 100
+  const canProceedStep3 = newContainerTypeId !== '' && newContainerCountNum >= 1
+
+  function canProceed(s: number): boolean {
+    if (s === 1) return canProceedStep1
+    if (s === 2) return canProceedStep2
+    if (s === 3) return canProceedStep3
+    return true
+  }
+
+  // =========================================================================
+  // Container selection helpers
+  // =========================================================================
+
+  function toggleContainer(id: string) {
+    setSelectedContainerIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelectedContainerIds(new Set())
+    } else {
+      setSelectedContainerIds(new Set(activeContainers.map((c) => c.id)))
     }
   }
-  
-  // Расчёт количества целевых контейнеров
-  const calculateTargets = (ratio: string) => {
-    const ratioMap: Record<string, number> = {
-      '1:1': 1, '1:2': 2, '1:3': 3, '1:4': 4, '1:5': 5, '1:6': 6
-    }
-    const count = ratioMap[ratio] || 2
-    setPassageResult(prev => ({ ...prev, splitRatio: ratio, newContainers: count }))
-    
-    // Создаём массив целевых контейнеров
-    const newTargets = Array.from({ length: count }, (_, i) => ({
-      id: i + 1,
-      position: null,
-      containerType: '2', // T-75 по умолчанию
-    }))
-    setTargetContainers(newTargets)
-  }
-  
-  const addTargetContainer = () => {
-    setTargetContainers([...targetContainers, {
-      id: targetContainers.length + 1,
-      position: null,
-      containerType: '2',
-    }])
-    setPassageResult(prev => ({ ...prev, newContainers: targetContainers.length + 1 }))
-  }
-  
-  const removeTargetContainer = (id: number) => {
-    setTargetContainers(targetContainers.filter(t => t.id !== id))
-    setPassageResult(prev => ({ ...prev, newContainers: targetContainers.length - 1 }))
-  }
-  
-  const addMaterial = () => {
-    setMaterials([...materials, { id: materials.length + 1, type: '', batch: '', quantity: 1 }])
-  }
-  
-  const removeMaterial = (id: number) => {
-    setMaterials(materials.filter(m => m.id !== id))
-  }
-  
-  const handleSubmit = async () => {
-    if (!selectedContainer || targetContainers.length === 0) return
-    
-    setLoading(true)
+
+  // =========================================================================
+  // Submit
+  // =========================================================================
+
+  async function handleSubmit() {
+    if (!selectedLot) return
+    setSubmitting(true)
     try {
-      // 1. Обновляем статус исходного контейнера (помечаем как использованный)
-      await updateContainer(selectedContainer.id, {
-        status: 'DISPOSE',
-        morphology: metrics.morphology,
-        confluent_percent: metrics.concentration > 0 ? Math.min(100, metrics.concentration / 10000) : 0,
+      const sourceContainers = Array.from(selectedContainerIds).map((cid) => {
+        const c = containers.find((x) => x.id === cid)
+        return {
+          container_id: cid,
+          split_ratio: 1,
+          confluent_percent: c?.confluent_percent ?? 0,
+          viability_percent: viabilityNum,
+          concentration: concentrationNum,
+          volume_ml: volumeNum,
+        }
       })
-      
-      // 2. Создаём новый лот
-      const newLot = await createLot({
-        culture_id: lotInfo?.culture_id,
-        parent_lot_id: lotInfo?.id,
-        passage_number: passageResult.newPassageNumber,
-        status: 'ACTIVE',
-        start_date: new Date().toISOString().split('T')[0],
-        notes: `Пассаж из ${selectedContainer.code}. ${notes}`,
+
+      await createOperationPassage({
+        source_lot_id: selectedLotId,
+        source_containers: sourceContainers,
+        metrics: {
+          concentration: concentrationNum,
+          volume_ml: volumeNum,
+          viability_percent: viabilityNum,
+        },
+        media: {
+          dissociation_rm_id: dissociationMediumId || undefined,
+          wash_rm_id: washMediumId || undefined,
+        },
+        result: {
+          container_type_id: newContainerTypeId,
+          target_count: newContainerCountNum,
+          position_id: positionId,
+        },
+        split_mode: splitMode,
+        notes: notes || undefined,
       })
-      
-      // 3. Создаём целевые контейнеры
-      for (const target of targetContainers) {
-        const containerType = containerTypes.find(t => t.id === target.containerType)
-        await createContainer({
-          lot_id: newLot.id,
-          container_type_id: target.containerType,
-          position_id: target.position?.id || null,
-          status: 'IN_CULTURE',
-          confluent_percent: 10, // Начальная конфлюэнтность после пассажа
-          morphology: metrics.morphology,
-        })
-      }
-      
-      // 4. Создаём операцию
-      await createOperation({
-        operation_type: 'PASSAGE',
-        lot_id: lotInfo?.id,
-        container_id: selectedContainer.id,
-        notes: `Пассаж P${lotInfo?.passage_number} → P${passageResult.newPassageNumber}. Split ${passageResult.splitRatio}. Создано ${targetContainers.length} контейнеров. ${notes}`,
-        status: 'COMPLETED',
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      })
-      
-      router.push(`/cultures/${lotInfo?.culture_id}`)
-    } catch (error) {
-      console.error('Error creating passage:', error)
+
+      toast.success('Пассаж выполнен успешно')
+      router.push('/operations')
+    } catch (err: unknown) {
+      console.error('Passage error:', err)
+      toast.error('Ошибка при выполнении пассажа')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
-  
+
+  // =========================================================================
+  // Render helpers
+  // =========================================================================
+
+  if (loadingData) {
+    return (
+      <div className="container py-6 flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  // =========================================================================
+  // RENDER
+  // =========================================================================
+
   return (
-    <div className="container py-6 space-y-6">
-      {/* Header */}
+    <div className="container py-6 space-y-6 max-w-3xl mx-auto">
+      {/* ---- Header ---- */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/operations">
@@ -217,265 +339,452 @@ export default function PassagePage() {
           </p>
         </div>
       </div>
-      
-      {/* Progress */}
-      <div className="flex items-center gap-4">
-        {['Выбор культуры', 'Метрики', 'Результат', 'Подтверждение'].map((s, i) => (
-          <div key={i} className={`flex items-center gap-2 ${step > i ? 'text-primary' : 'text-muted-foreground'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              step > i ? 'bg-primary text-primary-foreground' : step === i + 1 ? 'bg-primary text-primary-foreground' : 'bg-muted'
-            }`}>
-              {step > i ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+
+      {/* ---- Step indicator ---- */}
+      <div className="flex items-center gap-2">
+        {STEPS.map((label, i) => {
+          const stepNum = i + 1
+          const isCompleted = step > stepNum
+          const isCurrent = step === stepNum
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0 ${
+                  isCompleted
+                    ? 'bg-primary text-primary-foreground'
+                    : isCurrent
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
+              </div>
+              <span
+                className={`text-sm whitespace-nowrap ${
+                  isCurrent || isCompleted ? 'text-foreground font-medium' : 'text-muted-foreground'
+                }`}
+              >
+                {label}
+              </span>
+              {i < STEPS.length - 1 && <div className="w-6 h-0.5 bg-border shrink-0" />}
             </div>
-            <span className="text-sm">{s}</span>
-            {i < 3 && <div className="w-8 h-0.5 bg-border" />}
-          </div>
-        ))}
+          )
+        })}
       </div>
-      
-      {/* Step 1: Select Container */}
+
+      {/* ================================================================== */}
+      {/* STEP 1 — SOURCE                                                    */}
+      {/* ================================================================== */}
       {step === 1 && (
         <Card>
           <CardHeader>
-            <CardTitle>Выберите контейнер-донор</CardTitle>
-            <CardDescription>
-              Выберите контейнер с культурой для пассажирования
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Поиск по коду..." className="pl-9" />
-              </div>
-              
-              <div className="grid gap-3">
-                {containers
-                  .filter(c => c.status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70)
-                  .map(container => (
-                    <div 
-                      key={container.id}
-                      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                        selectedContainer?.id === container.id 
-                          ? 'border-primary bg-primary/5' 
-                          : 'hover:border-muted-foreground'
-                      }`}
-                      onClick={() => handleContainerSelect(container)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{container.code}</Badge>
-                            <Badge variant="secondary">
-                              P{container.lot?.passage_number || 0}
-                            </Badge>
-                          </div>
-                          <p className="mt-2 text-sm">
-                            {container.lot?.culture?.name} • {container.lot?.culture?.culture_type?.name}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Конфлюэнтность: {container.confluent_percent}% • 
-                            Морфология: {container.morphology || 'не указана'}
-                          </p>
-                        </div>
-                        <Badge variant={container.confluent_percent >= 80 ? 'default' : 'secondary'}>
-                          Готов к пассажу
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-              
-              {containers.filter(c => c.status === 'IN_CULTURE' && (c.confluent_percent || 0) >= 70).length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  Нет готовых к пассажу контейнеров (минимум 70% конфлюэнтности)
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {/* Step 2: Metrics */}
-      {step === 2 && selectedContainer && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Метрики культуры</CardTitle>
-            <CardDescription>
-              Введите измеренные параметры культуры
-            </CardDescription>
+            <CardTitle>Выберите лот и контейнеры</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Концентрация (клеток/мл)</Label>
-                <Input 
-                  type="number"
-                  value={metrics.concentration}
-                  onChange={(e) => setMetrics({...metrics, concentration: parseInt(e.target.value) || 0})}
-                  placeholder="Например: 50000"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Жизнеспособность (%)</Label>
-                <Input 
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={metrics.viability_percent}
-                  onChange={(e) => setMetrics({...metrics, viability_percent: parseInt(e.target.value) || 0})}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Морфология</Label>
-                <Select 
-                  value={metrics.morphology}
-                  onValueChange={(v) => setMetrics({...metrics, morphology: v})}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Spindle">Веретенообразная</SelectItem>
-                    <SelectItem value="Cobblestone">Булыжная</SelectItem>
-                    <SelectItem value="Fibroblast">Фибробластоподобная</SelectItem>
-                    <SelectItem value="Epithelial">Эпителиоподобная</SelectItem>
-                    <SelectItem value="Mixed">Смешанная</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Lot selector */}
+            <div className="space-y-2">
+              <Label>Лот</Label>
+              <Select value={selectedLotId} onValueChange={setSelectedLotId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите активный лот..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {lots.map((lot) => (
+                    <SelectItem key={lot.id} value={lot.id}>
+                      {lot.lot_number} — {lot.culture?.name ?? 'N/A'} (P
+                      {lot.passage_number})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            
-            <div className="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <Checkbox 
-                id="contaminated"
-                checked={metrics.contaminated}
-                onCheckedChange={(v) => setMetrics({...metrics, contaminated: v as boolean})}
-              />
-              <Label htmlFor="contaminated" className="text-yellow-800 cursor-pointer">
-                Есть признаки контаминации
-              </Label>
-            </div>
-            
-            {metrics.contaminated && (
-              <AlertTriangle className="h-4 w-4 text-red-600" />
+
+            {/* Lot info */}
+            {selectedLot && (
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">
+                  Культура: {selectedLot.culture?.name ?? '—'}
+                </Badge>
+                <Badge variant="secondary">
+                  Пассаж: P{selectedLot.passage_number}
+                </Badge>
+                <Badge variant="secondary">
+                  Контейнеров: {activeContainers.length}
+                </Badge>
+              </div>
+            )}
+
+            {/* Containers */}
+            {selectedLotId && activeContainers.length > 0 && (
+              <>
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="select-all"
+                      checked={allSelected}
+                      onCheckedChange={toggleAll}
+                    />
+                    <Label htmlFor="select-all" className="cursor-pointer font-medium">
+                      Выбрать все ({activeContainers.length})
+                    </Label>
+                  </div>
+
+                  <div className="grid gap-2">
+                    {activeContainers.map((c) => (
+                      <div
+                        key={c.id}
+                        className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                          selectedContainerIds.has(c.id)
+                            ? 'border-primary bg-primary/5'
+                            : 'hover:border-muted-foreground/50'
+                        }`}
+                        onClick={() => toggleContainer(c.id)}
+                      >
+                        <Checkbox
+                          checked={selectedContainerIds.has(c.id)}
+                          onCheckedChange={() => toggleContainer(c.id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-sm">{c.code}</span>
+                            <Badge variant="outline" className="text-xs">
+                              {c.status}
+                            </Badge>
+                          </div>
+                          {c.confluent_percent !== undefined && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Конфлюэнтность: {c.confluent_percent}%
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Split mode indicator */}
+                {selectedContainerIds.size > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">Режим:</span>
+                      <Badge variant={splitMode === 'full' ? 'default' : 'secondary'}>
+                        {splitMode === 'full' ? 'Full' : 'Partial'}
+                      </Badge>
+                    </div>
+                    {splitMode === 'partial' && (
+                      <Alert variant="destructive">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          Split: будет создан новый лот (выбраны не все контейнеры)
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {selectedLotId && activeContainers.length === 0 && (
+              <p className="text-center py-6 text-muted-foreground">
+                В этом лоте нет активных контейнеров
+              </p>
             )}
           </CardContent>
         </Card>
       )}
-      
-      {/* Step 3: Result */}
+
+      {/* ================================================================== */}
+      {/* STEP 2 — METRICS                                                   */}
+      {/* ================================================================== */}
+      {step === 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Метрики пассажа</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              {/* Concentration */}
+              <div className="space-y-2">
+                <Label htmlFor="concentration">
+                  Концентрация (клеток/мл) <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="concentration"
+                  type="number"
+                  min={0}
+                  step="any"
+                  placeholder="Например: 500000"
+                  value={concentration}
+                  onChange={(e) => setConcentration(e.target.value)}
+                />
+              </div>
+
+              {/* Volume */}
+              <div className="space-y-2">
+                <Label htmlFor="volume">
+                  Объём суспензии (мл) <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="volume"
+                  type="number"
+                  min={0}
+                  step="any"
+                  placeholder="Например: 10"
+                  value={volumeMl}
+                  onChange={(e) => setVolumeMl(e.target.value)}
+                />
+              </div>
+
+              {/* Viability */}
+              <div className="space-y-2">
+                <Label htmlFor="viability">
+                  Жизнеспособность (%) <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="viability"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="any"
+                  placeholder="0 — 100"
+                  value={viability}
+                  onChange={(e) => setViability(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Auto-calculated total cells */}
+            {concentrationNum > 0 && volumeNum > 0 && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                <Calculator className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  Всего клеток: {totalCellsMillions.toFixed(2)} млн
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEP 3 — MEDIA & RESULT                                            */}
+      {/* ================================================================== */}
       {step === 3 && (
         <Card>
           <CardHeader>
-            <CardTitle>Результат пассажа</CardTitle>
-            <CardDescription>
-              Укажите параметры создаваемых контейнеров
-            </CardDescription>
+            <CardTitle>Среды и результат</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Split Ratio */}
+            {/* --- Result section --- */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Container type */}
+              <div className="space-y-2">
+                <Label>
+                  Тип контейнера <span className="text-destructive">*</span>
+                </Label>
+                <Select value={newContainerTypeId} onValueChange={setNewContainerTypeId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите тип..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredContainerTypes.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* New containers count */}
+              <div className="space-y-2">
+                <Label htmlFor="cnt-count">
+                  Количество новых контейнеров <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="cnt-count"
+                  type="number"
+                  min={1}
+                  value={newContainerCount}
+                  onChange={(e) => setNewContainerCount(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Cells per container */}
+            {totalCellsMillions > 0 && newContainerCountNum > 0 && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                <Calculator className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">
+                  Клеток на контейнер: {cellsPerContainer.toFixed(2)} млн
+                </span>
+              </div>
+            )}
+
+            <Separator />
+
+            {/* --- Media section --- */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Dissociation medium */}
+              <div className="space-y-2">
+                <Label>Среда диссоциации (опционально)</Label>
+                <Select value={dissociationMediumId} onValueChange={setDissociationMediumId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Не выбрано" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Не выбрано</SelectItem>
+                    {readyMedia.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code}
+                        {m.name ? ` — ${m.name}` : ''}
+                        {m.current_volume_ml != null ? ` (${m.current_volume_ml} мл)` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Wash medium */}
+              <div className="space-y-2">
+                <Label>Среда промывки (опционально)</Label>
+                <Select value={washMediumId} onValueChange={setWashMediumId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Не выбрано" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Не выбрано</SelectItem>
+                    {readyMedia.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code}
+                        {m.name ? ` — ${m.name}` : ''}
+                        {m.current_volume_ml != null ? ` (${m.current_volume_ml} мл)` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Position for new containers */}
             <div className="space-y-2">
-              <Label>Соотношение split</Label>
-              <Select 
-                value={passageResult.splitRatio}
-                onValueChange={(v) => calculateTargets(v)}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
+              <Label>Позиция для новых контейнеров (опционально)</Label>
+              <Select value={positionId} onValueChange={setPositionId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Авторазмещение" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1:1">1:1 (без увеличения)</SelectItem>
-                  <SelectItem value="1:2">1:2</SelectItem>
-                  <SelectItem value="1:3">1:3</SelectItem>
-                  <SelectItem value="1:4">1:4</SelectItem>
-                  <SelectItem value="1:5">1:5</SelectItem>
-                  <SelectItem value="1:6">1:6</SelectItem>
+                  <SelectItem value="__none__">Авторазмещение</SelectItem>
+                  {positions
+                    .filter((p) => p.is_active !== false)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.path}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Будет создан лот P{passageResult.newPassageNumber}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEP 4 — CONFIRMATION                                              */}
+      {/* ================================================================== */}
+      {step === 4 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Подтверждение</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Summary grid */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Source */}
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                  Источник
+                </h3>
+                <p>
+                  <span className="text-muted-foreground">Лот:</span>{' '}
+                  {selectedLot?.lot_number ?? '—'} (P{selectedLot?.passage_number ?? 0})
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Культура:</span>{' '}
+                  {selectedLot?.culture?.name ?? '—'}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Контейнеров:</span>{' '}
+                  {selectedContainerIds.size}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Режим:</span>{' '}
+                  <Badge variant={splitMode === 'full' ? 'default' : 'secondary'} className="ml-1">
+                    {splitMode}
+                  </Badge>
+                </p>
+              </div>
+
+              {/* Result */}
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                  Результат
+                </h3>
+                <p>
+                  <span className="text-muted-foreground">Новый пассаж:</span> P
+                  {(selectedLot?.passage_number ?? 0) + 1}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Новых контейнеров:</span>{' '}
+                  {newContainerCountNum} x {selectedContainerType?.name ?? '—'}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Всего клеток:</span>{' '}
+                  {totalCellsMillions.toFixed(2)} млн
+                </p>
+                <p>
+                  <span className="text-muted-foreground">Клеток/контейнер:</span>{' '}
+                  {cellsPerContainer.toFixed(2)} млн
+                </p>
+              </div>
+            </div>
+
+            {/* Metrics summary */}
+            <div className="p-4 bg-muted rounded-lg space-y-1">
+              <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide mb-2">
+                Метрики
+              </h3>
+              <p>
+                <span className="text-muted-foreground">Концентрация:</span>{' '}
+                {concentrationNum.toLocaleString()} клеток/мл
+              </p>
+              <p>
+                <span className="text-muted-foreground">Объём суспензии:</span> {volumeNum} мл
+              </p>
+              <p>
+                <span className="text-muted-foreground">Жизнеспособность:</span> {viabilityNum}%
               </p>
             </div>
-            
-            {/* Target Containers */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Целевые контейнеры ({targetContainers.length})</Label>
-                <Button variant="outline" size="sm" onClick={addTargetContainer}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Добавить
-                </Button>
-              </div>
-              
-              <div className="grid gap-3">
-                {targetContainers.map((target, index) => (
-                  <div key={target.id} className="flex gap-4 items-end p-3 border rounded-lg">
-                    <div className="w-16 text-sm font-medium">
-                      #{index + 1}
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <Label className="text-xs">Тип контейнера</Label>
-                      <Select 
-                        value={target.containerType}
-                        onValueChange={(v) => {
-                          const updated = [...targetContainers]
-                          updated[index].containerType = v
-                          setTargetContainers(updated)
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {containerTypes.map(type => (
-                            <SelectItem key={type.id} value={type.id}>
-                              {type.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <Label className="text-xs">Позиция (опционально)</Label>
-                      <Select 
-                        value={target.position?.id || ''}
-                        onValueChange={(v) => {
-                          const pos = positions.find(p => p.id === v)
-                          const updated = [...targetContainers]
-                          updated[index].position = pos
-                          setTargetContainers(updated)
-                        }}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Авторазмещение" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {positions.filter(p => p.is_active).map(pos => (
-                            <SelectItem key={pos.id} value={pos.id}>
-                              {pos.path}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => removeTargetContainer(target.id)}
-                      disabled={targetContainers.length === 1}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
+
+            {/* Info alert */}
+            <Alert>
+              <CheckCircle2 className="h-4 w-4" />
+              <AlertDescription>
+                После подтверждения исходные контейнеры будут списаны, а в новом лоте P
+                {(selectedLot?.passage_number ?? 0) + 1} будет создано {newContainerCountNum}{' '}
+                контейнер(ов).
+              </AlertDescription>
+            </Alert>
+
             {/* Notes */}
             <div className="space-y-2">
-              <Label>Примечания</Label>
-              <Textarea 
+              <Label htmlFor="notes">Примечания</Label>
+              <Textarea
+                id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Дополнительные заметки..."
@@ -485,66 +794,36 @@ export default function PassagePage() {
           </CardContent>
         </Card>
       )}
-      
-      {/* Step 4: Confirmation */}
-      {step === 4 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Подтверждение</CardTitle>
-            <CardDescription>
-              Проверьте данные перед сохранением
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <h3 className="font-medium">Исходный контейнер</h3>
-                <p><span className="text-muted-foreground">Код:</span> {selectedContainer?.code}</p>
-                <p><span className="text-muted-foreground">Лот:</span> P{lotInfo?.passage_number}</p>
-                <p><span className="text-muted-foreground">Конфлюэнтность:</span> {selectedContainer?.confluent_percent}%</p>
-              </div>
-              
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <h3 className="font-medium">Результат</h3>
-                <p><span className="text-muted-foreground">Новый пассаж:</span> P{passageResult.newPassageNumber}</p>
-                <p><span className="text-muted-foreground">Split:</span> {passageResult.splitRatio}</p>
-                <p><span className="text-muted-foreground">Контейнеров:</span> {targetContainers.length}</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 p-3 bg-green-50 text-green-800 rounded-lg">
-              <CheckCircle2 className="h-4 w-4" />
-              <p className="text-sm">
-                После подтверждения исходный контейнер будет помечен как использованный
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      
-      {/* Navigation */}
+
+      {/* ================================================================== */}
+      {/* NAVIGATION                                                         */}
+      {/* ================================================================== */}
       <div className="flex justify-between">
-        <Button 
-          variant="outline" 
-          onClick={() => setStep(s => Math.max(1, s - 1))}
+        <Button
+          variant="outline"
+          onClick={() => setStep((s) => Math.max(1, s - 1))}
           disabled={step === 1}
         >
+          <ArrowLeft className="h-4 w-4 mr-2" />
           Назад
         </Button>
+
         {step < 4 ? (
-          <Button 
-            onClick={() => setStep(s => Math.min(4, s + 1))}
-            disabled={
-              (step === 1 && !selectedContainer) ||
-              (step === 2 && !metrics.morphology)
-            }
+          <Button
+            onClick={() => setStep((s) => Math.min(4, s + 1))}
+            disabled={!canProceed(step)}
           >
             Далее
+            <ArrowRight className="h-4 w-4 ml-2" />
           </Button>
         ) : (
-          <Button onClick={handleSubmit} disabled={loading}>
-            <FlaskConical className="h-4 w-4 mr-2" />
-            {loading ? 'Сохранение...' : 'Выполнить пассаж'}
+          <Button onClick={handleSubmit} disabled={submitting}>
+            {submitting ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FlaskConical className="h-4 w-4 mr-2" />
+            )}
+            {submitting ? 'Выполняется...' : 'Выполнить пассаж'}
           </Button>
         )}
       </div>

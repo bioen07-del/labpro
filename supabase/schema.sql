@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS culture_types (
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT,
+    growth_rate NUMERIC,              -- Коэффициент роста (для прогноза)
+    optimal_confluent INTEGER,         -- Оптимальная конфлюэнтность (%)
+    passage_interval_days INTEGER,     -- Интервал между пассажами (дней)
+    freezing_protocol TEXT,            -- Протокол заморозки
+    thaw_protocol TEXT,                -- Протокол разморозки
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -34,6 +39,10 @@ CREATE TABLE IF NOT EXISTS container_types (
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     capacity_ml NUMERIC,
+    surface_area_cm2 NUMERIC,          -- Площадь поверхности роста (см²)
+    volume_ml NUMERIC,                 -- Рабочий объём (мл)
+    is_cryo BOOLEAN DEFAULT false,     -- Является ли криовиалой
+    optimal_confluent INTEGER,         -- Оптимальная конфлюэнтность (%)
     dimensions TEXT,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -113,7 +122,8 @@ CREATE TABLE IF NOT EXISTS donations (
     status TEXT DEFAULT 'QUARANTINE',  -- QUARANTINE / APPROVED / REJECTED
     notes TEXT,
     created_by UUID,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Users
@@ -142,9 +152,20 @@ CREATE TABLE IF NOT EXISTS nomenclatures (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Culture Type ↔ Tissue Type (какие клетки из какой ткани)
+CREATE TABLE IF NOT EXISTS culture_type_tissue_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    culture_type_id UUID NOT NULL REFERENCES culture_types(id) ON DELETE CASCADE,
+    tissue_type_id UUID NOT NULL REFERENCES tissue_types(id) ON DELETE CASCADE,
+    is_primary BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(culture_type_id, tissue_type_id)
+);
+
 -- Equipment
 CREATE TABLE IF NOT EXISTS equipment (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code TEXT,                          -- Уникальный код (INC-01, FRIDGE-02)
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     model TEXT,
@@ -153,6 +174,8 @@ CREATE TABLE IF NOT EXISTS equipment (
     status TEXT DEFAULT 'ACTIVE',
     last_maintenance DATE,
     next_maintenance DATE,
+    validation_date DATE,              -- Дата последней валидации
+    next_validation DATE,              -- Дата следующей валидации
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
@@ -198,6 +221,7 @@ CREATE TABLE IF NOT EXISTS cultures (
     donation_id UUID REFERENCES donations(id),
     tissue_id UUID REFERENCES tissues(id),
     passage_number INTEGER DEFAULT 0,
+    extraction_method TEXT,  -- ENZYMATIC, EXPLANT, MECHANICAL, OTHER
     source TEXT,
     received_date DATE,
     status TEXT DEFAULT 'ACTIVE',
@@ -234,16 +258,18 @@ CREATE TABLE IF NOT EXISTS banks (
     code TEXT NOT NULL UNIQUE,
     culture_id UUID REFERENCES cultures(id),
     lot_id UUID REFERENCES lots(id),
-    bank_type TEXT NOT NULL,
+    bank_type TEXT NOT NULL,           -- MCB, WCB, RWB
     freezing_date DATE,
     freezing_method TEXT,
     cryo_vials_count INTEGER DEFAULT 0,
     cells_per_vial NUMERIC,
     total_cells NUMERIC,
-    storage_location TEXT,
+    position_id UUID REFERENCES positions(id),  -- позиция в криохранилище
+    storage_location TEXT,             -- legacy (текстовое описание)
     shelf_position TEXT,
     qc_passed BOOLEAN DEFAULT false,
     qc_date DATE,
+    expiration_date DATE,              -- срок годности банка
     status TEXT DEFAULT 'QUARANTINE',
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -254,11 +280,13 @@ CREATE TABLE IF NOT EXISTS banks (
 CREATE TABLE IF NOT EXISTS cryo_vials (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     bank_id UUID REFERENCES banks(id),
+    code TEXT,                         -- код криовиалы (CT-XXXX-LX-MCB-V001)
     vial_number TEXT,
+    position_id UUID REFERENCES positions(id), -- позиция хранения
     position_in_box TEXT,
     cells_count NUMERIC,
     freezing_date DATE,
-    status TEXT DEFAULT 'AVAILABLE',
+    status TEXT DEFAULT 'IN_STOCK',    -- IN_STOCK, RESERVED, ISSUED
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     lot_id UUID REFERENCES lots(id)
@@ -272,6 +300,7 @@ CREATE TABLE IF NOT EXISTS containers (
     bank_id UUID REFERENCES banks(id),
     container_type_id UUID REFERENCES container_types(id),
     position_id UUID REFERENCES positions(id),
+    parent_container_id UUID REFERENCES containers(id), -- для split при пассаже
     status TEXT DEFAULT 'IN_CULTURE',
     seeded_at TIMESTAMPTZ,
     passage_number INTEGER,
@@ -448,6 +477,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     priority TEXT DEFAULT 'MEDIUM',
     status TEXT DEFAULT 'PENDING',
     due_date DATE,
+    target_type TEXT,              -- CULTURE, LOT, CONTAINER, BANK, EQUIPMENT, BATCH
+    target_id UUID,                -- ID целевого объекта
+    interval_days INTEGER,         -- Интервал повтора (дней)
+    last_done_date DATE,           -- Когда выполнено последний раз
     container_id UUID REFERENCES containers(id),
     bank_id UUID REFERENCES banks(id),
     order_id UUID,
@@ -456,6 +489,19 @@ CREATE TABLE IF NOT EXISTS tasks (
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Notifications
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type TEXT NOT NULL,            -- QC_READY, ORDER_DEADLINE, CRITICAL_FEFO, EQUIPMENT_ALERT, CONTAMINATION
+    title TEXT NOT NULL,
+    message TEXT,
+    link_type TEXT,                -- CULTURE, LOT, CONTAINER, ORDER, QC, EQUIPMENT, BANK, DONATION
+    link_id UUID,
+    user_id UUID REFERENCES users(id), -- NULL = для всех
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- ============================================

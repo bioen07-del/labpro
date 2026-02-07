@@ -147,7 +147,7 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
     setLoading(true)
     try {
       const operationData = {
-        operation_type: activeTab,
+        type: activeTab,
         lot_id: selectedLot?.id,
         containers: [
           {

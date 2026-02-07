@@ -1,636 +1,479 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { 
-  Camera, 
-  Search, 
+import {
+  Camera,
+  Search,
   QrCode,
   Package,
   FlaskConical,
   Thermometer,
   ArrowRight,
   X,
-  CheckCircle2,
+  Loader2,
   Beaker,
-  Database
+  Database,
+  Smartphone,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { 
-  getPositionByQR, 
-  getContainerByQR, 
-  getEquipmentByQR, 
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { toast } from "sonner"
+import {
+  parseQRCode,
+  getContainerByQR,
+  getEquipmentByQR,
   getCultureByQR,
-  getReadyMediumById,
   getLotByQR,
   getBankByQR,
-  parseQRCode
+  getReadyMediumByQR,
+  getPositionByQR,
 } from "@/lib/api"
-import { format } from "date-fns"
-import { ru } from "date-fns/locale"
 
-const OBJECT_TYPES: Record<string, { label: string; icon: any; color: string }> = {
-  container: { label: "Контейнер", icon: Package, color: "bg-blue-500" },
-  position: { label: "Позиция", icon: Thermometer, color: "bg-green-500" },
-  ready_medium: { label: "Готовая среда", icon: FlaskConical, color: "bg-purple-500" },
-  equipment: { label: "Оборудование", icon: Thermometer, color: "bg-orange-500" },
-  culture: { label: "Культура", icon: Beaker, color: "bg-cyan-500" },
-  bank: { label: "Банк", icon: Database, color: "bg-indigo-500" },
-  lot: { label: "Партия", icon: Package, color: "bg-amber-500" },
+// ---------------------------------------------------------------------------
+// Type map: parsed type -> label, icon, Tailwind color
+// ---------------------------------------------------------------------------
+const ENTITY_META: Record<
+  string,
+  { label: string; icon: React.ElementType; color: string; badgeVariant: "default" | "secondary" | "destructive" | "outline" }
+> = {
+  container:    { label: "Контейнер",       icon: Package,       color: "bg-blue-500",    badgeVariant: "default" },
+  equipment:    { label: "Оборудование",    icon: Thermometer,   color: "bg-orange-500",  badgeVariant: "default" },
+  culture:      { label: "Культура",        icon: Beaker,        color: "bg-cyan-500",    badgeVariant: "default" },
+  lot:          { label: "Партия",          icon: Package,       color: "bg-amber-500",   badgeVariant: "default" },
+  bank:         { label: "Банк",            icon: Database,      color: "bg-indigo-500",  badgeVariant: "default" },
+  ready_medium: { label: "Готовая среда",   icon: FlaskConical,  color: "bg-purple-500",  badgeVariant: "default" },
+  position:     { label: "Позиция",         icon: Thermometer,   color: "bg-green-500",   badgeVariant: "default" },
+  unknown:      { label: "Неизвестный тип", icon: QrCode,        color: "bg-gray-400",    badgeVariant: "secondary" },
 }
 
-export default function ScanPage() {
-  const router = useRouter()
-  const [scanMode, setScanMode] = useState<"camera" | "manual">("manual")
-  const [qrInput, setQrInput] = useState("")
-  const [scanning, setScanning] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [resultType, setResultType] = useState<string | null>(null)
-  const [rawCode, setRawCode] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [scanHistory, setScanHistory] = useState<Array<{ code: string; type: string; time: Date }>>([])
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-      }
-    }
-  }, [])
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" }
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
-      setScanMode("camera")
-      setScanning(true)
-    } catch (err) {
-      setError("Не удалось получить доступ к камере")
-    }
+// ---------------------------------------------------------------------------
+// Navigation helpers
+// ---------------------------------------------------------------------------
+function getEntityRoute(type: string, entity: Record<string, unknown>): string | null {
+  switch (type) {
+    case "container":
+      return entity.id ? `/containers/${entity.id}` : null
+    case "equipment":
+      return entity.id ? `/equipment/${entity.id}` : "/equipment"
+    case "culture":
+      return entity.id ? `/cultures/${entity.id}` : null
+    case "lot":
+      return entity.id ? `/lots/${entity.id}` : null
+    case "bank":
+      return entity.id ? `/banks/${entity.id}` : null
+    case "ready_medium":
+      return "/ready-media"
+    case "position":
+      return "/equipment"
+    default:
+      return null
   }
+}
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
-    setScanning(false)
-  }
-
-  const handleScan = async (code: string) => {
-    if (!code) return
-    
-    setError(null)
-    setResult(null)
-    setResultType(null)
-    setRawCode(code)
-    
-    try {
-      const parsed = parseQRCode(code)
-      let found = false
-      
-      if (!parsed || parsed.type === 'unknown') {
-        // Пробуем искать как есть (без префикса)
-        found = await tryLookupWithoutPrefix(code)
-      } else {
-        // Ищем по типу из QR-кода
-        found = await tryLookupByType(parsed.type, parsed.value, code)
-      }
-      
-      if (!found) {
-        setError("Объект не найден")
-      }
-      
-      setQrInput("")
-    } catch (err) {
-      console.error("Scan error:", err)
-      setError("Ошибка при поиске объекта")
-    }
-  }
-
-  const tryLookupByType = async (type: string, value: string, originalCode: string): Promise<boolean> => {
-    try {
-      switch (type) {
-        case 'position': {
-          const position = await getPositionByQR(value)
-          if (position) {
-            setResult(position)
-            setResultType("position")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "position", time: new Date() }])
-            return true
-          }
-          break
-        }
-        case 'container': {
-          const container = await getContainerByQR(value)
-          if (container) {
-            setResult(container)
-            setResultType("container")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "container", time: new Date() }])
-            return true
-          }
-          break
-        }
-        case 'equipment': {
-          const equipment = await getEquipmentByQR(value)
-          if (equipment) {
-            setResult(equipment)
-            setResultType("equipment")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "equipment", time: new Date() }])
-            return true
-          }
-          break
-        }
-        case 'culture': {
-          const culture = await getCultureByQR(value)
-          if (culture) {
-            setResult(culture)
-            setResultType("culture")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "culture", time: new Date() }])
-            return true
-          }
-          break
-        }
-        case 'lot': {
-          const lot = await getLotByQR(value)
-          if (lot) {
-            setResult(lot)
-            setResultType("lot")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "lot", time: new Date() }])
-            return true
-          }
-          break
-        }
-        case 'ready_medium': {
-          const medium = await getReadyMediumById(value)
-          if (medium) {
-            setResult(medium)
-            setResultType("ready_medium")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "ready_medium", time: new Date() }])
-            return true
-          }
-          break
-        }
-        case 'bank': {
-          const bank = await getBankByQR(value)
-          if (bank) {
-            setResult(bank)
-            setResultType("bank")
-            setScanHistory(prev => [...prev, { code: originalCode, type: "bank", time: new Date() }])
-            return true
-          }
-          break
-        }
-      }
-    } catch (e) {
-      console.warn(`Lookup failed for ${type}:`, e)
-    }
-    return false
-  }
-
-  const tryLookupWithoutPrefix = async (code: string): Promise<boolean> => {
-    // Пробуем искать по всем типам без префикса
-    const lookupFunctions = [
-      () => getPositionByQR(code),
-      () => getContainerByQR(code),
-      () => getEquipmentByQR(code),
-      () => getCultureByQR(code),
-      () => getLotByQR(code),
-      () => getBankByQR(code),
-    ]
-
-    const typeKeys = ['position', 'container', 'equipment', 'culture', 'lot', 'bank']
-
-    for (let i = 0; i < lookupFunctions.length; i++) {
-      try {
-        const result = await lookupFunctions[i]()
-        if (result) {
-          setResult(result)
-          setResultType(typeKeys[i])
-          setScanHistory(prev => [...prev, { code, type: typeKeys[i], time: new Date() }])
-          return true
-        }
-      } catch (e) {
-        // Продолжаем поиск
-      }
-    }
-    return false
-  }
-
-  const navigateToResult = () => {
-    if (!result || !resultType) return
-    
-    switch (resultType) {
+// ---------------------------------------------------------------------------
+// Lookup dispatcher — calls the right getXxxByQR based on parsed type
+// ---------------------------------------------------------------------------
+async function lookupEntity(
+  type: string,
+  value: string
+): Promise<Record<string, unknown> | null> {
+  try {
+    switch (type) {
       case "container":
-        router.push(`/containers/${result.id}`)
-        break
-      case "position":
-        // Позиция - показать детали на месте
-        break
-      case "ready_medium":
-        router.push(`/ready-media`)
-        break
+        return await getContainerByQR(value)
       case "equipment":
-        router.push(`/equipment`)
-        break
+        return await getEquipmentByQR(value)
       case "culture":
-        router.push(`/cultures/${result.id}`)
-        break
+        return await getCultureByQR(value)
       case "lot":
-        router.push(`/lots/${result.id}`)
-        break
+        return await getLotByQR(value)
       case "bank":
-        router.push(`/banks/${result.id}`)
-        break
+        return await getBankByQR(value)
+      case "ready_medium":
+        return await getReadyMediumByQR(value)
+      case "position":
+        return await getPositionByQR(value)
+      default:
+        return null
     }
+  } catch {
+    return null
   }
+}
 
-  const clearResult = () => {
-    setResult(null)
-    setResultType(null)
-    setRawCode(null)
-    setError(null)
-  }
+// ---------------------------------------------------------------------------
+// Entity preview card content
+// ---------------------------------------------------------------------------
+function EntityPreview({
+  type,
+  entity,
+}: {
+  type: string
+  entity: Record<string, unknown>
+}) {
+  const rows: { label: string; value: React.ReactNode }[] = []
 
-  const getTypeInfo = (type: string) => {
-    return OBJECT_TYPES[type] || { label: type, icon: QrCode, color: "bg-gray-500" }
+  switch (type) {
+    case "container": {
+      rows.push({ label: "Код", value: (entity.code ?? entity.qr_code ?? "—") as string })
+      rows.push({
+        label: "Статус",
+        value: <Badge variant="outline">{(entity.status as string) ?? "—"}</Badge>,
+      })
+      const lot = entity.lot as Record<string, unknown> | undefined
+      const culture = lot?.culture as Record<string, unknown> | undefined
+      if (culture?.name) {
+        rows.push({ label: "Культура", value: culture.name as string })
+      }
+      break
+    }
+    case "equipment": {
+      rows.push({ label: "Название", value: (entity.name ?? "—") as string })
+      rows.push({ label: "Тип", value: (entity.type ?? "—") as string })
+      if (entity.current_temperature !== undefined && entity.current_temperature !== null) {
+        rows.push({ label: "Температура", value: `${entity.current_temperature}°C` })
+      }
+      break
+    }
+    case "culture": {
+      rows.push({ label: "Название", value: (entity.name ?? "—") as string })
+      const ctype = entity.culture_type as Record<string, unknown> | undefined
+      if (ctype?.name) {
+        rows.push({ label: "Тип культуры", value: ctype.name as string })
+      }
+      rows.push({
+        label: "Статус",
+        value: <Badge variant="outline">{(entity.status as string) ?? "—"}</Badge>,
+      })
+      if (entity.current_passage !== undefined && entity.current_passage !== null) {
+        rows.push({ label: "Пассаж", value: String(entity.current_passage) })
+      }
+      break
+    }
+    case "lot": {
+      rows.push({ label: "Номер партии", value: (entity.lot_number ?? "—") as string })
+      rows.push({
+        label: "Статус",
+        value: <Badge variant="outline">{(entity.status as string) ?? "—"}</Badge>,
+      })
+      const culture = entity.culture as Record<string, unknown> | undefined
+      if (culture?.name) {
+        rows.push({ label: "Культура", value: culture.name as string })
+      }
+      const containers = entity.containers as unknown[] | undefined
+      if (containers) {
+        rows.push({ label: "Контейнеров", value: String(containers.length) })
+      }
+      break
+    }
+    case "bank": {
+      rows.push({ label: "Код банка", value: (entity.code ?? "—") as string })
+      rows.push({
+        label: "Статус",
+        value: <Badge variant="outline">{(entity.status as string) ?? "—"}</Badge>,
+      })
+      const culture = entity.culture as Record<string, unknown> | undefined
+      if (culture?.name) {
+        rows.push({ label: "Культура", value: culture.name as string })
+      }
+      const vials = entity.cryo_vials as unknown[] | undefined
+      if (vials) {
+        rows.push({ label: "Криовиалов", value: String(vials.length) })
+      }
+      rows.push({
+        label: "QC",
+        value: (
+          <Badge variant={entity.qc_passed ? "default" : "secondary"}>
+            {entity.qc_passed ? "Пройден" : "Не пройден"}
+          </Badge>
+        ),
+      })
+      break
+    }
+    case "ready_medium": {
+      rows.push({ label: "Название", value: (entity.name ?? "—") as string })
+      rows.push({ label: "Код", value: (entity.code ?? "—") as string })
+      if (entity.volume_ml !== undefined) {
+        rows.push({ label: "Объём", value: `${entity.volume_ml} мл` })
+      }
+      break
+    }
+    case "position": {
+      rows.push({ label: "Путь", value: (entity.path ?? "—") as string })
+      const eq = entity.equipment as Record<string, unknown> | undefined
+      if (eq?.name) {
+        rows.push({ label: "Оборудование", value: eq.name as string })
+      }
+      if (entity.qr_code) {
+        rows.push({ label: "QR-код", value: (entity.qr_code as string) })
+      }
+      break
+    }
   }
 
   return (
-    <div className="container mx-auto py-6 max-w-4xl">
-      {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold">QR Сканирование</h1>
-        <p className="text-muted-foreground">Сканируйте QR-код для быстрого поиска объекта</p>
-        <p className="text-sm text-muted-foreground mt-1">
-          Форматы: POS:, CNT:, EQP:, CULT:, INV:, RM:, BK:
+    <div className="grid gap-3 sm:grid-cols-2">
+      {rows.map((r, i) => (
+        <div key={i}>
+          <p className="text-xs text-muted-foreground">{r.label}</p>
+          <div className="mt-0.5 font-medium text-sm">{r.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ===========================================================================
+// MAIN PAGE COMPONENT
+// ===========================================================================
+export default function ScanPage() {
+  const router = useRouter()
+
+  // --- state ---
+  const [qrInput, setQrInput] = useState("")
+  const [parsedType, setParsedType] = useState<string | null>(null)
+  const [parsedValue, setParsedValue] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [entity, setEntity] = useState<Record<string, unknown> | null>(null)
+  const [entityType, setEntityType] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // ---------------------------------------------------------------------------
+  // Auto-parse on input change
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const trimmed = qrInput.trim()
+    if (!trimmed) {
+      setParsedType(null)
+      setParsedValue(null)
+      return
+    }
+    const parsed = parseQRCode(trimmed)
+    if (parsed) {
+      setParsedType(parsed.type)
+      setParsedValue(parsed.value)
+    } else {
+      setParsedType("unknown")
+      setParsedValue(trimmed)
+    }
+  }, [qrInput])
+
+  // ---------------------------------------------------------------------------
+  // Lookup handler
+  // ---------------------------------------------------------------------------
+  const handleLookup = useCallback(async () => {
+    if (!parsedType || !parsedValue) return
+    if (parsedType === "unknown") {
+      setError("Неизвестный формат QR-кода. Поддерживаемые префиксы: CNT:, EQP:, CULT:, POS:, RM:, BK:")
+      setEntity(null)
+      setEntityType(null)
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    setEntity(null)
+    setEntityType(null)
+
+    try {
+      const result = await lookupEntity(parsedType, parsedValue)
+      if (result) {
+        setEntity(result)
+        setEntityType(parsedType)
+        toast.success(`${ENTITY_META[parsedType]?.label ?? "Объект"} найден`)
+      } else {
+        setError(`Объект не найден по коду: ${parsedValue}`)
+      }
+    } catch {
+      setError("Ошибка при поиске объекта. Попробуйте ещё раз.")
+    } finally {
+      setLoading(false)
+    }
+  }, [parsedType, parsedValue])
+
+  // ---------------------------------------------------------------------------
+  // Navigate to entity
+  // ---------------------------------------------------------------------------
+  const handleNavigate = useCallback(() => {
+    if (!entity || !entityType) return
+    const route = getEntityRoute(entityType, entity)
+    if (route) {
+      router.push(route)
+    } else {
+      toast.error("Невозможно перейти к объекту")
+    }
+  }, [entity, entityType, router])
+
+  // ---------------------------------------------------------------------------
+  // Clear all
+  // ---------------------------------------------------------------------------
+  const handleClear = useCallback(() => {
+    setQrInput("")
+    setParsedType(null)
+    setParsedValue(null)
+    setEntity(null)
+    setEntityType(null)
+    setError(null)
+  }, [])
+
+  // ---------------------------------------------------------------------------
+  // Resolve meta for the current parsed type
+  // ---------------------------------------------------------------------------
+  const meta = parsedType ? ENTITY_META[parsedType] ?? ENTITY_META.unknown : null
+  const MetaIcon = meta?.icon ?? QrCode
+
+  // ===========================================================================
+  // RENDER
+  // ===========================================================================
+  return (
+    <div className="container mx-auto max-w-2xl py-8 px-4 space-y-6">
+      {/* ---------- Header ---------- */}
+      <div className="text-center space-y-1">
+        <h1 className="text-2xl font-bold tracking-tight">QR Сканер</h1>
+        <p className="text-sm text-muted-foreground">
+          Введите или вставьте QR-код для быстрого поиска объекта
         </p>
       </div>
 
-      {/* Scan Mode Selection */}
-      <div className="flex justify-center gap-4 mb-8">
-        <Button
-          variant={scanMode === "manual" ? "default" : "outline"}
-          onClick={() => {
-            stopCamera()
-            setScanMode("manual")
-          }}
-        >
-          <Search className="mr-2 h-4 w-4" />
-          Ввод кода
-        </Button>
-        <Button
-          variant={scanMode === "camera" ? "default" : "outline"}
-          onClick={startCamera}
-        >
-          <Camera className="mr-2 h-4 w-4" />
-          Камера
-        </Button>
-      </div>
-
-      {/* Manual Input */}
-      {scanMode === "manual" && (
-        <Card className="mb-8">
-          <CardContent className="pt-6">
-            <div className="flex gap-4">
-              <Input
-                placeholder="Введите или вставьте QR-код (например: CNT:ABC123)..."
-                value={qrInput}
-                onChange={(e) => setQrInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleScan(qrInput)}
-                className="flex-1"
-              />
-              <Button onClick={() => handleScan(qrInput)} disabled={!qrInput}>
-                <Search className="mr-2 h-4 w-4" />
-                Поиск
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Camera View */}
-      {scanMode === "camera" && (
-        <Card className="mb-8 overflow-hidden">
-          <div className="relative aspect-video bg-black">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-            {scanning && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-64 h-64 border-2 border-white rounded-lg relative">
-                  <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-500 rounded-tl-lg" />
-                  <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-500 rounded-tr-lg" />
-                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-500 rounded-bl-lg" />
-                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-500 rounded-br-lg" />
-                  <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-blue-500 animate-pulse" />
-                </div>
-              </div>
-            )}
+      {/* ---------- Camera placeholder ---------- */}
+      <Card className="border-dashed">
+        <CardContent className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+          <div className="rounded-full bg-muted p-4">
+            <Camera className="h-8 w-8 text-muted-foreground" />
           </div>
-          <CardContent className="pt-4">
-            <div className="flex justify-center gap-4">
-              {!scanning ? (
-                <Button onClick={startCamera}>
-                  <Camera className="mr-2 h-4 w-4" />
-                  Включить камеру
-                </Button>
-              ) : (
-                <Button variant="outline" onClick={stopCamera}>
-                  <X className="mr-2 h-4 w-4" />
-                  Выключить
-                </Button>
+          <p className="text-sm font-medium text-muted-foreground">
+            Сканирование QR доступно в PWA
+          </p>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground/70">
+            <Smartphone className="h-3.5 w-3.5" />
+            <span>Камера работает в PWA-версии приложения</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ---------- Manual input ---------- */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search className="h-4 w-4" />
+            Ручной ввод кода
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Input
+                placeholder="CNT:CT-0001-L1-P2-FL-003"
+                value={qrInput}
+                onChange={(e) => {
+                  setQrInput(e.target.value)
+                  // Reset results on new input
+                  setEntity(null)
+                  setEntityType(null)
+                  setError(null)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    handleLookup()
+                  }
+                }}
+                className="pr-8"
+              />
+              {qrInput && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               )}
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <Button
+              onClick={handleLookup}
+              disabled={!parsedType || parsedType === "unknown" || loading}
+            >
+              {loading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="mr-2 h-4 w-4" />
+              )}
+              Найти
+            </Button>
+          </div>
 
-      {/* Error */}
+          {/* Parsed type badge */}
+          {parsedType && qrInput.trim() && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Тип:</span>
+              <Badge variant={meta?.badgeVariant ?? "secondary"} className="gap-1">
+                <MetaIcon className="h-3 w-3" />
+                {meta?.label ?? parsedType}
+              </Badge>
+              {parsedValue && parsedType !== "unknown" && (
+                <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
+                  {parsedValue}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Supported formats hint */}
+          <p className="text-xs text-muted-foreground">
+            Форматы: <code className="text-[11px]">CNT:</code> контейнер,{" "}
+            <code className="text-[11px]">EQP:</code> оборудование,{" "}
+            <code className="text-[11px]">CULT:</code> культура,{" "}
+            <code className="text-[11px]">POS:</code> позиция,{" "}
+            <code className="text-[11px]">RM:</code> готовая среда,{" "}
+            <code className="text-[11px]">BK:</code> банк
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* ---------- Error ---------- */}
       {error && (
-        <Card className="mb-8 border-red-200 bg-red-50">
-          <CardContent className="py-4 text-center text-red-600">
-            {error}
-            {rawCode && (
-              <p className="text-sm mt-2">Код: {rawCode}</p>
-            )}
-          </CardContent>
-        </Card>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      {/* Result */}
-      {result && resultType && (
-        <Card className="mb-8">
-          <CardHeader>
+      {/* ---------- Result preview card ---------- */}
+      {entity && entityType && (
+        <Card>
+          <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${getTypeInfo(resultType).color}`}>
+                <div
+                  className={`flex items-center justify-center rounded-lg p-2 ${
+                    ENTITY_META[entityType]?.color ?? "bg-gray-500"
+                  }`}
+                >
                   {(() => {
-                    const Icon = getTypeInfo(resultType).icon
+                    const Icon = ENTITY_META[entityType]?.icon ?? QrCode
                     return <Icon className="h-5 w-5 text-white" />
                   })()}
                 </div>
-                <div>
-                  <CardTitle>{getTypeInfo(resultType).label}</CardTitle>
-                  <CardDescription>
-                    Найден: {format(new Date(), "HH:mm:ss")}
-                  </CardDescription>
-                </div>
+                <CardTitle className="text-base">
+                  {ENTITY_META[entityType]?.label ?? "Объект"}
+                </CardTitle>
               </div>
-              <Button variant="ghost" size="icon" onClick={clearResult}>
+              <Button variant="ghost" size="icon" onClick={handleClear}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Container */}
-              {resultType === "container" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Код</p>
-                      <p className="font-semibold text-lg">{result.code || result.qr_code}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Статус</p>
-                      <Badge>{result.status}</Badge>
-                    </div>
-                  </div>
-                  {result.lot?.culture && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Культура</p>
-                      <p className="font-semibold">{result.lot.culture.name}</p>
-                    </div>
-                  )}
-                  <Button className="w-full" onClick={navigateToResult}>
-                    Открыть карточку
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </>
-              )}
+          <CardContent className="space-y-4">
+            <EntityPreview type={entityType} entity={entity} />
 
-              {/* Position */}
-              {resultType === "position" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Путь</p>
-                      <p className="font-semibold text-lg">{result.path}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Оборудование</p>
-                      <p className="font-semibold">{result.equipment?.name || "—"}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">QR-код</p>
-                    <p className="font-mono text-sm">{result.qr_code}</p>
-                  </div>
-                </>
-              )}
-
-              {/* Ready Medium */}
-              {resultType === "ready_medium" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Название</p>
-                      <p className="font-semibold text-lg">{result.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Код</p>
-                      <p className="font-semibold">{result.code}</p>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Объём</p>
-                      <p className="font-semibold">{result.volume_ml} мл</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Срок годности</p>
-                      <p className="font-semibold">
-                        {result.expiration_date 
-                          ? format(new Date(result.expiration_date), "dd MMM yyyy", { locale: ru })
-                          : "—"}
-                      </p>
-                    </div>
-                  </div>
-                  <Button className="w-full" onClick={navigateToResult}>
-                    Открыть карточку
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </>
-              )}
-
-              {/* Equipment */}
-              {resultType === "equipment" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Название</p>
-                      <p className="font-semibold text-lg">{result.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Тип</p>
-                      <p className="font-semibold">{result.type}</p>
-                    </div>
-                  </div>
-                  {result.current_temperature !== undefined && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Температура</p>
-                      <p className="font-semibold text-2xl">{result.current_temperature}°C</p>
-                    </div>
-                  )}
-                  <Button className="w-full" onClick={navigateToResult}>
-                    Открыть карточку
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </>
-              )}
-
-              {/* Culture */}
-              {resultType === "culture" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Название</p>
-                      <p className="font-semibold text-lg">{result.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Тип культуры</p>
-                      <p className="font-semibold">{result.culture_type?.name || "—"}</p>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Статус</p>
-                      <Badge>{result.status}</Badge>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Пассаж</p>
-                      <p className="font-semibold">{result.current_passage || "—"}</p>
-                    </div>
-                  </div>
-                  <Button className="w-full" onClick={navigateToResult}>
-                    Открыть карточку
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </>
-              )}
-
-              {/* Lot */}
-              {resultType === "lot" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Номер партии</p>
-                      <p className="font-semibold text-lg">{result.lot_number}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Статус</p>
-                      <Badge>{result.status}</Badge>
-                    </div>
-                  </div>
-                  {result.culture && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Культура</p>
-                      <p className="font-semibold">{result.culture.name}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-sm text-muted-foreground">Контейнеров</p>
-                    <p className="font-semibold">{result.containers?.length || 0}</p>
-                  </div>
-                  <Button className="w-full" onClick={navigateToResult}>
-                    Открыть карточку
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </>
-              )}
-
-              {/* Bank */}
-              {resultType === "bank" && (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Код банка</p>
-                      <p className="font-semibold text-lg">{result.code}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Статус</p>
-                      <Badge>{result.status}</Badge>
-                    </div>
-                  </div>
-                  {result.culture && (
-                    <div>
-                      <p className="text-sm text-muted-foreground">Культура</p>
-                      <p className="font-semibold">{result.culture.name}</p>
-                    </div>
-                  )}
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Криовиалов</p>
-                      <p className="font-semibold">{result.cryo_vials?.length || 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">QC</p>
-                      <Badge variant={result.qc_passed ? "default" : "secondary"}>
-                        {result.qc_passed ? "Пройден" : "Не пройден"}
-                      </Badge>
-                    </div>
-                  </div>
-                  <Button className="w-full" onClick={navigateToResult}>
-                    Открыть карточку
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Scan History */}
-      {scanHistory.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">История сканирований</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {scanHistory.slice(-5).reverse().map((item, index) => (
-                <div 
-                  key={index} 
-                  className="flex items-center justify-between p-3 bg-muted rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <div>
-                      <p className="font-medium">{getTypeInfo(item.type).label}</p>
-                      <p className="text-sm text-muted-foreground">{item.code}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {format(item.time, "HH:mm")}
-                  </p>
-                </div>
-              ))}
-            </div>
+            <Button className="w-full" onClick={handleNavigate}>
+              Перейти
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
           </CardContent>
         </Card>
       )}

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, Menu, User, Search, LogOut, Settings, Loader2 } from 'lucide-react'
+import { Bell, Menu, User, Search, LogOut, Settings, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { getNotifications, getCurrentUser, signOut, markAllNotificationsRead } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
@@ -44,6 +51,7 @@ export function Header() {
   const [loadingNotifications, setLoadingNotifications] = useState(true)
   const [currentUser, setCurrentUser] = useState<UserData | null>(null)
   const [loadingUser, setLoadingUser] = useState(true)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     loadNotifications()
@@ -238,11 +246,43 @@ export function Header() {
           </DropdownMenu>
 
           {/* Mobile Menu Toggle */}
-          <Button variant="ghost" size="icon" className="md:hidden">
+          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileMenuOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
         </div>
       </div>
+
+      {/* Mobile Navigation Sheet */}
+      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <SheetContent side="left" className="w-72 p-0">
+          <SheetHeader className="border-b px-4 py-3">
+            <SheetTitle className="flex items-center gap-2">
+              <div className="h-7 w-7 rounded-lg bg-blue-600 flex items-center justify-center">
+                <span className="text-white text-xs">LP</span>
+              </div>
+              LabPro
+            </SheetTitle>
+            <SheetDescription className="sr-only">Навигация</SheetDescription>
+          </SheetHeader>
+          <nav className="flex flex-col gap-1 p-3 overflow-y-auto">
+            <MobileNavLink href="/" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Дашборд</MobileNavLink>
+            <MobileNavLink href="/donors" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Доноры</MobileNavLink>
+            <MobileNavLink href="/cultures" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Культуры</MobileNavLink>
+            <MobileNavLink href="/banks" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Банки</MobileNavLink>
+            <MobileNavLink href="/operations" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Операции</MobileNavLink>
+            <MobileNavLink href="/qc" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>QC</MobileNavLink>
+            <MobileNavLink href="/ready-media" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Среды</MobileNavLink>
+            <MobileNavLink href="/inventory" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Склад</MobileNavLink>
+            <MobileNavLink href="/equipment" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Оборудование</MobileNavLink>
+            <MobileNavLink href="/orders" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Заявки</MobileNavLink>
+            <MobileNavLink href="/tasks" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Задачи</MobileNavLink>
+            <MobileNavLink href="/audit" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Аудит</MobileNavLink>
+            <MobileNavLink href="/documents" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Документы</MobileNavLink>
+            <MobileNavLink href="/scan" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>QR-сканер</MobileNavLink>
+            <MobileNavLink href="/users" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Пользователи</MobileNavLink>
+          </nav>
+        </SheetContent>
+      </Sheet>
     </header>
   )
 }
@@ -254,6 +294,24 @@ function NavLink({ href, pathname, children }: { href: string; pathname: string;
     <Link
       href={href}
       className={`px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+        isActive
+          ? 'bg-blue-50 text-blue-700'
+          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+      }`}
+    >
+      {children}
+    </Link>
+  )
+}
+
+function MobileNavLink({ href, pathname, onClick, children }: { href: string; pathname: string; onClick: () => void; children: React.ReactNode }) {
+  const isActive = pathname === href || (href !== '/' && pathname.startsWith(href + '/'))
+
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`px-3 py-2.5 text-sm font-medium rounded-md transition-colors ${
         isActive
           ? 'bg-blue-50 text-blue-700'
           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'

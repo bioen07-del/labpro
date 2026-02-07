@@ -7,6 +7,9 @@ export type UserRole = 'OPERATOR' | 'LABORANT' | 'MANAGER' | 'QC_ADMIN' | 'ADMIN
 // Culture
 export type CultureStatus = 'ACTIVE' | 'ARCHIVED'
 
+// Способ первичного выделения клеток
+export type ExtractionMethod = 'ENZYMATIC' | 'EXPLANT' | 'MECHANICAL' | 'OTHER'
+
 export interface Culture {
   id: string
   name: string
@@ -18,6 +21,7 @@ export interface Culture {
   donation?: Donation
   tissue_id?: string
   tissue?: Tissue
+  extraction_method?: ExtractionMethod  // способ первичного выделения
   status: CultureStatus
   description?: string
   coefficient?: number
@@ -44,6 +48,17 @@ export interface CultureType {
   thaw_protocol?: string
   is_active: boolean
   created_at: string
+}
+
+// Связь типов клеток с типами тканей
+export interface CultureTypeTissueType {
+  id: string
+  culture_type_id: string
+  tissue_type_id: string
+  is_primary: boolean
+  created_at: string
+  culture_type?: CultureType
+  tissue_type?: TissueType
 }
 
 // ==================== DONATIONS ====================
@@ -80,6 +95,7 @@ export interface Donation {
   status: DonationStatus
   notes: string | null
   created_at: string
+  updated_at?: string
   created_by: string | null
   // Relations
   donor?: Donor
@@ -88,6 +104,8 @@ export interface Donation {
 }
 
 // Donor (расширенный)
+export type DonorStatus = 'ACTIVE' | 'ARCHIVED'
+
 export interface Donor {
   id: string
   code: string
@@ -98,8 +116,11 @@ export interface Donor {
   sex: string | null
   phone: string | null
   email: string | null
+  blood_type: string | null
+  status: DonorStatus
   notes: string | null
   created_at: string
+  updated_at?: string
   created_by: string | null
   // Relations
   donations?: Donation[]
@@ -122,16 +143,21 @@ export type LotStatus = 'ACTIVE' | 'DISPOSE' | 'CLOSED'
 
 export interface Lot {
   id: string
+  lot_number: string
   culture_id: string
   culture?: Culture
-  passage_number: number
-  status: LotStatus
   parent_lot_id?: string
   source_container_id?: string
-  start_date: string
-  end_date?: string
+  passage_number: number
+  seeded_at?: string
+  harvest_at?: string
+  initial_cells?: number
+  final_cells?: number
+  viability?: number
+  status: LotStatus
   notes?: string
   created_at: string
+  updated_at?: string
   containers?: Container[]
 }
 
@@ -140,23 +166,31 @@ export type ContainerStatus = 'IN_CULTURE' | 'IN_BANK' | 'ISSUED' | 'DISPOSE' | 
 
 export interface Container {
   id: string
+  code: string
   lot_id: string
   lot?: Lot
-  code: string
+  bank_id?: string
+  bank?: Bank
   container_type_id: string
-  type?: ContainerType
-  status: ContainerStatus
-  parent_container_id?: string
+  container_type?: ContainerType
   position_id?: string
   position?: Position
+  parent_container_id?: string
+  status: ContainerStatus
+  seeded_at?: string
+  passage_number?: number
+  cells_count?: number
+  viability?: number
+  media_type?: string
   confluent_percent?: number
   morphology?: string
-  passage_count?: number
   contaminated: boolean
+  notes?: string
   placed_at?: string
   created_by?: string
   created_by_user?: User
   created_at: string
+  updated_at?: string
 }
 
 export interface ContainerType {
@@ -173,22 +207,26 @@ export interface ContainerType {
 
 // Bank
 export type BankType = 'MCB' | 'WCB' | 'RWB'
-export type BankStatus = 'QC_PENDING' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'DISPOSE'
+export type BankStatus = 'QUARANTINE' | 'QC_PENDING' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'EXPIRED' | 'DISPOSE'
 
 export interface Bank {
   id: string
+  code: string
   culture_id?: string
   culture?: Culture
   lot_id?: string
   lot?: Lot
   bank_type: BankType
   status: BankStatus
+  freezing_method?: string             // PROGRAMMED, MANUAL_80
   cryo_vials_count: number
   cells_per_vial?: number
   total_cells?: number
   position_id?: string
   position?: Position
+  storage_location?: string
   qc_passed: boolean
+  qc_date?: string
   freezing_date?: string
   expiration_date?: string
   notes?: string
@@ -197,17 +235,24 @@ export interface Bank {
   qc_tests?: QCTest[]
 }
 
-export type CryoVialStatus = 'IN_STOCK' | 'RESERVED' | 'ISSUED'
+export type CryoVialStatus = 'IN_STOCK' | 'RESERVED' | 'ISSUED' | 'THAWED' | 'DISPOSED'
 
 export interface CryoVial {
   id: string
   bank_id: string
   bank?: Bank
-  code: string
+  lot_id?: string
+  lot?: Lot
+  code?: string
+  vial_number?: string
   position_id?: string
   position?: Position
-  status: CryoVialStatus
+  position_in_box?: string
   cells_count?: number
+  freezing_date?: string
+  thaw_date?: string
+  status: CryoVialStatus
+  notes?: string
   created_at: string
 }
 
@@ -282,20 +327,25 @@ export interface ReadyMedium {
 
 // Operations
 export type OperationType = 'FEED' | 'PASSAGE' | 'FREEZE' | 'THAW' | 'OBSERVE' | 'DISPOSE' | 'QCREG'
-export type OperationStatus = 'IN_PROGRESS' | 'COMPLETED'
+export type OperationStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 
 export interface Operation {
   id: string
+  type: OperationType
+  container_id?: string
+  bank_id?: string
   lot_id?: string
   lot?: Lot
-  operation_type: OperationType
+  operator_id?: string
+  operator?: User
   status: OperationStatus
-  started_at: string
+  started_at?: string
   completed_at?: string
+  parameters?: Record<string, unknown>
   notes?: string
-  created_by?: string
-  created_by_user?: User
+  result?: string
   created_at: string
+  updated_at?: string
   containers?: OperationContainer[]
   media?: OperationMedia[]
   metrics?: OperationMetrics
@@ -407,9 +457,16 @@ export interface Equipment {
   code: string
   name: string
   type: EquipmentType
+  model?: string
+  serial_number?: string
   location?: string
   temperature?: number
+  current_temperature?: number
   status: EquipmentStatus
+  last_maintenance?: string
+  next_maintenance?: string
+  validation_date?: string
+  next_validation?: string
   notes?: string
   created_at: string
   positions?: Position[]
@@ -419,11 +476,11 @@ export interface Position {
   id: string
   equipment_id: string
   equipment?: Equipment
-  code: string
-  qr_code?: string
   path: string
-  capacity: number
+  qr_code?: string
   is_active: boolean
+  capacity: number
+  current_load?: number
   created_at: string
 }
 
@@ -464,6 +521,7 @@ export interface Notification {
   message: string
   link_type?: string
   link_id?: string
+  user_id?: string
   is_read: boolean
   created_at: string
 }
@@ -522,6 +580,11 @@ export interface Database {
         Row: CultureType
         Insert: Partial<CultureType>
         Update: Partial<CultureType>
+      }
+      culture_type_tissue_types: {
+        Row: CultureTypeTissueType
+        Insert: Partial<CultureTypeTissueType>
+        Update: Partial<CultureTypeTissueType>
       }
       cultures: {
         Row: Culture

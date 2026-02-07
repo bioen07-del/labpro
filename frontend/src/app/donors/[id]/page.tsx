@@ -1,325 +1,398 @@
 "use client"
 
-import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
-import Link from 'next/link'
+import { use, useState, useEffect } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   Loader2,
-  User,
-  Calendar,
-  Phone,
-  Mail,
+  Pencil,
   Plus,
-  FileText,
-  CheckCircle2,
-  XCircle,
-  Clock,
+  Dna,
   AlertCircle,
-  Beaker
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { getDonorById, getDonations } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+} from "lucide-react"
+import { toast } from "sonner"
 
-const infectionStatusIcon = (status: string) => {
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+
+import { getDonorById, getDonations, getCultures } from "@/lib/api"
+import { formatDate } from "@/lib/utils"
+import type { Donor, Donation, Culture, CultureType, InfectionTestResult } from "@/types"
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Colored dot for infection test result */
+function InfectionDot({ status }: { status: InfectionTestResult | string | null | undefined }) {
+  const s = status ?? "PENDING"
+  let color = "bg-yellow-400" // PENDING
+  if (s === "NEGATIVE") color = "bg-green-500"
+  if (s === "POSITIVE") color = "bg-red-500"
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />
+}
+
+/** Human-readable label for infection dot legend */
+function infectionLabel(status: InfectionTestResult | string | null | undefined) {
   switch (status) {
-    case 'NEGATIVE':
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />
-    case 'POSITIVE':
-      return <XCircle className="h-4 w-4 text-red-500" />
+    case "NEGATIVE":
+      return "Отр."
+    case "POSITIVE":
+      return "Пол."
     default:
-      return <Clock className="h-4 w-4 text-yellow-500" />
+      return "Ожид."
   }
 }
 
-const donationStatusBadge = (status: string) => {
+/** Badge for donor status */
+function donorStatusBadge(status: string | undefined) {
   switch (status) {
-    case 'APPROVED':
-      return <Badge className="bg-green-100 text-green-700">Одобрена</Badge>
-    case 'REJECTED':
+    case "ACTIVE":
+      return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Активен</Badge>
+    case "ARCHIVED":
+      return <Badge variant="secondary">Архив</Badge>
+    default:
+      return <Badge variant="outline">{status ?? "---"}</Badge>
+  }
+}
+
+/** Badge for donation status */
+function donationStatusBadge(status: string) {
+  switch (status) {
+    case "APPROVED":
+      return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Одобрена</Badge>
+    case "REJECTED":
       return <Badge variant="destructive">Отклонена</Badge>
     default:
-      return <Badge variant="secondary">Карантин</Badge>
+      return <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Карантин</Badge>
   }
 }
 
-export default function DonorDetailPage() {
-  const params = useParams()
-  const donorId = params.id as string
+/** Badge for culture status */
+function cultureStatusBadge(status: string) {
+  switch (status) {
+    case "ACTIVE":
+      return <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Активна</Badge>
+    case "ARCHIVED":
+      return <Badge variant="secondary">Архив</Badge>
+    default:
+      return <Badge variant="outline">{status}</Badge>
+  }
+}
+
+/** Sex display */
+function sexLabel(sex: string | null | undefined) {
+  if (sex === "M") return "Мужской"
+  if (sex === "F") return "Женский"
+  return "Не указан"
+}
+
+// ---------------------------------------------------------------------------
+// Page Component
+// ---------------------------------------------------------------------------
+
+export default function DonorDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id } = use(params)
+  const router = useRouter()
 
   const [loading, setLoading] = useState(true)
-  const [donor, setDonor] = useState<any>(null)
-  const [donations, setDonations] = useState<any[]>([])
+  const [donor, setDonor] = useState<Donor | null>(null)
+  const [donations, setDonations] = useState<(Donation & { tissue_type?: { id: string; name: string } })[]>([])
+  const [cultures, setCultures] = useState<(Culture & { culture_type?: CultureType })[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (donorId) loadData()
-  }, [donorId])
+    loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
-  const loadData = async () => {
+  async function loadData() {
     setLoading(true)
     try {
-      const [donorData, donationsData] = await Promise.all([
-        getDonorById(donorId),
-        getDonations({ donor_id: donorId }),
+      const [donorData, donationsData, culturesData] = await Promise.all([
+        getDonorById(id),
+        getDonations({ donor_id: id }),
+        getCultures(),
       ])
-      setDonor(donorData)
-      setDonations(donationsData || [])
+
+      setDonor(donorData as Donor)
+      setDonations((donationsData as typeof donations) ?? [])
+
+      // Filter cultures that belong to this donor
+      const donorCultures = (culturesData ?? []).filter(
+        (c: any) => c.donor_id === id
+      )
+      setCultures(donorCultures as typeof cultures)
     } catch (err: any) {
-      setError(err.message || 'Ошибка загрузки данных донора')
+      const msg = err?.message || "Ошибка загрузки данных донора"
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
   }
 
-  const getDonorFullName = () => {
-    if (!donor) return ''
-    const parts = [donor.last_name, donor.first_name, donor.middle_name].filter(Boolean)
-    return parts.length > 0 ? parts.join(' ') : 'ФИО не указано'
-  }
+  // ---- Full name -----------------------------------------------------------
+  const fullName = donor
+    ? [donor.last_name, donor.first_name, donor.middle_name].filter(Boolean).join(" ") || "ФИО не указано"
+    : ""
 
+  // ---- Loading state -------------------------------------------------------
   if (loading) {
     return (
-      <div className="container py-6 flex justify-center items-center min-h-[400px]">
+      <div className="container py-10 flex items-center justify-center min-h-[400px]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     )
   }
 
+  // ---- Error state ---------------------------------------------------------
   if (error || !donor) {
     return (
-      <div className="container py-6">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Ошибка</AlertTitle>
-          <AlertDescription>{error || 'Донор не найден'}</AlertDescription>
-        </Alert>
-        <Button variant="outline" className="mt-4" asChild>
-          <Link href="/donors"><ArrowLeft className="mr-2 h-4 w-4" />К списку доноров</Link>
+      <div className="container py-10 space-y-4">
+        <div className="flex items-center gap-2 text-destructive">
+          <AlertCircle className="h-5 w-5" />
+          <span className="font-medium">{error || "Донор не найден"}</span>
+        </div>
+        <Button variant="outline" asChild>
+          <Link href="/donors">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            К списку доноров
+          </Link>
         </Button>
       </div>
     )
   }
 
+  // =========================================================================
+  // RENDER
+  // =========================================================================
   return (
     <div className="container py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* ================================================================= */}
+      {/* HEADER                                                            */}
+      {/* ================================================================= */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/donors"><ArrowLeft className="h-4 w-4" /></Link>
+            <Link href="/donors">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">{getDonorFullName()}</h1>
-            <p className="text-muted-foreground font-mono">{donor.code}</p>
+          <div className="space-y-1">
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-sm text-muted-foreground">{donor.code}</span>
+              {donorStatusBadge(donor.status)}
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight">{fullName}</h1>
           </div>
         </div>
-        <div className="flex gap-2">
+
+        {/* Action buttons */}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/donors/${id}/edit`}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Редактировать
+            </Link>
+          </Button>
           <Button asChild>
-            <Link href={`/donors/${donorId}/donations/new`}>
+            <Link href={`/donors/${id}/donations/new`}>
               <Plus className="mr-2 h-4 w-4" />
-              Новая донация
+              Донация
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Donor Info */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Данные донора
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  <span>Пол: {donor.sex === 'M' ? 'Мужской' : donor.sex === 'F' ? 'Женский' : 'Не указан'}</span>
-                </div>
-                {donor.birth_date && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span>Дата рождения: {formatDate(donor.birth_date)}</span>
-                  </div>
-                )}
-                {donor.phone && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{donor.phone}</span>
-                  </div>
-                )}
-                {donor.email && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span>{donor.email}</span>
-                  </div>
-                )}
-                {donor.blood_type && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                    <span>Группа крови: {donor.blood_type}</span>
-                  </div>
-                )}
-              </div>
+      {/* ================================================================= */}
+      {/* INFO GRID (2 columns)                                             */}
+      {/* ================================================================= */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Информация о доноре</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+            <InfoRow label="Дата рождения" value={donor.birth_date ? formatDate(donor.birth_date) : "Не указана"} />
+            <InfoRow label="Пол" value={sexLabel(donor.sex)} />
+            <InfoRow label="Группа крови" value={donor.blood_type || "Не указана"} />
+            <InfoRow label="Телефон" value={donor.phone || "Не указан"} />
+            <InfoRow label="Email" value={donor.email || "Не указан"} />
+            <InfoRow label="Примечания" value={donor.notes || "---"} />
+          </div>
+        </CardContent>
+      </Card>
 
-              <div className="pt-3 border-t">
-                <Badge variant={donor.status === 'ACTIVE' ? 'default' : 'secondary'}>
-                  {donor.status === 'ACTIVE' ? 'Активен' : donor.status}
-                </Badge>
-              </div>
-
-              {donor.notes && (
-                <div className="pt-3 border-t">
-                  <p className="text-sm text-muted-foreground">Примечания:</p>
-                  <p className="text-sm mt-1">{donor.notes}</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Статистика</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Всего донаций</span>
-                <span className="font-medium">{donations.length}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Одобрено</span>
-                <span className="font-medium text-green-600">
-                  {donations.filter(d => d.status === 'APPROVED').length}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">На карантине</span>
-                <span className="font-medium text-yellow-600">
-                  {donations.filter(d => d.status === 'QUARANTINE').length}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Отклонено</span>
-                <span className="font-medium text-red-600">
-                  {donations.filter(d => d.status === 'REJECTED').length}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Donations List */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Beaker className="h-5 w-5" />
-                    Донации
-                  </CardTitle>
-                  <CardDescription>История забора биоматериала</CardDescription>
-                </div>
-                <Button size="sm" asChild>
-                  <Link href={`/donors/${donorId}/donations/new`}>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Добавить
-                  </Link>
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {donations.length === 0 ? (
-                <div className="text-center py-8">
-                  <Beaker className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-30" />
-                  <h3 className="text-lg font-medium mb-2">Нет донаций</h3>
-                  <p className="text-muted-foreground mb-4">
-                    Зарегистрируйте первую донацию для этого донора
-                  </p>
-                  <Button asChild>
-                    <Link href={`/donors/${donorId}/donations/new`}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Новая донация
-                    </Link>
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {donations.map((donation: any) => (
-                    <div
-                      key={donation.id}
-                      className="p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+      {/* ================================================================= */}
+      {/* DONATIONS SECTION                                                 */}
+      {/* ================================================================= */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>Донации ({donations.length})</CardTitle>
+          <Button size="sm" asChild>
+            <Link href={`/donors/${id}/donations/new`}>
+              <Plus className="mr-2 h-4 w-4" />
+              Новая донация
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {donations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <p className="mb-4">Нет зарегистрированных донаций</p>
+              <Button variant="outline" asChild>
+                <Link href={`/donors/${id}/donations/new`}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Зарегистрировать донацию
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Код</TableHead>
+                    <TableHead>Дата сбора</TableHead>
+                    <TableHead>Тип ткани</TableHead>
+                    <TableHead className="text-center">
+                      <span className="sr-only">Статус инфекций</span>
+                      ВИЧ / HBV / HCV / Сифилис
+                    </TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead className="w-[1%]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {donations.map((d) => (
+                    <TableRow
+                      key={d.id}
+                      className="cursor-pointer hover:bg-muted/60"
+                      onClick={() => router.push(`/donors/${id}/donations/${d.id}`)}
                     >
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <p className="font-medium font-mono">{donation.code}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {donation.collected_at ? formatDate(donation.collected_at) : 'Дата не указана'}
-                            {donation.tissue_type?.name && ` — ${donation.tissue_type.name}`}
-                          </p>
+                      <TableCell className="font-mono text-sm">{d.code}</TableCell>
+                      <TableCell>
+                        {d.collected_at ? formatDate(d.collected_at) : "---"}
+                      </TableCell>
+                      <TableCell>{d.tissue_type?.name ?? "---"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-3">
+                          <span className="inline-flex items-center gap-1 text-xs" title={`ВИЧ: ${infectionLabel(d.inf_hiv)}`}>
+                            <InfectionDot status={d.inf_hiv} />
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs" title={`HBV: ${infectionLabel(d.inf_hbv)}`}>
+                            <InfectionDot status={d.inf_hbv} />
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs" title={`HCV: ${infectionLabel(d.inf_hcv)}`}>
+                            <InfectionDot status={d.inf_hcv} />
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-xs" title={`Сифилис: ${infectionLabel(d.inf_syphilis)}`}>
+                            <InfectionDot status={d.inf_syphilis} />
+                          </span>
                         </div>
-                        {donationStatusBadge(donation.status)}
-                      </div>
-
-                      {/* Infection test results */}
-                      <div className="grid grid-cols-4 gap-2 mt-3">
-                        <div className="flex items-center gap-1 text-xs">
-                          {infectionStatusIcon(donation.inf_hiv)}
-                          <span>ВИЧ</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs">
-                          {infectionStatusIcon(donation.inf_hbv)}
-                          <span>HBV</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs">
-                          {infectionStatusIcon(donation.inf_hcv)}
-                          <span>HCV</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs">
-                          {infectionStatusIcon(donation.inf_syphilis)}
-                          <span>Сифилис</span>
-                        </div>
-                      </div>
-
-                      {/* Volume / Weight */}
-                      {(donation.tissue_volume_ml || donation.tissue_weight_g) && (
-                        <div className="flex gap-4 mt-2 text-sm text-muted-foreground">
-                          {donation.tissue_volume_ml && (
-                            <span>Объём: {donation.tissue_volume_ml} мл</span>
-                          )}
-                          {donation.tissue_weight_g && (
-                            <span>Масса: {donation.tissue_weight_g} г</span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      {donation.status === 'APPROVED' && (
-                        <div className="mt-3 pt-3 border-t">
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/cultures/new?donor_id=${donorId}&donation_id=${donation.id}`}>
-                              <Beaker className="mr-2 h-3 w-3" />
+                      </TableCell>
+                      <TableCell>{donationStatusBadge(d.status)}</TableCell>
+                      <TableCell>
+                        {d.status === "APPROVED" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link href={`/cultures/new?donor_id=${id}&donation_id=${d.id}`}>
+                              <Dna className="mr-1.5 h-3.5 w-3.5" />
                               Создать культуру
                             </Link>
                           </Button>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ================================================================= */}
+      {/* CULTURES SECTION                                                  */}
+      {/* ================================================================= */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Культуры ({cultures.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cultures.length === 0 ? (
+            <p className="py-6 text-center text-muted-foreground">
+              Нет культур, созданных из донаций этого донора
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Код</TableHead>
+                    <TableHead>Тип</TableHead>
+                    <TableHead>Статус</TableHead>
+                    <TableHead className="text-right">Пассаж</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {cultures.map((c) => (
+                    <TableRow
+                      key={c.id}
+                      className="cursor-pointer hover:bg-muted/60"
+                      onClick={() => router.push(`/cultures/${c.id}`)}
+                    >
+                      <TableCell className="font-mono text-sm">{c.name}</TableCell>
+                      <TableCell>{c.culture_type?.name ?? "---"}</TableCell>
+                      <TableCell>{cultureStatusBadge(c.status)}</TableCell>
+                      <TableCell className="text-right font-mono">
+                        P{(c as any).passage_number ?? 0}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Small info-row component for the 2-column grid
+// ---------------------------------------------------------------------------
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
+      <dd className="text-sm">{value}</dd>
     </div>
   )
 }

@@ -1,36 +1,183 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { 
-  FlaskConical, 
-  Package, 
-  Database, 
-  ClipboardList, 
-  Bell, 
+import { useRouter } from "next/navigation"
+import {
+  FlaskConical,
+  Package,
+  Database,
+  ClipboardList,
+  Bell,
   TrendingUp,
-  Calendar,
   ArrowRight,
   AlertCircle,
   CheckCircle2,
-  Clock
+  Clock,
+  Camera,
+  Dna,
+  Eye,
+  TestTubes,
+  RefreshCw,
+  Snowflake,
+  Info,
+  BellRing,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { 
-  getDashboardStats, 
-  getTasks, 
-  getNotifications, 
-  getUnreadNotificationCount,
-  getOperations 
+import { Separator } from "@/components/ui/separator"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  getDashboardStats,
+  getTasks,
+  getNotifications,
+  markAllNotificationsRead,
+  getOperations,
 } from "@/lib/api"
-import { format, differenceInDays, isPast, addDays } from "date-fns"
+import { format, formatDistanceToNow } from "date-fns"
 import { ru } from "date-fns/locale"
+import { toast } from "sonner"
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface DashboardStats {
+  totalCultures: number
+  activeCultures: number
+  totalBanks: number
+  pendingOrders: number
+  pendingTasks: number
+  activeContainers: number
+}
+
+interface TaskItem {
+  id: string
+  type: string
+  title?: string
+  description?: string
+  target_type?: string
+  target_id?: string
+  due_date?: string
+  status: string
+  priority?: string
+  container?: { id: string; code: string } | null
+  bank?: { id: string; code: string } | null
+  order?: { id: string; order_number: string } | null
+}
+
+interface NotificationItem {
+  id: string
+  type: string
+  title: string
+  message: string
+  is_read: boolean
+  created_at: string
+  link_type?: string
+  link_id?: string
+}
+
+interface OperationItem {
+  id: string
+  type: string
+  status: string
+  started_at: string
+  completed_at?: string
+  notes?: string
+  lot?: {
+    id: string
+    lot_number: string
+    culture?: {
+      id: string
+      name: string
+      culture_type?: { name: string } | null
+    } | null
+  } | null
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  FEED: "Подкормка",
+  INSPECT: "Осмотр",
+  OBSERVE: "Осмотр",
+  PASSAGE: "Пассаж",
+  QC: "Контроль качества",
+  QC_DUE: "Контроль качества",
+  MAINTENANCE: "Обслуживание",
+  FREEZE: "Заморозка",
+}
+
+const OPERATION_TYPE_LABELS: Record<string, string> = {
+  OBSERVE: "Осмотр",
+  FEED: "Подкормка",
+  PASSAGE: "Пассаж",
+  FREEZE: "Заморозка",
+  THAW: "Размораживание",
+  DISPOSE: "Утилизация",
+}
+
+function getNotificationIcon(type: string) {
+  switch (type) {
+    case "QC_READY":
+      return <AlertCircle className="h-4 w-4" />
+    case "ORDER_DEADLINE":
+      return <Clock className="h-4 w-4" />
+    case "CRITICAL_FEFO":
+      return <AlertCircle className="h-4 w-4" />
+    case "EQUIPMENT_ALERT":
+      return <BellRing className="h-4 w-4" />
+    case "CONTAMINATION":
+      return <AlertCircle className="h-4 w-4 text-destructive" />
+    default:
+      return <Info className="h-4 w-4" />
+  }
+}
+
+function getTaskTargetHref(task: TaskItem): string | null {
+  if (task.container?.id) return `/containers/${task.container.id}`
+  if (task.bank?.id) return `/banks/${task.bank.id}`
+  if (task.order?.id) return `/orders/${task.order.id}`
+  if (task.target_type && task.target_id) {
+    const map: Record<string, string> = {
+      CONTAINER: "containers",
+      LOT: "lots",
+      BANK: "banks",
+      CULTURE: "cultures",
+      EQUIPMENT: "equipment",
+    }
+    const prefix = map[task.target_type]
+    if (prefix) return `/${prefix}/${task.target_id}`
+  }
+  return null
+}
+
+function getTaskDescription(task: TaskItem): string {
+  if (task.description) return task.description
+  if (task.container?.code) return task.container.code
+  if (task.bank?.code) return task.bank.code
+  if (task.order?.order_number) return task.order.order_number
+  return "---"
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState({
+  const router = useRouter()
+
+  const [stats, setStats] = useState<DashboardStats>({
     totalCultures: 0,
     activeCultures: 0,
     totalBanks: 0,
@@ -38,102 +185,106 @@ export default function DashboardPage() {
     pendingTasks: 0,
     activeContainers: 0,
   })
-  const [tasks, setTasks] = useState<any[]>([])
-  const [notifications, setNotifications] = useState<any[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [recentOperations, setRecentOperations] = useState<any[]>([])
+  const [tasks, setTasks] = useState<TaskItem[]>([])
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [recentOperations, setRecentOperations] = useState<OperationItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [markingRead, setMarkingRead] = useState(false)
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      const [statsData, tasksData, notificationsData, unreadData, operationsData] = await Promise.all([
-        getDashboardStats(),
-        getTasks({ status: 'PENDING' }).catch(() => []),
-        getNotifications({ limit: 5 }).catch(() => []),
-        getUnreadNotificationCount().catch(() => 0),
-        getOperations({ status: 'COMPLETED' }).catch(() => [])
-      ])
-      
+      const [statsData, tasksData, notificationsData, operationsData] =
+        await Promise.all([
+          getDashboardStats(),
+          getTasks({ status: "PENDING" }).catch(() => []),
+          getNotifications({ limit: 5 }).catch(() => []),
+          getOperations({ status: "COMPLETED" }).catch(() => []),
+        ])
+
       setStats(statsData)
-      setTasks(tasksData.slice(0, 5))
+      setTasks(tasksData.slice(0, 10))
       setNotifications(notificationsData)
-      setUnreadCount(unreadData)
       setRecentOperations(operationsData.slice(0, 5))
     } catch (error) {
       console.error("Error loading dashboard data:", error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const getDaysUntilDue = (dueDate: string) => {
-    if (!dueDate) return null
-    const due = new Date(dueDate)
-    if (isPast(due)) return { days: 0, urgent: true, overdue: true }
-    const days = differenceInDays(due, new Date())
-    return { days, urgent: days <= 2, overdue: false }
-  }
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
-  const getTaskPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'HIGH': return 'bg-red-500'
-      case 'MEDIUM': return 'bg-yellow-500'
-      case 'LOW': return 'bg-green-500'
-      default: return 'bg-gray-500'
+  const handleMarkAllRead = async () => {
+    setMarkingRead(true)
+    try {
+      await markAllNotificationsRead()
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+      toast.success("Все уведомления отмечены как прочитанные")
+    } catch (error) {
+      console.error("Error marking notifications as read:", error)
+      toast.error("Не удалось отметить уведомления")
+    } finally {
+      setMarkingRead(false)
     }
   }
 
+  // ---- Loading state ----
   if (loading) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
         </div>
       </div>
     )
   }
 
+  // ---- Rendered page ----
   return (
     <div className="container mx-auto py-6 space-y-6">
-      {/* Header with Notifications */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Панель управления</h1>
-          <p className="text-muted-foreground">Обзор состояния лаборатории</p>
-        </div>
-        <Link href="/notifications">
-          <Button variant="outline" className="relative">
-            <Bell className="mr-2 h-4 w-4" />
-            Уведомления
-            {unreadCount > 0 && (
-              <Badge 
-                variant="destructive" 
-                className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
-              >
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </Badge>
-            )}
-          </Button>
-        </Link>
+      {/* ---------- Header ---------- */}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Панель управления
+        </h1>
+        <p className="text-muted-foreground">Обзор состояния лаборатории</p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* ========== 1. Stats cards row (4 cards) ========== */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Активные культуры */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Культуры</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Активные культуры
+            </CardTitle>
             <FlaskConical className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.activeCultures}</div>
-            <p className="text-xs text-muted-foreground">активных из {stats.totalCultures}</p>
+            <p className="text-xs text-muted-foreground">
+              из {stats.totalCultures} всего
+            </p>
           </CardContent>
         </Card>
 
+        {/* Контейнеры в работе */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Контейнеры в работе
+            </CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.activeContainers}</div>
+            <p className="text-xs text-muted-foreground">в культивировании</p>
+          </CardContent>
+        </Card>
+
+        {/* Банки */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Банки</CardTitle>
@@ -145,108 +296,100 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
+        {/* Ожидающие задачи */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Заявки</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Ожидающие задачи
+            </CardTitle>
             <ClipboardList className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.pendingOrders}</div>
-            <p className="text-xs text-muted-foreground">в обработке</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Контейнеры</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeContainers}</div>
-            <p className="text-xs text-muted-foreground">в культивировании</p>
+            <div className="text-2xl font-bold">{stats.pendingTasks}</div>
+            <p className="text-xs text-muted-foreground">требуют внимания</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* ========== 2 + 3. Tasks & Notifications (two-column) ========== */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* My Tasks */}
+        {/* ---------- 2. Pending Tasks ---------- */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5" />
-                  Мои задачи
+                  Ожидающие задачи
                 </CardTitle>
-                <CardDescription>Текущие задачи требующие внимания</CardDescription>
+                <CardDescription>
+                  Задачи со статусом PENDING (макс. 10)
+                </CardDescription>
               </div>
               <Link href="/tasks">
                 <Button variant="ghost" size="sm">
-                  Все
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  Все задачи
+                  <ArrowRight className="ml-1 h-4 w-4" />
                 </Button>
               </Link>
             </div>
           </CardHeader>
           <CardContent>
             {tasks.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
+              <div className="text-center py-8 text-muted-foreground">
                 <CheckCircle2 className="h-12 w-12 mx-auto mb-2 opacity-20" />
-                <p>Нет активных задач</p>
+                <p>Нет ожидающих задач</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {tasks.map((task) => {
-                  const dueInfo = getDaysUntilDue(task.due_date)
-                  return (
-                    <div 
-                      key={task.id} 
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${getTaskPriorityColor(task.priority)}`} />
-                        <div>
-                          <p className="font-medium">
-                            {task.title || (
-                              task.type === 'FEED' ? 'Кормление' :
-                              task.type === 'OBSERVE' ? 'Наблюдение' :
-                              task.type === 'PASSAGE' ? 'Пассаж' :
-                              task.type === 'QC' ? 'Контроль качества' :
-                              task.type
-                            )}
-                          </p>
-                          {task.description && (
-                            <p className="text-sm text-muted-foreground">{task.description}</p>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        {dueInfo && (
-                          <Badge 
-                            variant={dueInfo.overdue ? "destructive" : dueInfo.urgent ? "secondary" : "outline"}
-                          >
-                            {dueInfo.overdue 
-                              ? "Просрочено" 
-                              : dueInfo.days === 0 
-                                ? "Сегодня" 
-                                : `${dueInfo.days} дн.`}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Тип</TableHead>
+                    <TableHead>Описание</TableHead>
+                    <TableHead>Дата</TableHead>
+                    <TableHead>Статус</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tasks.map((task) => {
+                    const href = getTaskTargetHref(task)
+                    const row = (
+                      <TableRow
+                        key={task.id}
+                        className={href ? "cursor-pointer" : ""}
+                        onClick={
+                          href ? () => router.push(href) : undefined
+                        }
+                      >
+                        <TableCell>
+                          <Badge variant="outline">
+                            {TASK_TYPE_LABELS[task.type] || task.type}
                           </Badge>
-                        )}
-                        {task.container?.code && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {task.container.code}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+                        </TableCell>
+                        <TableCell className="max-w-[200px] truncate">
+                          {getTaskDescription(task)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {task.due_date
+                            ? format(new Date(task.due_date), "dd.MM.yyyy", {
+                                locale: ru,
+                              })
+                            : "---"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{task.status}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    )
+                    return row
+                  })}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>
 
-        {/* Notifications */}
+        {/* ---------- 3. Recent Notifications ---------- */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -255,48 +398,73 @@ export default function DashboardPage() {
                   <Bell className="h-5 w-5" />
                   Уведомления
                 </CardTitle>
-                <CardDescription>Последние события и напоминания</CardDescription>
+                <CardDescription>
+                  Последние 5 уведомлений
+                </CardDescription>
               </div>
-              <Link href="/notifications">
-                <Button variant="ghost" size="sm">
-                  Все
-                  <ArrowRight className="ml-2 h-4 w-4" />
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    markingRead ||
+                    notifications.every((n) => n.is_read)
+                  }
+                  onClick={handleMarkAllRead}
+                >
+                  Отметить все прочитанными
                 </Button>
-              </Link>
+                <Link href="/notifications">
+                  <Button variant="ghost" size="sm">
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
             {notifications.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
+              <div className="text-center py-8 text-muted-foreground">
                 <Bell className="h-12 w-12 mx-auto mb-2 opacity-20" />
                 <p>Нет уведомлений</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {notifications.map((notification) => (
-                  <div 
+                  <div
                     key={notification.id}
-                    className={`p-3 border rounded-lg ${notification.is_read ? 'bg-muted/30' : 'bg-muted/50 border-primary/20'}`}
+                    className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${
+                      notification.is_read
+                        ? "bg-muted/30"
+                        : "bg-muted/50 border-primary/20"
+                    }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-1 ${notification.is_read ? 'text-muted-foreground' : 'text-primary'}`}>
-                        {notification.type === 'QC_READY' && <AlertCircle className="h-4 w-4" />}
-                        {notification.type === 'ORDER_DEADLINE' && <Clock className="h-4 w-4" />}
-                        {notification.type === 'CRITICAL_FEFO' && <AlertCircle className="h-4 w-4" />}
-                        {notification.type === 'EQUIPMENT_ALERT' && <Bell className="h-4 w-4" />}
-                        {notification.type === 'CONTAMINATION' && <CheckCircle2 className="h-4 w-4" />}
-                      </div>
-                      <div className="flex-1">
-                        <p className="font-medium">{notification.title}</p>
-                        <p className="text-sm text-muted-foreground">{notification.message}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {format(new Date(notification.created_at), "dd MMM HH:mm", { locale: ru })}
-                        </p>
-                      </div>
-                      {!notification.is_read && (
-                        <div className="w-2 h-2 rounded-full bg-primary mt-2" />
-                      )}
+                    <div
+                      className={`mt-0.5 ${
+                        notification.is_read
+                          ? "text-muted-foreground"
+                          : "text-primary"
+                      }`}
+                    >
+                      {getNotificationIcon(notification.type)}
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm leading-tight">
+                        {notification.title}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                        {notification.message}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatDistanceToNow(
+                          new Date(notification.created_at),
+                          { addSuffix: true, locale: ru }
+                        )}
+                      </p>
+                    </div>
+                    {!notification.is_read && (
+                      <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                    )}
                   </div>
                 ))}
               </div>
@@ -305,7 +473,59 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Recent Operations */}
+      {/* ========== 4. Quick Actions ========== */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Быстрые действия</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Link href="/scan">
+              <Button variant="outline" className="w-full h-auto py-4 flex-col gap-2">
+                <Camera className="h-5 w-5" />
+                <span className="text-xs">Сканировать QR</span>
+              </Button>
+            </Link>
+
+            <Link href="/cultures/new">
+              <Button variant="outline" className="w-full h-auto py-4 flex-col gap-2">
+                <Dna className="h-5 w-5" />
+                <span className="text-xs">Создать культуру</span>
+              </Button>
+            </Link>
+
+            <Link href="/operations/observe">
+              <Button variant="outline" className="w-full h-auto py-4 flex-col gap-2">
+                <Eye className="h-5 w-5" />
+                <span className="text-xs">Осмотр</span>
+              </Button>
+            </Link>
+
+            <Link href="/operations/feed">
+              <Button variant="outline" className="w-full h-auto py-4 flex-col gap-2">
+                <TestTubes className="h-5 w-5" />
+                <span className="text-xs">Подкормка</span>
+              </Button>
+            </Link>
+
+            <Link href="/operations/passage">
+              <Button variant="outline" className="w-full h-auto py-4 flex-col gap-2">
+                <RefreshCw className="h-5 w-5" />
+                <span className="text-xs">Пассаж</span>
+              </Button>
+            </Link>
+
+            <Link href="/operations/freeze">
+              <Button variant="outline" className="w-full h-auto py-4 flex-col gap-2">
+                <Snowflake className="h-5 w-5" />
+                <span className="text-xs">Заморозка</span>
+              </Button>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ========== 5. Recent Operations ========== */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -314,88 +534,82 @@ export default function DashboardPage() {
                 <TrendingUp className="h-5 w-5" />
                 Последние операции
               </CardTitle>
-              <CardDescription>Журнал выполненных операций</CardDescription>
+              <CardDescription>
+                Последние 5 завершённых операций
+              </CardDescription>
             </div>
             <Link href="/operations">
               <Button variant="ghost" size="sm">
-                Все
-                <ArrowRight className="ml-2 h-4 w-4" />
+                Все операции
+                <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
             </Link>
           </div>
         </CardHeader>
         <CardContent>
           {recentOperations.length === 0 ? (
-            <div className="text-center py-6 text-muted-foreground">
+            <div className="text-center py-8 text-muted-foreground">
               <TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-20" />
               <p>Нет операций</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {recentOperations.map((operation) => (
-                <div 
-                  key={operation.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline">
-                      {operation.operation_type === 'OBSERVE' && '👁️ Наблюдение'}
-                      {operation.operation_type === 'FEED' && '🧪 Кормление'}
-                      {operation.operation_type === 'PASSAGE' && '🔄 Пассаж'}
-                      {operation.operation_type === 'FREEZE' && '❄️ Заморозка'}
-                      {operation.operation_type === 'THAW' && '🔥 Размораживание'}
-                      {operation.operation_type === 'DISPOSE' && '🗑️ Утилизация'}
-                    </Badge>
-                    <div>
-                      <p className="font-medium">
-                        {operation.lot?.culture?.name || '—'}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Партия: {operation.lot?.lot_number || '—'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground">
-                      {operation.completed_at 
-                        ? format(new Date(operation.completed_at), "dd MMM HH:mm", { locale: ru })
-                        : format(new Date(operation.started_at), "dd MMM HH:mm", { locale: ru })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Тип</TableHead>
+                  <TableHead>Культура</TableHead>
+                  <TableHead>Партия</TableHead>
+                  <TableHead>Дата</TableHead>
+                  <TableHead>Статус</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentOperations.map((operation) => (
+                  <TableRow key={operation.id}>
+                    <TableCell>
+                      <Badge variant="outline">
+                        {OPERATION_TYPE_LABELS[operation.type] || operation.type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {operation.lot?.culture?.name || "---"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {operation.lot?.lot_number || "---"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {operation.completed_at
+                        ? format(
+                            new Date(operation.completed_at),
+                            "dd MMM HH:mm",
+                            { locale: ru }
+                          )
+                        : operation.started_at
+                          ? format(
+                              new Date(operation.started_at),
+                              "dd MMM HH:mm",
+                              { locale: ru }
+                            )
+                          : "---"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          operation.status === "COMPLETED"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {operation.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
-
-      {/* Quick Actions */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Link href="/operations/new">
-          <Button className="w-full" variant="outline">
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Новая операция
-          </Button>
-        </Link>
-        <Link href="/tasks/new">
-          <Button className="w-full" variant="outline">
-            <ClipboardList className="mr-2 h-4 w-4" />
-            Новая задача
-          </Button>
-        </Link>
-        <Link href="/orders/new">
-          <Button className="w-full" variant="outline">
-            <Package className="mr-2 h-4 w-4" />
-            Новый заказ
-          </Button>
-        </Link>
-        <Link href="/scan">
-          <Button className="w-full" variant="outline">
-            <Bell className="mr-2 h-4 w-4" />
-            QR Сканирование
-          </Button>
-        </Link>
-      </div>
     </div>
   )
 }

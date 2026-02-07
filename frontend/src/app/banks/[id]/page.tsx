@@ -393,7 +393,7 @@ export default function BankDetailPage() {
                       <div>
                         <p className="font-medium">{bank.position.path}</p>
                         <p className="text-sm text-muted-foreground">
-                          QR: {bank.position.qr_code || bank.position.code}
+                          QR: {bank.position.qr_code || bank.position.path}
                         </p>
                       </div>
                     </div>

@@ -1,19 +1,17 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { 
-  ArrowLeft, 
-  Thermometer, 
-  Save, 
-  Plus,
-  Trash2,
-  Search,
+import {
+  ArrowLeft,
   CheckCircle2,
-  AlertTriangle,
-  Snowflake
+  Snowflake,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react'
+import { toast } from 'sonner'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,172 +20,301 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { 
-  getBanks, 
-  getCryoVials, 
+import {
+  getBanks,
+  getCryoVials,
+  getAvailableMediaForFeed,
+  getContainerTypes,
   getPositions,
-  getContainers,
-  createOperation,
-  createContainer,
-  createLot,
-  updateCryoVial
+  createOperationThaw,
 } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface BankItem {
+  id: string
+  code: string
+  bank_type: string // MCB | WCB
+  status: string
+  passage_number: number
+  vials_total?: number
+  vials_used?: number
+  freeze_date?: string
+  culture_id?: string
+  culture?: {
+    id: string
+    name: string
+    culture_type?: { name: string }
+  }
+  [key: string]: unknown
+}
+
+interface VialItem {
+  id: string
+  code: string
+  vial_number: string
+  cells_count?: number
+  status: string
+  position?: { path?: string; [key: string]: unknown }
+  [key: string]: unknown
+}
+
+interface MediaItem {
+  id: string
+  code?: string
+  name?: string
+  expiration_date?: string
+  current_volume_ml?: number
+  [key: string]: unknown
+}
+
+interface ContainerTypeItem {
+  id: string
+  name: string
+  is_cryo?: boolean
+  category?: string
+  [key: string]: unknown
+}
+
+interface PositionItem {
+  id: string
+  path: string
+  is_active?: boolean
+  equipment?: { name?: string }
+  [key: string]: unknown
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const STEPS = [
+  'Выбор банка',
+  'Выбор виал',
+  'Параметры',
+  'Подтверждение',
+] as const
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function ThawPage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(false)
+
+  // -- wizard step --
   const [step, setStep] = useState(1)
-  
-  // Данные формы
-  const [selectedBank, setSelectedBank] = useState<any>(null)
-  const [selectedVials, setSelectedVials] = useState<any[]>([])
-  const [lotInfo, setLotInfo] = useState<any>(null)
-  
-  // Параметры разморозки
-  const [thawParams, setThawParams] = useState({
-    mediaBatch: '',
-    thawMethod: 'WATER_BATH',
-    thawTime: 0, // минуты
-    volume_ml: 10,
-  })
-  
-  // Результат
-  const [resultParams, setResultParams] = useState({
-    containerType: '2', // T-75 по умолчанию
-    position: null as any,
-    initialVolume: 15,
-  })
-  
+
+  // -- loading states --
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [vialsLoading, setVialsLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  // -- reference data --
+  const [banks, setBanks] = useState<BankItem[]>([])
+  const [vials, setVials] = useState<VialItem[]>([])
+  const [media, setMedia] = useState<MediaItem[]>([])
+  const [containerTypes, setContainerTypes] = useState<ContainerTypeItem[]>([])
+  const [positions, setPositions] = useState<PositionItem[]>([])
+
+  // -- form data --
+  const [selectedBank, setSelectedBank] = useState<BankItem | null>(null)
+  const [selectedVials, setSelectedVials] = useState<VialItem[]>([])
+  const [thawMediumId, setThawMediumId] = useState('')
+  const [containerTypeId, setContainerTypeId] = useState('')
+  const [positionId, setPositionId] = useState('')
+  const [viabilityPercent, setViabilityPercent] = useState('')
   const [notes, setNotes] = useState('')
-  
-  // Данные для выбора
-  const [banks, setBanks] = useState<any[]>([])
-  const [vials, setVials] = useState<any[]>([])
-  const [positions, setPositions] = useState<any[]>([])
-  const [containers, setContainers] = useState<any[]>([])
-  const [containerTypes, setContainerTypes] = useState<any[]>([
-    { id: '1', name: 'T-25', volume_ml: 5 },
-    { id: '2', name: 'T-75', volume_ml: 15 },
-    { id: '3', name: 'T-175', volume_ml: 35 },
-    { id: '4', name: '6-well plate', volume_ml: 2 },
-  ])
+
+  // -----------------------------------------------------------------------
+  // Data loading
+  // -----------------------------------------------------------------------
 
   useEffect(() => {
-    loadData()
-  }, [])
-  
-  const loadData = async () => {
-    try {
-      const [banksData, positionsData, containersData] = await Promise.all([
-        getBanks({ status: 'APPROVED' }),
-        getPositions({ is_active: true }),
-        getContainers({ status: 'IN_CULTURE' })
-      ])
-      setBanks(banksData || [])
-      setPositions(positionsData || [])
-      setContainers(containersData || [])
-    } catch (error) {
-      console.error('Error loading data:', error)
+    const load = async () => {
+      try {
+        const [banksData, mediaData, ctData, posData] = await Promise.all([
+          getBanks({ status: 'APPROVED' }),
+          getAvailableMediaForFeed(),
+          getContainerTypes(),
+          getPositions({ is_active: true }),
+        ])
+        setBanks(banksData || [])
+        setMedia(mediaData || [])
+        // Filter out cryo container types
+        const nonCryo = (ctData || []).filter(
+          (ct: ContainerTypeItem) =>
+            !ct.is_cryo &&
+            ct.category !== 'CRYO' &&
+            !ct.name?.toLowerCase().includes('cryo') &&
+            !ct.name?.toLowerCase().includes('криовиал')
+        )
+        setContainerTypes(nonCryo)
+        setPositions(posData || [])
+      } catch (error) {
+        console.error('Error loading initial data:', error)
+        toast.error('Ошибка загрузки данных')
+      } finally {
+        setInitialLoading(false)
+      }
     }
-  }
-  
-  const loadVials = async (bankId: string) => {
+    load()
+  }, [])
+
+  const loadVials = useCallback(async (bankId: string) => {
+    setVialsLoading(true)
     try {
-      const vialsData = await getCryoVials({ bank_id: bankId, status: 'FROZEN' })
-      setVials(vialsData || [])
+      const data = await getCryoVials({ bank_id: bankId, status: 'IN_STOCK' })
+      setVials(data || [])
+      setSelectedVials([])
     } catch (error) {
       console.error('Error loading vials:', error)
+      toast.error('Ошибка загрузки криовиал')
+      setVials([])
+    } finally {
+      setVialsLoading(false)
     }
-  }
-  
-  const handleBankSelect = (bank: any) => {
+  }, [])
+
+  // -----------------------------------------------------------------------
+  // Bank selection
+  // -----------------------------------------------------------------------
+
+  const handleBankSelect = (bank: BankItem) => {
     setSelectedBank(bank)
-    setLotInfo({
-      culture_id: bank.culture_id,
-      culture: bank.culture,
-      passage_number: bank.passage_number,
-    })
+    setSelectedVials([])
     loadVials(bank.id)
   }
-  
-  const toggleVial = (vial: any) => {
-    setSelectedVials(prev => {
-      const exists = prev.find(v => v.id === vial.id)
-      if (exists) {
-        return prev.filter(v => v.id !== vial.id)
-      }
+
+  // Count available vials for a bank
+  const availableVialsCount = (bank: BankItem) => {
+    const total = bank.vials_total ?? 0
+    const used = bank.vials_used ?? 0
+    return total - used
+  }
+
+  // -----------------------------------------------------------------------
+  // Vial selection
+  // -----------------------------------------------------------------------
+
+  const toggleVial = (vial: VialItem) => {
+    setSelectedVials((prev) => {
+      const exists = prev.find((v) => v.id === vial.id)
+      if (exists) return prev.filter((v) => v.id !== vial.id)
       return [...prev, vial]
     })
   }
-  
-  const selectAllVials = () => {
+
+  const toggleAllVials = () => {
     if (selectedVials.length === vials.length) {
       setSelectedVials([])
     } else {
       setSelectedVials([...vials])
     }
   }
-  
-  const handleSubmit = async () => {
-    if (!selectedBank || selectedVials.length === 0) return
-    
-    setLoading(true)
-    try {
-      // 1. Обновляем статус криовиал
-      for (const vial of selectedVials) {
-        await updateCryoVial(vial.id, {
-          status: 'THAWED',
-          thaw_date: new Date().toISOString(),
-        })
-      }
-      
-      // 2. Создаём новый лот (если пассаж виалы > пассажа банка)
-      const newPassage = selectedBank.passage_number + 1
-      const newLot = await createLot({
-        culture_id: lotInfo?.culture_id,
-        bank_id: selectedBank.id,
-        passage_number: newPassage,
-        status: 'ACTIVE',
-        start_date: new Date().toISOString().split('T')[0],
-        notes: `Разморозка из ${selectedBank.code}. Разморожено ${selectedVials.length} виал. ${notes}`,
-        split: false,
-      })
-      
-      // 3. Создаём контейнер-результат
-      const containerType = containerTypes.find(t => t.id === resultParams.containerType)
-      const newContainer = await createContainer({
-        lot_id: newLot.id,
-        container_type_id: resultParams.containerType,
-        position_id: resultParams.position?.id || null,
-        status: 'IN_CULTURE',
-        code: `${lotInfo?.culture?.code}-L${newLot.lot_number || 1}-P${newPassage}-${containerType?.name?.slice(0, 2).toUpperCase()}-THW-001`,
-        confluent_percent: 10, // Начальная конфлюэнтность после разморозки
-        notes: `Разморозка из ${selectedVials.length} виал(ы). Метод: ${thawParams.thawMethod}. ${notes}`,
-      })
-      
-      // 4. Создаём операцию разморозки
-      await createOperation({
-        operation_type: 'THAW',
-        lot_id: newLot.id,
-        container_id: newContainer.id,
-        notes: `Разморозка ${selectedVials.length} виал(ы) из банка ${selectedBank.code}. Метод: ${thawParams.thawMethod}. Среда: ${thawParams.mediaBatch}. ${notes}`,
-        status: 'COMPLETED',
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      })
-      
-      router.push(`/cultures/${lotInfo?.culture_id}`)
-    } catch (error) {
-      console.error('Error creating thaw:', error)
-    } finally {
-      setLoading(false)
+
+  // -----------------------------------------------------------------------
+  // Validation helpers
+  // -----------------------------------------------------------------------
+
+  const canGoNext = (): boolean => {
+    switch (step) {
+      case 1:
+        return selectedBank !== null
+      case 2:
+        return selectedVials.length > 0
+      case 3:
+        return thawMediumId !== '' && containerTypeId !== ''
+      default:
+        return true
     }
   }
-  
+
+  // -----------------------------------------------------------------------
+  // Submit
+  // -----------------------------------------------------------------------
+
+  const handleSubmit = async () => {
+    if (!selectedBank || selectedVials.length === 0 || !thawMediumId || !containerTypeId) return
+
+    setSubmitting(true)
+    try {
+      for (const vial of selectedVials) {
+        await createOperationThaw({
+          cryo_vial_id: vial.id,
+          container_type_id: containerTypeId,
+          position_id: positionId,
+          thaw_medium_id: thawMediumId,
+          viability_percent: viabilityPercent ? Number(viabilityPercent) : undefined,
+          notes: notes || undefined,
+        })
+      }
+
+      toast.success('Разморозка выполнена', {
+        description: `Разморожено виал: ${selectedVials.length}`,
+      })
+
+      router.push('/operations')
+    } catch (error: any) {
+      console.error('Error creating thaw operation:', error)
+      toast.error('Ошибка выполнения разморозки', {
+        description: error?.message || 'Попробуйте ещё раз',
+      })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Helpers for display
+  // -----------------------------------------------------------------------
+
+  const bankTypeBadge = (bankType: string) => {
+    if (bankType === 'MCB' || bankType === 'MASTER') {
+      return (
+        <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200">
+          MCB
+        </Badge>
+      )
+    }
+    return (
+      <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-green-200">
+        WCB
+      </Badge>
+    )
+  }
+
+  const selectedMedium = media.find((m) => m.id === thawMediumId)
+  const selectedContainerType = containerTypes.find((ct) => ct.id === containerTypeId)
+  const selectedPosition = positions.find((p) => p.id === positionId)
+
+  // -----------------------------------------------------------------------
+  // Loading state
+  // -----------------------------------------------------------------------
+
+  if (initialLoading) {
+    return (
+      <div className="container py-6">
+        <Card className="max-w-3xl mx-auto">
+          <CardContent className="pt-6 text-center">
+            <RefreshCw className="h-8 w-8 mx-auto animate-spin text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">Загрузка данных...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // -----------------------------------------------------------------------
+  // Render
+  // -----------------------------------------------------------------------
+
   return (
-    <div className="container py-6 space-y-6">
-      {/* Header */}
+    <div className="container py-6 space-y-6 max-w-4xl">
+      {/* ---- Header ---- */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/operations">
@@ -195,361 +322,456 @@ export default function ThawPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Разморозка</h1>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Snowflake className="h-7 w-7" />
+            Разморозка
+          </h1>
           <p className="text-muted-foreground">
             Извлечение клеток из криобанка для культивирования
           </p>
         </div>
       </div>
-      
-      {/* Progress */}
-      <div className="flex items-center gap-4">
-        {['Выбор банка', 'Выбор виал', 'Параметры', 'Подтверждение'].map((s, i) => (
-          <div key={i} className={`flex items-center gap-2 ${step > i ? 'text-primary' : 'text-muted-foreground'}`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              step > i ? 'bg-primary text-primary-foreground' : step === i + 1 ? 'bg-primary text-primary-foreground' : 'bg-muted'
-            }`}>
-              {step > i ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+
+      {/* ---- Step indicator ---- */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {STEPS.map((label, i) => {
+          const stepNum = i + 1
+          const isCompleted = step > stepNum
+          const isCurrent = step === stepNum
+          return (
+            <div key={i} className="flex items-center gap-2">
+              <div
+                className={`
+                  w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
+                  transition-colors
+                  ${isCompleted
+                    ? 'bg-primary text-primary-foreground'
+                    : isCurrent
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground'
+                  }
+                `}
+              >
+                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
+              </div>
+              <span
+                className={`text-sm ${
+                  isCompleted || isCurrent ? 'text-foreground font-medium' : 'text-muted-foreground'
+                }`}
+              >
+                {label}
+              </span>
+              {i < STEPS.length - 1 && (
+                <div
+                  className={`w-8 h-0.5 ${
+                    isCompleted ? 'bg-primary' : 'bg-border'
+                  }`}
+                />
+              )}
             </div>
-            <span className="text-sm">{s}</span>
-            {i < 3 && <div className="w-8 h-0.5 bg-border" />}
-          </div>
-        ))}
+          )
+        })}
       </div>
-      
-      {/* Step 1: Select Bank */}
+
+      {/* ==================================================================
+          STEP 1: SELECT BANK
+         ================================================================== */}
       {step === 1 && (
         <Card>
           <CardHeader>
             <CardTitle>Выберите банк</CardTitle>
             <CardDescription>
-              Выберите клеточный банк для разморозки
+              Выберите одобренный клеточный банк для разморозки
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Поиск по коду..." className="pl-9" />
-              </div>
-              
-              <div className="grid gap-3">
-                {banks.map(bank => (
-                  <div 
-                    key={bank.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                      selectedBank?.id === bank.id 
-                        ? 'border-primary bg-primary/5' 
-                        : 'hover:border-muted-foreground'
-                    }`}
-                    onClick={() => handleBankSelect(bank)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{bank.code}</Badge>
-                          <Badge variant={bank.bank_type === 'MASTER' ? 'default' : 'secondary'}>
-                            {bank.bank_type === 'MASTER' ? 'MCB' : 'WCB'}
+              {banks.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <AlertCircle className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p>Нет одобренных банков для разморозки</p>
+                  <p className="text-sm mt-1">Банки должны иметь статус APPROVED</p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {banks.map((bank) => {
+                    const isSelected = selectedBank?.id === bank.id
+                    const available = availableVialsCount(bank)
+                    return (
+                      <div
+                        key={bank.id}
+                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                            : 'hover:border-muted-foreground/50'
+                        }`}
+                        onClick={() => handleBankSelect(bank)}
+                      >
+                        <div className="flex justify-between items-start gap-4">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className="font-mono">
+                                {bank.code}
+                              </Badge>
+                              {bankTypeBadge(bank.bank_type)}
+                            </div>
+                            <p className="text-sm">
+                              {bank.culture?.name || 'Культура'}
+                              {bank.culture?.culture_type?.name &&
+                                ` / ${bank.culture.culture_type.name}`}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Пассаж: P{bank.passage_number ?? '-'}
+                              {bank.freeze_date &&
+                                ` | Дата заморозки: ${formatDate(bank.freeze_date)}`}
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="whitespace-nowrap">
+                            {available} виал доступно
                           </Badge>
                         </div>
-                        <p className="mt-2 text-sm">
-                          {bank.culture?.name} • {bank.culture?.culture_type?.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Пассаж: P{bank.passage_number} • 
-                          Виал: {bank.vials_total} шт. •
-                          Дата заморозки: {formatDate(bank.freeze_date)}
-                        </p>
                       </div>
-                      <div className="text-right">
-                        <Badge variant="outline">
-                          {bank.vials_total - (bank.vials_used || 0)} доступно
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {banks.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  Нет доступных банков для разморозки
+                    )
+                  })}
                 </div>
               )}
             </div>
           </CardContent>
         </Card>
       )}
-      
-      {/* Step 2: Select Vials */}
+
+      {/* ==================================================================
+          STEP 2: SELECT VIALS
+         ================================================================== */}
       {step === 2 && selectedBank && (
         <Card>
           <CardHeader>
             <CardTitle>Выберите криовиалы</CardTitle>
             <CardDescription>
-              Выберите виалы для разморозки из банка {selectedBank.code}
+              Банк: <strong>{selectedBank.code}</strong>{' '}
+              {bankTypeBadge(selectedBank.bank_type)}
+              {' '}&mdash; выберите виалы для разморозки
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Доступно виал: {vials.length} из {selectedBank.vials_total}
-                </p>
-                <Button variant="outline" size="sm" onClick={selectAllVials}>
-                  {selectedVials.length === vials.length ? 'Снять все' : 'Выбрать все'}
-                </Button>
-              </div>
-              
-              <div className="grid gap-2 max-h-80 overflow-y-auto">
-                {vials.map(vial => (
-                  <div 
-                    key={vial.id}
-                    className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                      selectedVials.find(v => v.id === vial.id)
-                        ? 'border-primary bg-primary/5' 
-                        : 'hover:bg-muted'
-                    }`}
-                    onClick={() => toggleVial(vial)}
-                  >
-                    <Checkbox 
-                      checked={!!selectedVials.find(v => v.id === vial.id)}
-                      onCheckedChange={() => toggleVial(vial)}
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">V-{vial.vial_number}</Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {vial.position?.path || 'Позиция не указана'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-sm text-right">
-                      <span className="text-muted-foreground">cells/vial: </span>
-                      <span className="font-medium">
-                        {vial.cells_count?.toLocaleString() || 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              {vials.length === 0 && (
+              {vialsLoading ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  Нет доступных виал для разморозки
+                  <RefreshCw className="h-6 w-6 mx-auto animate-spin mb-2" />
+                  <p>Загрузка криовиал...</p>
                 </div>
+              ) : vials.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p>Нет доступных виал (IN_STOCK) в этом банке</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Выбрано: {selectedVials.length} из {vials.length}
+                    </p>
+                    <Button variant="outline" size="sm" onClick={toggleAllVials}>
+                      {selectedVials.length === vials.length ? 'Снять все' : 'Выбрать все'}
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-2 max-h-96 overflow-y-auto border rounded-lg p-2">
+                    {vials.map((vial) => {
+                      const isSelected = !!selectedVials.find((v) => v.id === vial.id)
+                      return (
+                        <div
+                          key={vial.id}
+                          className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'border-primary bg-primary/5'
+                              : 'hover:bg-muted'
+                          }`}
+                          onClick={() => toggleVial(vial)}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleVial(vial)}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge variant="outline" className="font-mono">
+                                {vial.code || `V-${vial.vial_number}`}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                #{vial.vial_number}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {vial.position?.path || 'Позиция не указана'}
+                            </p>
+                          </div>
+                          <div className="text-sm text-right whitespace-nowrap">
+                            <span className="text-muted-foreground">Клеток: </span>
+                            <span className="font-medium">
+                              {vial.cells_count?.toLocaleString('ru-RU') || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
               )}
             </div>
           </CardContent>
         </Card>
       )}
-      
-      {/* Step 3: Parameters */}
-      {step === 3 && selectedVials.length > 0 && (
+
+      {/* ==================================================================
+          STEP 3: PARAMETERS
+         ================================================================== */}
+      {step === 3 && (
         <Card>
           <CardHeader>
             <CardTitle>Параметры разморозки</CardTitle>
             <CardDescription>
-              Укажите параметры процесса разморозки
+              Укажите среду, контейнер и дополнительные параметры
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Thaw Method */}
+            {/* Thaw medium (required) */}
             <div className="space-y-2">
-              <Label>Метод разморозки</Label>
-              <Select 
-                value={thawParams.thawMethod}
-                onValueChange={(v) => setThawParams({...thawParams, thawMethod: v})}
-              >
-                <SelectTrigger>
-                  <SelectValue />
+              <Label htmlFor="thaw-medium">
+                Среда для разморозки <span className="text-destructive">*</span>
+              </Label>
+              <Select value={thawMediumId} onValueChange={setThawMediumId}>
+                <SelectTrigger id="thaw-medium">
+                  <SelectValue placeholder="Выберите готовую среду..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="WATER_BATH">Водяная баня (37°C)</SelectItem>
-                  <SelectItem value="37C_INCUBATOR">Инкубатор (37°C)</SelectItem>
-                  <SelectItem value="ROOM_TEMP">Комнатная температура</SelectItem>
-                  <SelectItem value="MANUAL">Ручная разморозка</SelectItem>
+                  {media.map((m, index) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.code || m.name || m.id}
+                      {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
+                      {m.current_volume_ml != null && ` | ${m.current_volume_ml} мл`}
+                      {index === 0 && ' (FEFO)'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {media.length === 0 && (
+                <p className="text-sm text-destructive">
+                  Нет доступных сред. Сначала подготовьте среду.
+                </p>
+              )}
+            </div>
+
+            {/* Container type (required, no cryo) */}
+            <div className="space-y-2">
+              <Label htmlFor="container-type">
+                Тип контейнера для результата <span className="text-destructive">*</span>
+              </Label>
+              <Select value={containerTypeId} onValueChange={setContainerTypeId}>
+                <SelectTrigger id="container-type">
+                  <SelectValue placeholder="Выберите тип контейнера..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {containerTypes.map((ct) => (
+                    <SelectItem key={ct.id} value={ct.id}>
+                      {ct.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            
-            {/* Media */}
+
+            {/* Position (optional) */}
             <div className="space-y-2">
-              <Label>Партия среды для разморозки (FEFO)</Label>
-              <Select 
-                value={thawParams.mediaBatch}
-                onValueChange={(v) => setThawParams({...thawParams, mediaBatch: v})}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите партию среды..." />
+              <Label htmlFor="position">Позиция размещения</Label>
+              <Select value={positionId} onValueChange={setPositionId}>
+                <SelectTrigger id="position">
+                  <SelectValue placeholder="Авторазмещение (необязательно)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="DMEM-F12-001">
-                    DMEM/F12 - DMEM-001 (срок: 30.06.2026)
-                  </SelectItem>
-                  <SelectItem value="DMEM-F12-002">
-                    DMEM/F12 - DMEM-002 (срок: 15.07.2026)
-                  </SelectItem>
-                  <SelectItem value="DMEM-001">
-                    DMEM - DMEM-001 (срок: 20.05.2026)
-                  </SelectItem>
+                  {positions.map((pos) => (
+                    <SelectItem key={pos.id} value={pos.id}>
+                      {pos.path}
+                      {pos.equipment?.name && ` (${pos.equipment.name})`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Система автоматически предлагает партию с ближайшим сроком годности
-              </p>
             </div>
-            
-            {/* Volume */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Объём среды (мл)</Label>
-                <Input 
-                  type="number"
-                  value={thawParams.volume_ml}
-                  onChange={(e) => setThawParams({...thawParams, volume_ml: parseInt(e.target.value) || 0})}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Время разморозки (мин)</Label>
-                <Input 
-                  type="number"
-                  value={thawParams.thawTime}
-                  onChange={(e) => setThawParams({...thawParams, thawTime: parseInt(e.target.value) || 0})}
-                  placeholder="Опционально"
-                />
-              </div>
-            </div>
-            
-            <div className="border-t pt-4">
-              <h3 className="font-medium mb-4">Результат</h3>
-              
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Тип контейнера</Label>
-                  <Select 
-                    value={resultParams.containerType}
-                    onValueChange={(v) => setResultParams({...resultParams, containerType: v})}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {containerTypes.map(type => (
-                        <SelectItem key={type.id} value={type.id}>
-                          {type.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>Позиция (опционально)</Label>
-                  <Select 
-                    value={resultParams.position?.id || ''}
-                    onValueChange={(v) => {
-                      const pos = positions.find(p => p.id === v)
-                      setResultParams({...resultParams, position: pos})
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Авторазмещение" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {positions.filter(p => p.is_active).map(pos => (
-                        <SelectItem key={pos.id} value={pos.id}>
-                          {pos.path}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-            
-            {/* Notes */}
+
+            {/* Viability (optional) */}
             <div className="space-y-2">
-              <Label>Примечания</Label>
-              <Textarea 
+              <Label htmlFor="viability">Жизнеспособность после разморозки (%)</Label>
+              <Input
+                id="viability"
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                placeholder="Необязательно"
+                value={viabilityPercent}
+                onChange={(e) => setViabilityPercent(e.target.value)}
+              />
+            </div>
+
+            {/* Notes (optional) */}
+            <div className="space-y-2">
+              <Label htmlFor="notes">Примечания</Label>
+              <Textarea
+                id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Дополнительные заметки..."
+                placeholder="Дополнительная информация (необязательно)..."
                 rows={3}
               />
             </div>
           </CardContent>
         </Card>
       )}
-      
-      {/* Step 4: Confirmation */}
+
+      {/* ==================================================================
+          STEP 4: CONFIRMATION
+         ================================================================== */}
       {step === 4 && (
         <Card>
           <CardHeader>
             <CardTitle>Подтверждение разморозки</CardTitle>
             <CardDescription>
-              Проверьте данные перед сохранением
+              Проверьте данные перед выполнением операции
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <h3 className="font-medium">Банк</h3>
-                <p><span className="text-muted-foreground">Код:</span> {selectedBank?.code}</p>
-                <p><span className="text-muted-foreground">Тип:</span> {selectedBank?.bank_type}</p>
-                <p><span className="text-muted-foreground">Пассаж:</span> P{selectedBank?.passage_number}</p>
-                <p><span className="text-muted-foreground">Культура:</span> {lotInfo?.culture?.name}</p>
-              </div>
-              
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <h3 className="font-medium">Разморозка</h3>
-                <p><span className="text-muted-foreground">Виал:</span> {selectedVials.length} шт.</p>
-                <p><span className="text-muted-foreground">Метод:</span> {thawParams.thawMethod}</p>
-                <p><span className="text-muted-foreground">Среда:</span> {thawParams.mediaBatch}</p>
-                <p><span className="text-muted-foreground">Объём:</span> {thawParams.volume_ml} мл</p>
-              </div>
-            </div>
-            
+            {/* Bank info */}
             <div className="p-4 bg-muted rounded-lg space-y-2">
-              <h3 className="font-medium">Результат</h3>
-              <p><span className="text-muted-foreground">Новый пассаж:</span> P{selectedBank?.passage_number + 1}</p>
-              <p><span className="text-muted-foreground">Контейнер:</span> {containerTypes.find(t => t.id === resultParams.containerType)?.name}</p>
+              <h3 className="font-medium text-sm uppercase tracking-wide text-muted-foreground">
+                Банк
+              </h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <span className="text-muted-foreground">Код:</span>
+                <span className="font-medium">{selectedBank?.code}</span>
+
+                <span className="text-muted-foreground">Тип:</span>
+                <span>{bankTypeBadge(selectedBank?.bank_type || '')}</span>
+
+                <span className="text-muted-foreground">Культура:</span>
+                <span>
+                  {selectedBank?.culture?.name || '-'}
+                  {selectedBank?.culture?.culture_type?.name &&
+                    ` / ${selectedBank.culture.culture_type.name}`}
+                </span>
+
+                <span className="text-muted-foreground">Пассаж:</span>
+                <span>P{selectedBank?.passage_number ?? '-'}</span>
+              </div>
             </div>
-            
-            <div className="flex items-center gap-2 p-3 bg-green-50 text-green-800 rounded-lg">
-              <CheckCircle2 className="h-4 w-4" />
-              <p className="text-sm">
-                Будет создан новый лот P{selectedBank?.passage_number + 1} с контейнером-результатом
-              </p>
+
+            {/* Selected vials */}
+            <div className="p-4 bg-muted rounded-lg space-y-2">
+              <h3 className="font-medium text-sm uppercase tracking-wide text-muted-foreground">
+                Криовиалы ({selectedVials.length} шт.)
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {selectedVials.map((vial) => (
+                  <Badge key={vial.id} variant="outline" className="font-mono">
+                    {vial.code || `V-${vial.vial_number}`}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Parameters */}
+            <div className="p-4 bg-muted rounded-lg space-y-2">
+              <h3 className="font-medium text-sm uppercase tracking-wide text-muted-foreground">
+                Параметры
+              </h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <span className="text-muted-foreground">Среда:</span>
+                <span className="font-medium">
+                  {selectedMedium?.code || selectedMedium?.name || thawMediumId}
+                </span>
+
+                <span className="text-muted-foreground">Контейнер:</span>
+                <span className="font-medium">
+                  {selectedContainerType?.name || containerTypeId}
+                </span>
+
+                <span className="text-muted-foreground">Позиция:</span>
+                <span>
+                  {selectedPosition?.path || 'Авторазмещение'}
+                </span>
+
+                {viabilityPercent && (
+                  <>
+                    <span className="text-muted-foreground">Жизнеспособность:</span>
+                    <span>{viabilityPercent}%</span>
+                  </>
+                )}
+
+                {notes && (
+                  <>
+                    <span className="text-muted-foreground">Примечания:</span>
+                    <span className="whitespace-pre-wrap">{notes}</span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Info banner */}
+            <div className="flex items-start gap-2 p-3 bg-green-50 text-green-800 rounded-lg border border-green-200">
+              <CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium">
+                  Будет выполнена разморозка {selectedVials.length}{' '}
+                  {selectedVials.length === 1 ? 'виалы' : 'виал'}
+                </p>
+                <p className="text-green-700 mt-0.5">
+                  Для каждой виалы будет создан новый лот с контейнером-результатом.
+                  Криовиалы получат статус THAWED.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
       )}
-      
-      {/* Navigation */}
-      <div className="flex justify-between">
-        <Button 
-          variant="outline" 
-          onClick={() => setStep(s => Math.max(1, s - 1))}
-          disabled={step === 1}
-        >
-          Назад
-        </Button>
-        {step < 4 ? (
-          <Button 
-            onClick={() => setStep(s => Math.min(4, s + 1))}
-            disabled={
-              (step === 1 && !selectedBank) ||
-              (step === 2 && selectedVials.length === 0) ||
-              (step === 3 && !thawParams.mediaBatch)
+
+      {/* ==================================================================
+          NAVIGATION
+         ================================================================== */}
+      <div className="flex justify-between pt-2">
+        <Button
+          variant="outline"
+          onClick={() => {
+            if (step === 1) {
+              router.push('/operations')
+            } else {
+              setStep((s) => s - 1)
             }
+          }}
+          disabled={submitting}
+        >
+          {step === 1 ? 'Отмена' : 'Назад'}
+        </Button>
+
+        {step < 4 ? (
+          <Button
+            onClick={() => setStep((s) => s + 1)}
+            disabled={!canGoNext()}
           >
             Далее
           </Button>
         ) : (
-          <Button onClick={handleSubmit} disabled={loading}>
-            <Snowflake className="h-4 w-4 mr-2" />
-            {loading ? 'Сохранение...' : 'Выполнить разморозку'}
+          <Button onClick={handleSubmit} disabled={submitting}>
+            {submitting ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Выполнение...
+              </>
+            ) : (
+              <>
+                <Snowflake className="h-4 w-4 mr-2" />
+                Выполнить разморозку
+              </>
+            )}
           </Button>
         )}
       </div>

@@ -1,36 +1,67 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter, useParams } from "next/navigation"
-import { 
-  ArrowLeft, 
-  Eye, 
-  RefreshCw, 
-  Trash2, 
-  MapPin, 
+import { use, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  RefreshCw,
+  Trash2,
+  MapPin,
   Thermometer,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  FlaskConical,
+  Layers,
+  Calendar,
 } from "lucide-react"
-import Link from "next/link"
+import { toast } from "sonner"
+
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { getContainerById } from "@/lib/api"
+import { formatDate } from "@/lib/utils"
 
-const STATUS_COLORS: Record<string, string> = {
-  ACTIVE: "bg-green-500",
-  DISPOSE: "bg-red-500",
-  IN_BANK: "bg-blue-500",
-}
+// ---------------------------------------------------------------------------
+// Status maps
+// ---------------------------------------------------------------------------
 
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: "Активен",
-  DISPOSE: "Утилизирован",
-  IN_BANK: "В банке",
+const STATUS_CONFIG: Record<string, { label: string; variant: string; className: string }> = {
+  IN_CULTURE: {
+    label: "В культуре",
+    variant: "default",
+    className: "bg-green-600 hover:bg-green-600 text-white",
+  },
+  IN_BANK: {
+    label: "В банке",
+    variant: "default",
+    className: "bg-blue-600 hover:bg-blue-600 text-white",
+  },
+  DISPOSE: {
+    label: "Утилизирован",
+    variant: "destructive",
+    className: "bg-red-600 hover:bg-red-600 text-white",
+  },
+  ISSUED: {
+    label: "Выдан",
+    variant: "secondary",
+    className: "bg-gray-500 hover:bg-gray-500 text-white",
+  },
+  QUARANTINE: {
+    label: "Карантин",
+    variant: "default",
+    className: "bg-yellow-500 hover:bg-yellow-500 text-white",
+  },
 }
 
 const MORPHOLOGY_LABELS: Record<string, string> = {
@@ -43,10 +74,27 @@ const MORPHOLOGY_LABELS: Record<string, string> = {
   degenerate: "Дегенеративная",
 }
 
-export default function ContainerDetailPage() {
+// ---------------------------------------------------------------------------
+// Confluence color helper
+// ---------------------------------------------------------------------------
+
+function getConfluenceColor(percent: number): string {
+  if (percent >= 80) return "bg-green-500"
+  if (percent >= 50) return "bg-yellow-500"
+  return "bg-blue-500"
+}
+
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
+
+export default function ContainerDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id } = use(params)
   const router = useRouter()
-  const params = useParams()
-  const containerId = params.id as string
 
   const [container, setContainer] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -55,36 +103,37 @@ export default function ContainerDetailPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const data = await getContainerById(containerId)
+        const data = await getContainerById(id)
         setContainer(data)
       } catch (err: any) {
-        setError(err.message || "Ошибка загрузки данных")
+        const msg = err?.message || "Ошибка загрузки контейнера"
+        setError(msg)
+        toast.error(msg)
       } finally {
         setLoading(false)
       }
     }
-    
-    if (containerId) {
-      loadData()
-    }
-  }, [containerId])
 
+    if (id) loadData()
+  }, [id])
+
+  // ---- Loading state ----
   if (loading) {
     return (
-      <div className="container mx-auto py-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-muted rounded w-1/3"></div>
-          <div className="h-48 bg-muted rounded"></div>
-        </div>
+      <div className="container mx-auto max-w-3xl py-8 space-y-4">
+        <div className="h-8 w-1/3 animate-pulse rounded bg-muted" />
+        <div className="h-64 animate-pulse rounded bg-muted" />
+        <div className="h-48 animate-pulse rounded bg-muted" />
       </div>
     )
   }
 
+  // ---- Error / not found ----
   if (error || !container) {
     return (
-      <div className="container mx-auto py-6">
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="py-8 text-center text-red-600">
+      <div className="container mx-auto max-w-3xl py-8">
+        <Card className="border-red-300 bg-red-50">
+          <CardContent className="py-10 text-center text-red-600">
             {error || "Контейнер не найден"}
           </CardContent>
         </Card>
@@ -92,253 +141,309 @@ export default function ContainerDetailPage() {
     )
   }
 
-  const lot = container.lot
-  const culture = lot?.culture
-  const position = container.position
-  const bank = container.bank
+  // ---- Derived data ----
+  const lot = container.lot as any | null
+  const culture = lot?.culture as any | null
+  const containerType = container.container_type as any | null
+  const position = container.position as any | null
+  const equipment = position?.equipment as any | null
+
+  const statusCfg = STATUS_CONFIG[container.status] ?? {
+    label: container.status,
+    variant: "outline",
+    className: "",
+  }
+
+  const confluencePercent = container.confluent_percent ?? 0
 
   return (
-    <div className="container mx-auto py-6 max-w-4xl">
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
+    <div className="container mx-auto max-w-3xl py-8 space-y-6">
+      {/* ================================================================
+          HEADER
+          ================================================================ */}
+      <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{container.code}</h1>
-            <Badge className={STATUS_COLORS[container.status] || "bg-gray-500"}>
-              {STATUS_LABELS[container.status] || container.status}
-            </Badge>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold tracking-tight truncate">
+              {container.code}
+            </h1>
+            <Badge className={statusCfg.className}>{statusCfg.label}</Badge>
           </div>
-          <p className="text-muted-foreground">
-            {container.type?.name || "Тип контейнера не указан"}
-          </p>
         </div>
       </div>
 
-      {/* Contamination Alert */}
+      {/* ================================================================
+          CONTAMINATION ALERT
+          ================================================================ */}
       {container.contaminated && (
-        <Alert className="mb-6 border-red-500 bg-red-50">
-          <AlertTriangle className="h-4 w-4 text-red-500" />
-          <CardTitle className="text-red-600 ml-2">Контаминация!</CardTitle>
-        </Alert>
+        <Card className="border-red-400 bg-red-50">
+          <CardContent className="flex items-center gap-3 py-4">
+            <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+            <span className="font-semibold text-red-700">
+              Контаминация обнаружена!
+            </span>
+          </CardContent>
+        </Card>
       )}
 
-      <div className="grid gap-6">
-        {/* Status Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Текущее состояние</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-6 md:grid-cols-3">
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Конфлюэнтность</p>
-                <div className="flex items-center gap-3">
-                  <Progress value={container.confluent_percent || 0} className="flex-1 h-3" />
-                  <span className="font-semibold text-lg">{container.confluent_percent || 0}%</span>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Морфология</p>
-                <p className="font-semibold">
-                  {MORPHOLOGY_LABELS[container.morphology] || container.morphology || "—"}
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Контаминация</p>
-                <div className="flex items-center gap-2">
-                  {container.contaminated ? (
-                    <>
-                      <AlertTriangle className="h-5 w-5 text-red-500" />
-                      <span className="font-semibold text-red-600">Да</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
-                      <span className="font-semibold text-green-600">Нет</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Position Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Размещение</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {position ? (
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-blue-100 rounded-lg">
-                  <MapPin className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-semibold">{position.path}</p>
-                  {position.equipment && (
-                    <p className="text-sm text-muted-foreground">
-                      {position.equipment.name} — {position.equipment.location}
-                    </p>
-                  )}
-                  {position.equipment?.temperature && (
-                    <p className="text-sm text-muted-foreground flex items-center gap-1">
-                      <Thermometer className="h-3 w-3" />
-                      {position.equipment.temperature}°C
-                    </p>
-                  )}
-                </div>
-              </div>
+      {/* ================================================================
+          OWNERSHIP (Culture + Lot links)
+          ================================================================ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Layers className="h-4 w-4" />
+            Принадлежность
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Культура</span>
+            {culture ? (
+              <Link
+                href={`/cultures/${culture.id}`}
+                className="font-medium text-primary hover:underline"
+              >
+                {culture.name}
+              </Link>
             ) : (
-              <p className="text-muted-foreground">Позиция не указана</p>
+              <span className="text-muted-foreground">--</span>
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Hierarchy */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Принадлежность</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600 font-semibold">
-                  К
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Культура</p>
-                  {culture ? (
-                    <Link href={`/cultures/${culture.id}`} className="font-medium hover:underline">
-                      {culture.name}
-                    </Link>
-                  ) : (
-                    <p className="font-medium">—</p>
-                  )}
-                </div>
-              </div>
-              
-              <Separator />
-              
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold">
-                  Л
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Лот</p>
-                  {lot ? (
-                    <Link href={`/lots/${lot.id}`} className="font-medium hover:underline">
-                      L{lot.passage_number} (P{lot.passage_number})
-                    </Link>
-                  ) : (
-                    <p className="font-medium">—</p>
-                  )}
-                </div>
-              </div>
+          <Separator />
 
-              {bank && (
-                <>
-                  <Separator />
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 font-semibold">
-                      Б
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Банк</p>
-                      <Link href={`/banks/${bank.id}`} className="font-medium hover:underline">
-                        {bank.bank_type} — {bank.code}
-                      </Link>
-                    </div>
-                  </div>
-                </>
-              )}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Лот</span>
+            {lot ? (
+              <Link
+                href={`/lots/${lot.id}`}
+                className="font-medium text-primary hover:underline"
+              >
+                {lot.lot_number} (P{lot.passage_number})
+              </Link>
+            ) : (
+              <span className="text-muted-foreground">--</span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ================================================================
+          INFO GRID
+          ================================================================ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FlaskConical className="h-4 w-4" />
+            Информация
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Тип контейнера */}
+            <InfoRow
+              label="Тип контейнера"
+              value={containerType?.name ?? "--"}
+            />
+
+            {/* Площадь роста */}
+            {containerType?.surface_area_cm2 != null && (
+              <InfoRow
+                label="Площадь роста"
+                value={`${containerType.surface_area_cm2} см\u00B2`}
+              />
+            )}
+
+            {/* Дата создания */}
+            <InfoRow
+              label="Дата создания"
+              value={container.created_at ? formatDate(container.created_at) : "--"}
+              icon={<Calendar className="h-3.5 w-3.5 text-muted-foreground" />}
+            />
+
+            {/* Пассаж */}
+            <InfoRow
+              label="Пассаж"
+              value={
+                container.passage_number != null
+                  ? `P${container.passage_number}`
+                  : "--"
+              }
+            />
+
+            {/* Морфология */}
+            <InfoRow
+              label="Морфология"
+              value={
+                container.morphology
+                  ? MORPHOLOGY_LABELS[container.morphology] ?? container.morphology
+                  : "--"
+              }
+            />
+
+            {/* Контаминация */}
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Контаминация</p>
+              <div className="flex items-center gap-1.5">
+                {container.contaminated ? (
+                  <>
+                    <AlertTriangle className="h-4 w-4 text-red-500" />
+                    <span className="font-medium text-red-600">Да</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <span className="font-medium text-green-600">Нет</span>
+                  </>
+                )}
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Действия</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              <Link href={`/operations/observe?container_id=${containerId}`}>
+          {/* Confluency bar -- full width */}
+          <Separator className="my-4" />
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">Конфлюэнтность</p>
+              <span className="text-sm font-semibold">{confluencePercent}%</span>
+            </div>
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={`absolute left-0 top-0 h-full rounded-full transition-all ${getConfluenceColor(confluencePercent)}`}
+                style={{ width: `${Math.min(confluencePercent, 100)}%` }}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ================================================================
+          CURRENT LOCATION
+          ================================================================ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MapPin className="h-4 w-4" />
+            Текущее размещение
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {position ? (
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-blue-100 p-2.5">
+                  <MapPin className="h-5 w-5 text-blue-600" />
+                </div>
+                <div className="min-w-0">
+                  {equipment && (
+                    <p className="font-semibold">{equipment.name}</p>
+                  )}
+                  <p className="text-sm text-muted-foreground">{position.path}</p>
+                  {equipment?.current_temperature != null && (
+                    <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                      <Thermometer className="h-3.5 w-3.5" />
+                      {equipment.current_temperature}&deg;C
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">Позиция не назначена</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ================================================================
+          ACTION BUTTONS
+          ================================================================ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Действия</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-3">
+            {/* Navigate to culture */}
+            {culture && (
+              <Link href={`/cultures/${culture.id}`}>
                 <Button variant="outline">
-                  <Eye className="mr-2 h-4 w-4" />
-                  Осмотр
+                  <ArrowRight className="mr-2 h-4 w-4" />
+                  Перейти к культуре
                 </Button>
               </Link>
-              
-              {container.status === "ACTIVE" && (
-                <>
-                  <Link href={`/operations/new?container_id=${containerId}&type=passage`}>
-                    <Button variant="outline">
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Пассаж
-                    </Button>
-                  </Link>
-                  
-                  <Separator orientation="vertical" className="h-8" />
-                  
-                  <Link href={`/operations/dispose?type=container&id=${containerId}`}>
-                    <Button variant="outline" className="text-red-600">
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Утилизировать
-                    </Button>
-                  </Link>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+            )}
 
-        {/* Info */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Создан</p>
-                  <p className="font-medium">
-                    {container.created_at 
-                      ? new Date(container.created_at).toLocaleDateString("ru-RU")
-                      : "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Размещён</p>
-                  <p className="font-medium">
-                    {container.placed_at 
-                      ? new Date(container.placed_at).toLocaleDateString("ru-RU")
-                      : "—"}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            {/* Navigate to lot */}
+            {lot && (
+              <Link href={`/lots/${lot.id}`}>
+                <Button variant="outline">
+                  <ArrowRight className="mr-2 h-4 w-4" />
+                  Перейти к лоту
+                </Button>
+              </Link>
+            )}
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Площадь</p>
-                  <p className="font-medium">{container.type?.surface_area_cm2 || "—"} см²</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Объём</p>
-                  <p className="font-medium">{container.type?.volume_ml || "—"} мл</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            <Separator orientation="vertical" className="h-9 hidden sm:block" />
+
+            {/* Observe */}
+            <Link href={`/operations/observe?container_id=${id}`}>
+              <Button variant="outline">
+                <Eye className="mr-2 h-4 w-4" />
+                Осмотр
+              </Button>
+            </Link>
+
+            {/* Passage */}
+            {container.status === "IN_CULTURE" && (
+              <Link href={`/operations/passage?container_id=${id}`}>
+                <Button variant="outline">
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Пассаж
+                </Button>
+              </Link>
+            )}
+
+            {/* Dispose */}
+            {container.status === "IN_CULTURE" && (
+              <Link href={`/operations/dispose?type=container&id=${id}`}>
+                <Button variant="outline" className="text-red-600 hover:text-red-700">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Утилизировать
+                </Button>
+              </Link>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Helper: simple label/value row
+// ---------------------------------------------------------------------------
+function InfoRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string
+  value: string
+  icon?: React.ReactNode
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1.5 font-medium">
+        {icon}
+        {value}
+      </p>
     </div>
   )
 }

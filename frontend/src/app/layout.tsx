@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
+import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth-context";
 
 const inter = Inter({
@@ -28,6 +29,7 @@ export default function RootLayout({
             {children}
           </main>
         </AuthProvider>
+        <Toaster position="top-right" richColors closeButton />
       </body>
     </html>
   );
