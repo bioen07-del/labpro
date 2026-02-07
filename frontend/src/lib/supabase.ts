@@ -11,27 +11,31 @@ function createClient(): SupabaseClient {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!url || !key) {
-    // During SSR prerendering without env vars — return a no-op proxy
-    // Real requests will fail gracefully; the client will work in browser
-    const noop = () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } })
+    // During SSR prerendering or when env vars are missing — return a no-op stub
+    const noopSubscription = { unsubscribe: () => {} }
+
+    const authStub = {
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      signInWithPassword: () => Promise.resolve({ data: { user: null, session: null }, error: { message: 'Supabase not configured' } }),
+      signUp: () => Promise.resolve({ data: { user: null, session: null }, error: { message: 'Supabase not configured' } }),
+      signOut: () => Promise.resolve({ error: null }),
+      onAuthStateChange: () => ({ data: { subscription: noopSubscription } }),
+    }
+
     const chainable: any = new Proxy({}, {
       get() {
         return (..._args: any[]) => chainable
       }
     })
-    // Make .then resolve so awaits work
     chainable.then = (resolve: any) => resolve({ data: null, error: { message: 'Supabase not configured' } })
 
     return new Proxy({} as SupabaseClient, {
       get(_, prop) {
-        if (prop === 'auth') {
-          return new Proxy({}, {
-            get() { return noop }
-          })
-        }
-        if (prop === 'rpc') return noop
-        if (prop === 'channel' || prop === 'removeChannel') return () => ({})
-        // .from() should return chainable
+        if (prop === 'auth') return authStub
+        if (prop === 'rpc') return () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } })
+        if (prop === 'channel') return () => ({ on: () => ({ subscribe: () => {} }) })
+        if (prop === 'removeChannel') return () => {}
         return () => chainable
       }
     })
