@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical } from 'lucide-react'
+import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical, TestTubes, Package, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -23,8 +24,11 @@ import {
 import {
   getDonations,
   getCultureTypesByTissueType,
+  getCultureTypes,
   getContainerTypes,
   getPositions,
+  getAvailableMediaForFeed,
+  getConsumableBatchesForContainerType,
   createCultureFromDonation,
 } from '@/lib/api'
 
@@ -42,16 +46,17 @@ interface Donation {
   code: string
   donor_id: string
   tissue_type_id: string
+  status: string
   donor?: { code?: string; last_name?: string; first_name?: string; middle_name?: string } | null
   tissue_type?: { id: string; name?: string } | null
   [key: string]: unknown
 }
 
-interface CultureTypeLink {
-  culture_type: { id: string; code: string; name: string }
-  tissue_type: { id: string; name: string }
-  is_primary: boolean
-  [key: string]: unknown
+interface CultureTypeOption {
+  id: string
+  code: string
+  name: string
+  is_primary?: boolean
 }
 
 interface ContainerType {
@@ -66,6 +71,25 @@ interface Position {
   id: string
   path: string
   equipment?: { name?: string } | null
+  [key: string]: unknown
+}
+
+interface ReadyMediumOption {
+  id: string
+  code: string
+  name: string
+  current_volume_ml?: number
+  volume_ml?: number
+  expiration_date?: string
+  [key: string]: unknown
+}
+
+interface ConsumableBatch {
+  id: string
+  batch_number: string
+  quantity: number
+  nomenclature?: { name?: string } | null
+  expiration_date?: string
   [key: string]: unknown
 }
 
@@ -85,18 +109,26 @@ function donationLabel(d: Donation): string {
   const parts = [d.code]
   if (d.donor) parts.push(donorDisplayName(d.donor))
   if (d.tissue_type?.name) parts.push(d.tissue_type.name)
+  if (d.status === 'QUARANTINE') parts.push('(карантин)')
   return parts.join(' — ')
 }
 
 // ====================================================================
-export default function NewCulturePage() {
+// Inner component that uses useSearchParams (must be inside Suspense)
+// ====================================================================
+function NewCultureForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlDonorId = searchParams.get('donor_id')
+  const urlDonationId = searchParams.get('donation_id')
 
   // ---------- reference data ----------
   const [donations, setDonations] = useState<Donation[]>([])
-  const [cultureTypeLinks, setCultureTypeLinks] = useState<CultureTypeLink[]>([])
+  const [cultureTypeOptions, setCultureTypeOptions] = useState<CultureTypeOption[]>([])
   const [containerTypes, setContainerTypes] = useState<ContainerType[]>([])
   const [positions, setPositions] = useState<Position[]>([])
+  const [availableMedia, setAvailableMedia] = useState<ReadyMediumOption[]>([])
+  const [consumableBatches, setConsumableBatches] = useState<ConsumableBatch[]>([])
 
   // ---------- form state ----------
   const [donationId, setDonationId] = useState('')
@@ -106,6 +138,14 @@ export default function NewCulturePage() {
   const [containerCount, setContainerCount] = useState(1)
   const [positionId, setPositionId] = useState('')
   const [notes, setNotes] = useState('')
+
+  // Media write-off
+  const [readyMediumId, setReadyMediumId] = useState('')
+  const [mediumVolumePerContainer, setMediumVolumePerContainer] = useState(0)
+
+  // Consumable write-off
+  const [writeOffConsumables, setWriteOffConsumables] = useState(false)
+  const [consumableBatchId, setConsumableBatchId] = useState('')
 
   // ---------- UI state ----------
   const [initialLoading, setInitialLoading] = useState(true)
@@ -117,10 +157,11 @@ export default function NewCulturePage() {
   useEffect(() => {
     async function load() {
       try {
-        const [donationsData, containerTypesData, positionsData] = await Promise.all([
-          getDonations({ status: 'APPROVED' }),
+        const [donationsData, containerTypesData, positionsData, mediaData] = await Promise.all([
+          getDonations({ statuses: ['APPROVED', 'QUARANTINE'] }),
           getContainerTypes(),
           getPositions(),
+          getAvailableMediaForFeed(),
         ])
         setDonations((donationsData || []) as Donation[])
         // Filter out cryo container types
@@ -129,6 +170,16 @@ export default function NewCulturePage() {
         )
         setContainerTypes(nonCryo)
         setPositions((positionsData || []) as Position[])
+        setAvailableMedia((mediaData || []) as ReadyMediumOption[])
+
+        // Auto-select donation from URL params
+        if (urlDonationId && donationsData) {
+          const found = (donationsData as Donation[]).find((d) => d.id === urlDonationId)
+          if (found) {
+            // Will trigger handleDonationChange via the effect below
+            setDonationId(urlDonationId)
+          }
+        }
       } catch (err) {
         console.error('Failed to load reference data:', err)
         toast.error('Ошибка загрузки справочных данных')
@@ -137,13 +188,14 @@ export default function NewCulturePage() {
       }
     }
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ---------- when donation changes, load culture types for its tissue type ----------
   const handleDonationChange = useCallback(async (newDonationId: string) => {
     setDonationId(newDonationId)
     setCultureTypeId('')
-    setCultureTypeLinks([])
+    setCultureTypeOptions([])
 
     if (!newDonationId) return
 
@@ -157,13 +209,34 @@ export default function NewCulturePage() {
     setCultureTypesLoading(true)
     try {
       const links = await getCultureTypesByTissueType(tissueTypeId)
-      setCultureTypeLinks((links || []) as CultureTypeLink[])
-      // Auto-select the primary (first) culture type if available
-      const primary = (links || []).find((l: CultureTypeLink) => l.is_primary)
-      if (primary) {
-        setCultureTypeId(primary.culture_type.id)
-      } else if (links && links.length === 1) {
-        setCultureTypeId(links[0].culture_type.id)
+      const mapped = ((links || []) as any[]).map((l) => ({
+        id: l.culture_type.id,
+        code: l.culture_type.code,
+        name: l.culture_type.name,
+        is_primary: l.is_primary,
+      }))
+
+      // Fallback: if no tissue-type links exist, load ALL culture types
+      if (mapped.length === 0) {
+        const allTypes = await getCultureTypes()
+        const allMapped = ((allTypes || []) as any[]).map((ct) => ({
+          id: ct.id,
+          code: ct.code,
+          name: ct.name,
+        }))
+        setCultureTypeOptions(allMapped)
+        if (allMapped.length === 1) {
+          setCultureTypeId(allMapped[0].id)
+        }
+      } else {
+        setCultureTypeOptions(mapped)
+        // Auto-select primary or single option
+        const primary = mapped.find((m) => m.is_primary)
+        if (primary) {
+          setCultureTypeId(primary.id)
+        } else if (mapped.length === 1) {
+          setCultureTypeId(mapped[0].id)
+        }
       }
     } catch (err) {
       console.error('Failed to load culture types for tissue type:', err)
@@ -173,8 +246,39 @@ export default function NewCulturePage() {
     }
   }, [donations])
 
+  // When donationId set from URL (after donations loaded), trigger culture type loading
+  useEffect(() => {
+    if (donationId && donations.length > 0 && cultureTypeOptions.length === 0 && !cultureTypesLoading) {
+      handleDonationChange(donationId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [donationId, donations])
+
+  // Load consumable batches when container type changes
+  useEffect(() => {
+    if (!containerTypeId) {
+      setConsumableBatches([])
+      return
+    }
+    const ct = containerTypes.find((c) => c.id === containerTypeId)
+    if (!ct) return
+
+    getConsumableBatchesForContainerType(ct.name).then((batches) => {
+      setConsumableBatches((batches || []) as ConsumableBatch[])
+    }).catch(() => {
+      setConsumableBatches([])
+    })
+  }, [containerTypeId, containerTypes])
+
   // ---------- derived ----------
   const selectedDonation = donations.find((d) => d.id === donationId)
+  const selectedMedium = availableMedia.find((m) => m.id === readyMediumId)
+  const totalMediumVolume = mediumVolumePerContainer * containerCount
+  const mediumAvailable = selectedMedium?.current_volume_ml ?? selectedMedium?.volume_ml ?? 0
+  const mediumOverflow = selectedMedium && totalMediumVolume > mediumAvailable
+
+  const selectedConsumable = consumableBatches.find((b) => b.id === consumableBatchId)
+  const consumableOverflow = selectedConsumable && containerCount > selectedConsumable.quantity
 
   const canSubmit =
     donationId &&
@@ -182,7 +286,8 @@ export default function NewCulturePage() {
     extractionMethod &&
     containerTypeId &&
     containerCount >= 1 &&
-    !submitting
+    !submitting &&
+    !consumableOverflow
 
   // ---------- submit ----------
   const handleSubmit = async () => {
@@ -198,6 +303,9 @@ export default function NewCulturePage() {
         container_count: containerCount,
         position_id: positionId || undefined,
         notes: notes || undefined,
+        ready_medium_id: readyMediumId || undefined,
+        medium_volume_ml: readyMediumId && totalMediumVolume > 0 ? totalMediumVolume : undefined,
+        consumable_batch_id: writeOffConsumables && consumableBatchId ? consumableBatchId : undefined,
       })
 
       setResult(res as CreatedResult)
@@ -280,14 +388,14 @@ export default function NewCulturePage() {
           <Card>
             <CardHeader>
               <CardTitle>Донация</CardTitle>
-              <CardDescription>Выберите одобренную донацию для выделения культуры</CardDescription>
+              <CardDescription>Выберите донацию для выделения культуры</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
                 <Label htmlFor="donation">Донация *</Label>
                 {donations.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-2">
-                    Нет одобренных донаций. Сначала создайте донацию и дождитесь результатов тестов.
+                    Нет доступных донаций. Сначала создайте донацию.
                   </p>
                 ) : (
                   <Select value={donationId} onValueChange={handleDonationChange}>
@@ -310,6 +418,9 @@ export default function NewCulturePage() {
                   <FlaskConical className="h-4 w-4 text-blue-500" />
                   <span className="text-sm text-muted-foreground">Тип ткани:</span>
                   <Badge variant="secondary">{selectedDonation.tissue_type.name}</Badge>
+                  {selectedDonation.status === 'QUARANTINE' && (
+                    <Badge className="bg-yellow-100 text-yellow-700 hover:bg-yellow-100 ml-2">Карантин</Badge>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -335,22 +446,22 @@ export default function NewCulturePage() {
                     <Select
                       value={cultureTypeId}
                       onValueChange={setCultureTypeId}
-                      disabled={!donationId || cultureTypeLinks.length === 0}
+                      disabled={!donationId || cultureTypeOptions.length === 0}
                     >
                       <SelectTrigger id="cultureType">
                         <SelectValue placeholder={
                           !donationId
                             ? 'Сначала выберите донацию'
-                            : cultureTypeLinks.length === 0
+                            : cultureTypeOptions.length === 0
                               ? 'Нет доступных типов'
                               : 'Выберите тип клеток'
                         } />
                       </SelectTrigger>
                       <SelectContent>
-                        {cultureTypeLinks.map((link) => (
-                          <SelectItem key={link.culture_type.id} value={link.culture_type.id}>
-                            {link.culture_type.name} ({link.culture_type.code})
-                            {link.is_primary ? ' — основной' : ''}
+                        {cultureTypeOptions.map((ct) => (
+                          <SelectItem key={ct.id} value={ct.id}>
+                            {ct.name} ({ct.code})
+                            {ct.is_primary ? ' — основной' : ''}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -435,7 +546,133 @@ export default function NewCulturePage() {
             </CardContent>
           </Card>
 
-          {/* 7. Notes */}
+          {/* 7. Питательная среда */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TestTubes className="h-5 w-5" />
+                Питательная среда
+              </CardTitle>
+              <CardDescription>Среда для первичного посева (необязательно)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Готовая среда</Label>
+                  <Select value={readyMediumId} onValueChange={setReadyMediumId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Не выбрано" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableMedia.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.name} ({m.code}) — {m.current_volume_ml ?? m.volume_ml} мл
+                          {m.expiration_date ? ` (до ${m.expiration_date})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Объём на контейнер (мл)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={mediumVolumePerContainer || ''}
+                    onChange={(e) => setMediumVolumePerContainer(parseFloat(e.target.value) || 0)}
+                    disabled={!readyMediumId}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              {readyMediumId && mediumVolumePerContainer > 0 && (
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="text-muted-foreground">
+                    Итого: <strong>{totalMediumVolume.toFixed(1)} мл</strong> ({containerCount} шт. × {mediumVolumePerContainer} мл)
+                  </span>
+                  {mediumOverflow && (
+                    <span className="flex items-center gap-1 text-yellow-600">
+                      <AlertTriangle className="h-4 w-4" />
+                      Превышает остаток ({mediumAvailable} мл)
+                    </span>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 8. Расходные материалы */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Расходные материалы
+              </CardTitle>
+              <CardDescription>Списание контейнеров со склада (необязательно)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="writeOff"
+                  checked={writeOffConsumables}
+                  onCheckedChange={(checked) => {
+                    setWriteOffConsumables(checked === true)
+                    if (!checked) setConsumableBatchId('')
+                  }}
+                  disabled={consumableBatches.length === 0}
+                />
+                <Label htmlFor="writeOff" className="cursor-pointer">
+                  Списать контейнеры со склада
+                </Label>
+              </div>
+
+              {consumableBatches.length === 0 && containerTypeId && (
+                <p className="text-sm text-muted-foreground">
+                  Нет подходящих расходников на складе для выбранного типа контейнера
+                </p>
+              )}
+
+              {writeOffConsumables && consumableBatches.length > 0 && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Партия расходников</Label>
+                    <Select value={consumableBatchId} onValueChange={setConsumableBatchId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите партию" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {consumableBatches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.nomenclature?.name ?? b.batch_number} — {b.quantity} шт.
+                            {b.expiration_date ? ` (до ${b.expiration_date})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {consumableBatchId && selectedConsumable && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">
+                        Будет списано: <strong>{containerCount} шт.</strong> из {selectedConsumable.quantity} шт.
+                      </span>
+                      {consumableOverflow && (
+                        <span className="flex items-center gap-1 text-destructive mt-1">
+                          <AlertTriangle className="h-4 w-4" />
+                          Недостаточно на складе
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 9. Notes */}
           <Card>
             <CardHeader>
               <CardTitle>Примечания</CardTitle>
@@ -480,7 +717,7 @@ export default function NewCulturePage() {
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Тип клеток</span>
                 <Badge variant="outline">
-                  {cultureTypeLinks.find((l) => l.culture_type.id === cultureTypeId)?.culture_type.code || '—'}
+                  {cultureTypeOptions.find((ct) => ct.id === cultureTypeId)?.code || '—'}
                 </Badge>
               </div>
               <div className="flex justify-between">
@@ -499,6 +736,18 @@ export default function NewCulturePage() {
                 <span className="text-sm text-muted-foreground">Кол-во</span>
                 <span className="font-medium">{containerCount}</span>
               </div>
+              {readyMediumId && totalMediumVolume > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Среда</span>
+                  <span className="font-medium">{totalMediumVolume.toFixed(1)} мл</span>
+                </div>
+              )}
+              {writeOffConsumables && consumableBatchId && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Списание</span>
+                  <span className="font-medium">{containerCount} шт.</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -521,5 +770,20 @@ export default function NewCulturePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ====================================================================
+// Wrapper with Suspense (required for useSearchParams in Next.js)
+// ====================================================================
+export default function NewCulturePage() {
+  return (
+    <Suspense fallback={
+      <div className="container py-6 flex justify-center items-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <NewCultureForm />
+    </Suspense>
   )
 }

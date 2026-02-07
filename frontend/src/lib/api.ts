@@ -111,6 +111,11 @@ export async function createCultureFromDonation(data: {
   container_count: number
   position_id?: string
   notes?: string
+  // Списание среды
+  ready_medium_id?: string
+  medium_volume_ml?: number
+  // Списание контейнеров со склада
+  consumable_batch_id?: string
 }) {
   // 1. Получить донацию для donor_id и tissue_id
   const donation = await getDonationById(data.donation_id)
@@ -191,6 +196,92 @@ export async function createCultureFromDonation(data: {
       target_type: 'CONTAINER',
       due_days: 1
     })
+  }
+
+  // 7. Создать операцию SEED + списания
+  const now = new Date().toISOString()
+  const { data: seedOp, error: seedOpError } = await supabase
+    .from('operations')
+    .insert({
+      lot_id: lot.id,
+      type: 'SEED',
+      status: 'COMPLETED',
+      started_at: now,
+      completed_at: now,
+      notes: data.notes || 'Первичный посев из донации',
+    })
+    .select()
+    .single()
+
+  if (seedOpError) throw seedOpError
+
+  // 7a. Привязать контейнеры к операции
+  const opContainers = containers.map((c: any) => ({
+    operation_id: seedOp.id,
+    container_id: c.id,
+    role: 'TARGET',
+  }))
+  await supabase.from('operation_containers').insert(opContainers)
+
+  // 7b. Списание среды (если указана)
+  if (data.ready_medium_id && data.medium_volume_ml && data.medium_volume_ml > 0) {
+    // Записать operation_media
+    await supabase.from('operation_media').insert({
+      operation_id: seedOp.id,
+      ready_medium_id: data.ready_medium_id,
+      quantity_ml: data.medium_volume_ml,
+      purpose: 'SEED',
+    })
+
+    // Уменьшить current_volume_ml
+    const medium = await getReadyMediumById(data.ready_medium_id)
+    if (medium) {
+      const currentVol = medium.current_volume_ml ?? medium.volume_ml ?? 0
+      const newVol = Math.max(0, currentVol - data.medium_volume_ml)
+
+      await supabase
+        .from('ready_media')
+        .update({ current_volume_ml: newVol })
+        .eq('id', data.ready_medium_id)
+
+      // inventory_movement
+      await createInventoryMovement({
+        batch_id: medium.batch_id || null,
+        movement_type: 'CONSUME',
+        quantity_change: -data.medium_volume_ml,
+        quantity_after: newVol,
+        moved_at: now,
+        notes: `Среда для посева ${cultureCode}`,
+      })
+    }
+  }
+
+  // 7c. Списание контейнеров со склада (если указано)
+  if (data.consumable_batch_id && data.container_count > 0) {
+    const { data: batch } = await supabase
+      .from('batches')
+      .select('*')
+      .eq('id', data.consumable_batch_id)
+      .single()
+
+    if (batch) {
+      const newQty = Math.max(0, (batch.quantity || 0) - data.container_count)
+
+      await supabase
+        .from('batches')
+        .update({ quantity: newQty })
+        .eq('id', data.consumable_batch_id)
+
+      // inventory_movement
+      await createInventoryMovement({
+        batch_id: data.consumable_batch_id,
+        movement_type: 'CONSUME',
+        quantity_change: -data.container_count,
+        quantity_after: newQty,
+        moved_at: now,
+        notes: `Контейнеры для посева ${cultureCode} (${data.container_count} шт.)`,
+      })
+    }
   }
 
   return { culture, lot, containers }
@@ -900,7 +991,7 @@ export async function updateDonor(id: string, updates: Record<string, unknown>) 
 
 // ==================== DONATIONS ====================
 
-export async function getDonations(filters?: { donor_id?: string; status?: string }) {
+export async function getDonations(filters?: { donor_id?: string; status?: string; statuses?: string[] }) {
   let query = supabase
     .from('donations')
     .select('*, donor:donors(*), tissue_type:tissue_types(*)')
@@ -909,7 +1000,9 @@ export async function getDonations(filters?: { donor_id?: string; status?: strin
   if (filters?.donor_id) {
     query = query.eq('donor_id', filters.donor_id)
   }
-  if (filters?.status) {
+  if (filters?.statuses && filters.statuses.length > 0) {
+    query = query.in('status', filters.statuses)
+  } else if (filters?.status) {
     query = query.eq('status', filters.status)
   }
 
@@ -2247,6 +2340,30 @@ export async function getAvailableMediaForFeed(batchId?: string) {
   const { data, error } = await query
   if (error) throw error
   return data
+}
+
+// Get consumable batches matching a container type name (for write-off during culture creation)
+export async function getConsumableBatchesForContainerType(containerTypeName: string) {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*)')
+    .gt('quantity', 0)
+    .in('status', ['ACTIVE', 'AVAILABLE'])
+    .order('expiration_date', { ascending: true }) // FEFO
+
+  if (error) throw error
+
+  // Client-side filter: match nomenclature category = CONSUMABLE and name contains the container type
+  const filtered = (data ?? []).filter((b: any) => {
+    const nom = b.nomenclature
+    if (!nom) return false
+    if (nom.category !== 'CONSUMABLE') return false
+    const nomName = (nom.name || '').toLowerCase()
+    const ctName = containerTypeName.toLowerCase()
+    return nomName.includes(ctName) || ctName.includes(nomName)
+  })
+
+  return filtered
 }
 
 export async function createOperationFeed(data: {

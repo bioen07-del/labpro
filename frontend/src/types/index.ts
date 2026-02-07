@@ -326,7 +326,7 @@ export interface ReadyMedium {
 }
 
 // Operations
-export type OperationType = 'FEED' | 'PASSAGE' | 'FREEZE' | 'THAW' | 'OBSERVE' | 'DISPOSE' | 'QCREG'
+export type OperationType = 'SEED' | 'FEED' | 'PASSAGE' | 'FREEZE' | 'THAW' | 'OBSERVE' | 'DISPOSE' | 'QCREG'
 export type OperationStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
 
 export interface Operation {
