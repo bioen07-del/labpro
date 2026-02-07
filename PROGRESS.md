@@ -1,112 +1,69 @@
 # LabPro - Прогресс разработки
 
-## Текущий статус: Фаза 3 - Frontend (Next.js) ✅
+## Текущий статус: Фаза 11 — Тестирование
 
-### Завершённые этапы
+### Завершённые фазы
 
-#### Фаза 1: Проектирование и планирование ✅
-- [x] Изучение ТЗ и требований
-- [x] Создание схемы движения биоматериала
-- [x] Проектирование базы данных Supabase
-- [x] Составление плана реализации
+#### Фаза 1: SQL-миграция — синхронизация схемы БД с кодом
+- [x] Rename полей (type_id → container_type_id, status → container_status)
+- [x] Добавить таблицы (notifications, equipment_logs, culture_type_tissue_types)
+- [x] Расширить culture_types, container_types, tasks, equipment
+- [x] Обновить триггеры (check_lot_closure)
+- [x] P0 по умолчанию для первичной культуры
+- [x] Seed-данные: tissue_types, culture_types, container_types, morphology_types, dispose_reasons
 
-#### Фаза 2: База данных (Supabase) ✅
-- [x] Создание Supabase проекта
-- [x] Разработка схемы БД (schema.sql)
-  - Таблицы: culture_types, lots, banks, containers, operations, orders, inventory, tasks, users
-  - Политики RLS для безопасности
-  - Triggers для автоматических полей
-- [x] Создание seed данных (seed.sql)
-- [x] Настройка Supabase клиента
+#### Фаза 2: Исправить API-функции
+- [x] role в operation_containers для всех операций
+- [x] FROZEN → IN_BANK в enum container_status
+- [x] vial_count → cryo_vials_count
+- [x] Убрать несуществующие поля из INSERT
+- [x] Функция increment_passage_count
 
-#### Фаза 3: Frontend (Next.js) ✅
-- [x] Создание Next.js проекта с TypeScript
-- [x] Настройка Tailwind CSS
-- [x] Установка и настройка shadcn/ui компонентов
-- [x] Создание типов данных (src/types/index.ts)
-- [x] Создание утилит и функций (src/lib/utils.ts)
-- [x] Создание mock данных (src/lib/mock-data.ts)
-- [x] Настройка Supabase клиента
-- [x] Создание компонентов:
-  - Header (навигация)
-  - Button, Input, Badge, Card, Table
-  - Tabs, DropdownMenu
-- [x] Создание страниц:
-  - `/` - Dashboard (главная страница)
-  - `/banks` - Клеточные банки
-  - `/cultures` - Культуры
-  - `/orders` - Заявки
-  - `/inventory` - Склад
-  - `/operations` - Операции
-  - `/login` - Страница входа
-- [x] Сборка проекта прошла успешно ✅
+#### Фаза 3: Формы операций по ТЗ п.15
+- [x] Observe — конфлюэнтность, морфология, контаминация, фото
+- [x] Feed — FEFO, выбор партии, объём среды
+- [x] Passage — split ratio, метрики, среды, время, позиция
+- [x] Freeze — MCB/WCB, криовиалы, cells_per_vial, позиция, среды
+- [x] Thaw — выбор банка, криовиалы, новый лот, позиция
+- [x] Dispose — контейнеры/партии/среды, причина утилизации
 
-#### Фаза 4: Интеграция с Supabase ✅
-- [x] Создание API функций (src/lib/api.ts)
-- [x] Реализация аутентификации
-- [x] Функции для CRUD операций
-- [x] Real-time подписки
-- [x] Демо-режим для тестирования
+#### Фаза 4: Карточки сущностей по ТЗ п.15
+- [x] Culture — лоты + банки внутри, статистика
+- [x] Lot — контейнеры + кнопки операций
+- [x] Container — статус + размещение
+- [x] Bank — QC + криовиалы
+- [x] Donor — донации, история
 
-### Структура проекта
+#### Фаза 5: Списки и формы
+- [x] Donors, Ready Media, Equipment, Orders, Tasks, QC, Inventory, Users
 
-```
-LabPro/
-├── supabase/
-│   ├── schema.sql      # Схема БД
-│   └── seed.sql        # Тестовые данные
-├── frontend/           # Next.js приложение
-│   ├── src/
-│   │   ├── app/        # Страницы
-│   │   ├── components/ # UI компоненты
-│   │   ├── lib/        # Утилиты и клиенты
-│   │      # Type   └── types/Script типы
-│   └── ...
-└── PROGRESS.md
-```
+#### Фаза 6: Дашборд по ТЗ п.13
+- [x] Статистика, быстрые действия, задачи, уведомления, реальные данные
 
-### Технологический стек
+#### Фаза 7: Бизнес-логика
+- [x] Авто-задачи, авто-уведомления, FEFO, авто-закрытие лотов
 
-- **Frontend**: Next.js 16 + TypeScript + Tailwind CSS
-- **UI Components**: shadcn/ui + Radix UI
-- **Database**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
-- **Deployment**: Vercel (готов к деплою)
+#### Фаза 8: QR-сканер
+- [x] Парсинг CNT:/EQP:/CULT:/POS:/RM:/BK:, навигация к карточкам
 
-### Следующие шаги
+#### Фаза 9: Документы
+- [x] Worksheet, Culture Passport, аудит-логи на карточках
 
-1. **Интеграция с Supabase** (Фаза 4)
-   - Подключение реальных данных
-   - Реализация CRUD операций
-   - Настройка аутентификации
+#### Фаза 10: Чистка и безопасность
+- [x] Удалён mock-data.ts, убран хардкод credentials, мобильное меню (Sheet), Toaster (sonner)
 
-2. **Дополнительные страницы** (Фаза 5)
-   - Страница детализации заявки `/orders/[id]`
-   - Страница детализации банка `/banks/[id]`
-   - Формы создания/редактирования
+### Статистика
 
-3. **Мобильное приложение** (Фаза 6)
-   - React Native или Expo
-   - Сканирование QR-кодов
-   - Офлайн режим
+| Метрика | Значение |
+|---------|----------|
+| Страницы | 38 маршрутов |
+| UI-компоненты | 20 (shadcn/ui) |
+| API (api.ts) | ~2900 строк |
+| Типы (index.ts) | ~730 строк |
+| SQL миграции | 8 файлов |
 
-### Запуск проекта
-
-```bash
-# Локальный запуск
-cd LabPro/frontend
-npm run dev
-
-# Деплой на Vercel
-vercel deploy
-```
-
-### Команда разработки
-
-- AI Assistant (Cline) - основной разработчик
-- Техническое задание: ТЗ_LabPro.md
-- ТЗ для ИИ: ТЗ_LabPro_ИИ.md
+### Стек: Next.js 16.1.6 + TypeScript 5.9.3 + React 19.2.3 + Tailwind 4 + Supabase + Vercel
 
 ---
 
-*Обновлено: 31.01.2026*
+*Обновлено: 07.02.2026*

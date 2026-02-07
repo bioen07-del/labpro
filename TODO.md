@@ -1,55 +1,39 @@
-# LabPro TODO List - Боевая версия
+# LabPro TODO
 
-## Фаза 1: API функции (все сущности) ✅ ДОСТУПНО
-- [x] Cultures, Banks, Lots, Containers, Orders, Operations
-- [x] Donors, Tissues, Nomenclatures, Batches, QC Tests
-- [x] Equipment, Ready Media, Tasks
-- [ ] ContainerTypes - getAll
-- [ ] Positions - CRUD + getByQR
-- [ ] Batch Reservations - create/release
-- [ ] Inventory Movements - create
-
-## Фаза 2: Обновить страницы на реальные данные ✅ ДОСТУПНО
-- [x] Dashboard - статистика, быстрые действия
-- [x] Banks - MCB/WCB/RWB банки
-- [x] Cultures - клеточные культуры
-- [x] Orders - заказы на выдачу
-- [x] Operations - история операций
-- [x] Inventory - складской учёт
-
-## Фаза 3: Создать формы операций ✅ ДОСТУПНО
-- [x] /operations/new - форма создания операций
-- [x] Feed (подкормка), Passage (пассаж), Freeze (заморозка), Thaw (разморозка)
-- [ ] Create Culture (создание культуры)
-- [ ] Create Donor (создание донора)
-- [ ] Observe (наблюдение)
-- [ ] Dispose (утилизация)
-
-## Фаза 4: Создать недостающие страницы
-- [ ] QC Tests страница
-- [ ] Ready Media страница
-- [ ] Equipment страница
-- [ ] Donors страница
-- [ ] Tasks страница
-
-## Фаза 5: Vercel + Supabase ✅ ДОСТУПНО
-- [x] .env.example - шаблон переменных окружения
-- [x] vercel.json - конфигурация Vercel
-- [x] supabase_schema.sql - полная схема БД
-- [x] DEPLOYMENT.md - инструкция по развёртыванию
-
-## Фаза 6: Тестирование ⏳ ОЖИДАЕТ
-- [ ] Развернуть Supabase и запустить схему
-- [ ] Развернуть на Vercel
-- [ ] Проверить все CRUD операции
-- [ ] Проверить формы операций
+**Дата обновления:** 07.02.2026
+**Статус:** Фаза 11 — Тестирование
 
 ---
-## Развёртывание
 
-Следуйте инструкции в `DEPLOYMENT.md`:
-1. Создайте проект на Supabase
-2. Запустите `supabase_schema.sql` в SQL Editor
-3. Подключите репозиторий к Vercel
-4. Добавьте Environment Variables
-5. Задеплойте
+## Завершено (Фазы 1-10)
+
+- [x] SQL-миграция — синхронизация schema.sql с кодом
+- [x] API-функции — исправлены все расхождения с БД
+- [x] Формы операций — Observe, Feed, Passage, Freeze, Thaw, Dispose
+- [x] Карточки сущностей — Culture, Lot, Container, Bank, Donor
+- [x] Списки и формы — все модули
+- [x] Дашборд — статистика, задачи, уведомления
+- [x] Бизнес-логика — авто-задачи, FEFO, авто-закрытие лотов
+- [x] QR-сканер — парсинг всех типов кодов
+- [x] Документы — Worksheet, Culture Passport
+- [x] Чистка — mock-data удалён, credentials из env, мобильное меню, Toaster
+
+---
+
+## Фаза 11: Тестирование (ТЕКУЩАЯ)
+
+- [ ] E2E: Донор → Донация → Культура → Операции → Банк → Выдача
+- [ ] Все CRUD на Supabase
+- [ ] Мобильная навигация
+- [ ] Toast уведомления
+- [ ] Vercel деплой с правильными env vars
+
+---
+
+## Backlog
+
+- [ ] QR-коды — генерация и печать этикеток
+- [ ] Графики в Culture Passport
+- [ ] RBAC — RLS по ролям
+- [ ] Real-time подписки
+- [ ] PWA / офлайн-режим
