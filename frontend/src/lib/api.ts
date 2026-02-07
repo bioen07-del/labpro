@@ -129,6 +129,7 @@ export async function createCultureFromDonation(data: {
   const cultureCode = `CT-${String((cultCount || 0) + 1).padStart(4, '0')}`
 
   // 3. Создать культуру
+  // tissue_id -> FK к таблице tissues (не tissue_types), оставляем null
   const { data: culture, error: cultError } = await supabase
     .from('cultures')
     .insert({
@@ -136,7 +137,6 @@ export async function createCultureFromDonation(data: {
       type_id: data.culture_type_id,
       donor_id: donation.donor_id,
       donation_id: data.donation_id,
-      tissue_id: donation.tissue_type_id,
       extraction_method: data.extraction_method,
       passage_number: 0,
       status: 'ACTIVE',
@@ -175,7 +175,7 @@ export async function createCultureFromDonation(data: {
         lot_id: lot.id,
         container_type_id: data.container_type_id,
         position_id: data.position_id || null,
-        status: 'IN_CULTURE',
+        container_status: 'IN_CULTURE',
         passage_number: 0,
         confluent_percent: 0,
         contaminated: false,
@@ -248,9 +248,9 @@ export async function createCultureFromDonation(data: {
       await createInventoryMovement({
         batch_id: medium.batch_id || null,
         movement_type: 'CONSUME',
-        quantity_change: -data.medium_volume_ml,
-        quantity_after: newVol,
-        moved_at: now,
+        quantity: -data.medium_volume_ml,
+        reference_type: 'OPERATION',
+        reference_id: seedOp.id,
         notes: `Среда для посева ${cultureCode}`,
       })
     }
@@ -276,9 +276,9 @@ export async function createCultureFromDonation(data: {
       await createInventoryMovement({
         batch_id: data.consumable_batch_id,
         movement_type: 'CONSUME',
-        quantity_change: -data.container_count,
-        quantity_after: newQty,
-        moved_at: now,
+        quantity: -data.container_count,
+        reference_type: 'OPERATION',
+        reference_id: seedOp.id,
         notes: `Контейнеры для посева ${cultureCode} (${data.container_count} шт.)`,
       })
     }
@@ -422,7 +422,7 @@ export async function getContainers(filters?: { lot_id?: string; container_statu
     query = query.eq('lot_id', filters.lot_id)
   }
   if (filters?.container_status || filters?.status) {
-    query = query.eq('status', filters.container_status || filters.status)
+    query = query.eq('container_status', filters.container_status || filters.status)
   }
   
   const { data, error } = await query
@@ -890,7 +890,7 @@ export async function getDashboardStats() {
     supabase.from('banks').select('*', { count: 'exact', head: true }),
     supabase.from('orders').select('*', { count: 'exact', head: true }).in('status', ['PENDING', 'IN_PROGRESS']),
     supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
-    supabase.from('containers').select('*', { count: 'exact', head: true }).eq('status', 'IN_CULTURE'),
+    supabase.from('containers').select('*', { count: 'exact', head: true }).eq('container_status', 'IN_CULTURE'),
   ])
 
   return {
@@ -1260,7 +1260,7 @@ export async function submitQCResult(id: string, result: 'PASSED' | 'FAILED', no
 export async function getReadyMedia(filters?: { status?: string }) {
   let query = supabase
     .from('ready_media')
-    .select('*, storage_position:positions(*), created_by_user:users(*)')
+    .select('*')
     .order('created_at', { ascending: false })
   
   if (filters?.status) {
@@ -1275,7 +1275,7 @@ export async function getReadyMedia(filters?: { status?: string }) {
 export async function getReadyMediumById(id: string) {
   const { data, error } = await supabase
     .from('ready_media')
-    .select('*, storage_position:positions(*)')
+    .select('*')
     .eq('id', id)
     .single()
   
@@ -2348,18 +2348,20 @@ export async function getAvailableMediaForFeed(batchId?: string) {
   let query = supabase
     .from('ready_media')
     .select('*')
-    .eq('status', 'ACTIVE')
-    .gt('current_volume_ml', 0)
-    .gt('expiration_date', new Date().toISOString().split('T')[0]) // Not expired
+    .in('status', ['ACTIVE', 'PREPARED'])
     .order('expiration_date', { ascending: true }) // FEFO: earliest expiration first
-  
+
   if (batchId) {
     query = query.eq('batch_id', batchId)
   }
-  
+
   const { data, error } = await query
   if (error) throw error
-  return data
+  // Client-side filter: only media with remaining volume
+  return (data || []).filter((m: any) => {
+    const vol = m.current_volume_ml ?? m.volume_ml ?? 0
+    return vol > 0
+  })
 }
 
 // Get consumable batches matching a container type name (for write-off during culture creation)

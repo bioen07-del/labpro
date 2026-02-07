@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Loader2, Plus, Wrench, Package, TestTubes } from 'lucide-react'
+import { Loader2, Plus, Wrench, Package, TestTubes, Pencil, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -216,11 +216,12 @@ export default function ReferencesPage() {
                       <TableHead>Тип</TableHead>
                       <TableHead>Статус</TableHead>
                       <TableHead>Расположение</TableHead>
+                      <TableHead className="text-right">Действия</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {equipment.length === 0 ? (
-                      <EmptyRow colSpan={5} text="Оборудование не найдено" />
+                      <EmptyRow colSpan={6} text="Оборудование не найдено" />
                     ) : (
                       equipment.map((item) => (
                         <TableRow key={item.id}>
@@ -242,6 +243,20 @@ export default function ReferencesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>{item.location || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                                <Link href={`/equipment/${item.id}`}>
+                                  <Eye className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                              <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                                <Link href={`/equipment/${item.id}/edit`}>
+                                  <Pencil className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -278,11 +293,12 @@ export default function ReferencesPage() {
                       <TableHead>Срок годности</TableHead>
                       <TableHead>Статус</TableHead>
                       <TableHead>Поставщик</TableHead>
+                      <TableHead className="text-right">Действия</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {batches.length === 0 ? (
-                      <EmptyRow colSpan={7} text="Позиции не найдены" />
+                      <EmptyRow colSpan={8} text="Позиции не найдены" />
                     ) : (
                       batches.map((batch) => (
                         <TableRow key={batch.id}>
@@ -308,6 +324,13 @@ export default function ReferencesPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>{batch.supplier || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                              <Link href={`/inventory/${batch.id}`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -343,11 +366,12 @@ export default function ReferencesPage() {
                       <TableHead>Текущий объём (мл)</TableHead>
                       <TableHead>Статус</TableHead>
                       <TableHead>Срок годности</TableHead>
+                      <TableHead className="text-right">Действия</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {readyMedia.length === 0 ? (
-                      <EmptyRow colSpan={6} text="Среды не найдены" />
+                      <EmptyRow colSpan={7} text="Среды не найдены" />
                     ) : (
                       readyMedia.map((media) => (
                         <TableRow key={media.id}>
@@ -359,7 +383,7 @@ export default function ReferencesPage() {
                               {media.code || '-'}
                             </Link>
                           </TableCell>
-                          <TableCell>{media.name || '-'}</TableCell>
+                          <TableCell>{media.name || media.media_type || '-'}</TableCell>
                           <TableCell>{media.volume_ml ?? '-'}</TableCell>
                           <TableCell>{media.current_volume_ml ?? '-'}</TableCell>
                           <TableCell>
@@ -369,6 +393,13 @@ export default function ReferencesPage() {
                           </TableCell>
                           <TableCell>
                             {media.expiration_date ? formatDate(media.expiration_date) : '-'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+                              <Link href={`/ready-media/${media.id}`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
