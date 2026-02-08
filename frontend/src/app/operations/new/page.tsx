@@ -33,18 +33,18 @@ import {
 import { formatDate } from '@/lib/utils'
 
 // Типы операций согласно ТЗ
-type OperationType = 'PASSAGE' | 'FEED' | 'OBSERVE' | 'FREEZE' | 'THAW' | 'DISPOSE'
+type OperationType = 'PASSAGE' | 'FEEDING' | 'OBSERVE' | 'FREEZE' | 'THAW' | 'DISPOSE'
 
 const OPERATION_CONFIG: Record<OperationType, { title: string; description: string; icon: any }> = {
-  PASSAGE: { 
-    title: 'Пассажирование', 
+  PASSAGE: {
+    title: 'Пассажирование',
     description: 'Пересев культуры в новые контейнеры с увеличением пассажа',
-    icon: FlaskConical 
+    icon: FlaskConical
   },
-  FEED: { 
-    title: 'Кормление', 
+  FEEDING: {
+    title: 'Кормление',
     description: 'Замена питательной среды в контейнерах',
-    icon: Thermometer 
+    icon: Thermometer
   },
   OBSERVE: { 
     title: 'Наблюдение', 
@@ -456,12 +456,12 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
           </Card>
         </TabsContent>
         
-        {/* FEED */}
-        <TabsContent value="FEED" className="space-y-6 mt-6">
+        {/* FEEDING */}
+        <TabsContent value="FEEDING" className="space-y-6 mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>{OPERATION_CONFIG.FEED.title}</CardTitle>
-              <CardDescription>{OPERATION_CONFIG.FEED.description}</CardDescription>
+              <CardTitle>{OPERATION_CONFIG.FEEDING.title}</CardTitle>
+              <CardDescription>{OPERATION_CONFIG.FEEDING.description}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-muted-foreground mb-4">Переход на специализированную форму кормления...</p>

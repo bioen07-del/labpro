@@ -107,7 +107,6 @@ export default function EditEquipmentPage({
     type: "INCUBATOR",
     model: "",
     serial_number: "",
-    manufacturer: "",
     location: "",
     status: "ACTIVE",
     notes: "",
@@ -142,10 +141,9 @@ export default function EditEquipmentPage({
       setFormData({
         code: data.code || "",
         name: data.name || "",
-        type: data.equipment_type || data.type || "INCUBATOR",
+        type: data.type || "INCUBATOR",
         model: data.model || "",
         serial_number: data.serial_number || "",
-        manufacturer: data.manufacturer || "",
         location: data.location || "",
         status: data.status || "ACTIVE",
         notes: data.notes || "",
@@ -240,11 +238,10 @@ export default function EditEquipmentPage({
       await updateEquipment(id, {
         code: formData.code || null,
         name: formData.name,
-        equipment_type: formData.type,
+        type: formData.type,
         location: formData.location || null,
         model: formData.model || null,
         serial_number: formData.serial_number || null,
-        manufacturer: formData.manufacturer || null,
         status: formData.status,
         notes: formData.notes || null,
         current_temperature: formData.temperature ? parseFloat(formData.temperature) : null,
@@ -432,15 +429,6 @@ export default function EditEquipmentPage({
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="manufacturer">Производитель</Label>
-                <Input
-                  id="manufacturer"
-                  value={formData.manufacturer}
-                  onChange={(e) => handleChange("manufacturer", e.target.value)}
-                  placeholder="Thermo Fisher"
-                />
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="location">Расположение</Label>
                 <Input

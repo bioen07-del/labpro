@@ -105,7 +105,7 @@ export default function EquipmentPage() {
 
   const filteredEquipment = equipment.filter(item => {
     const matchesStatus = filter === "all" || item.status === filter
-    const matchesType = typeFilter === "all" || item.equipment_type === typeFilter
+    const matchesType = typeFilter === "all" || item.type === typeFilter
     const matchesSearch = !search || 
       item.name?.toLowerCase().includes(search.toLowerCase()) ||
       item.code?.toLowerCase().includes(search.toLowerCase()) ||
@@ -250,7 +250,7 @@ export default function EquipmentPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="p-3 bg-muted rounded-lg">
-                        {item.equipment_type?.includes("FREEZER") || item.equipment_type?.includes("REFRIGERATOR") ? (
+                        {item.type?.includes("FREEZER") || item.type?.includes("REFRIGERATOR") ? (
                           <Thermometer className="h-5 w-5" />
                         ) : (
                           <Settings className="h-5 w-5" />
@@ -270,7 +270,7 @@ export default function EquipmentPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>{TYPE_LABELS[item.equipment_type] || item.equipment_type}</span>
+                          <span>{TYPE_LABELS[item.type] || item.type}</span>
                           <span>Код: {item.code}</span>
                           <span>{item.location}</span>
                         </div>

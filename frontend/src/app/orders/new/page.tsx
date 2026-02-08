@@ -25,7 +25,7 @@ export default function NewOrderPage() {
   const [banks, setBanks] = useState<any[]>([])
   
   const [formData, setFormData] = useState({
-    order_type: 'OUTBOUND',
+    order_type: 'STANDARD',
     culture_type_id: '',
     bank_id: '',
     requested_cells: '',
@@ -108,28 +108,28 @@ export default function NewOrderPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div
                 className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
-                  formData.order_type === 'OUTBOUND' 
-                    ? 'border-blue-500 bg-blue-50' 
+                  formData.order_type === 'STANDARD'
+                    ? 'border-blue-500 bg-blue-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
-                onClick={() => setFormData({ ...formData, order_type: 'OUTBOUND' })}
+                onClick={() => setFormData({ ...formData, order_type: 'STANDARD' })}
               >
-                <h3 className="font-medium">Выдача</h3>
+                <h3 className="font-medium">Стандартный</h3>
                 <p className="text-sm text-muted-foreground">
-                  Забор биоматериала из банка
+                  Стандартный заказ на биоматериал
                 </p>
               </div>
               <div
                 className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
-                  formData.order_type === 'INBOUND' 
-                    ? 'border-blue-500 bg-blue-50' 
+                  formData.order_type === 'URGENT'
+                    ? 'border-red-500 bg-red-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
-                onClick={() => setFormData({ ...formData, order_type: 'INBOUND' })}
+                onClick={() => setFormData({ ...formData, order_type: 'URGENT' })}
               >
-                <h3 className="font-medium">Приём</h3>
+                <h3 className="font-medium">Срочный</h3>
                 <p className="text-sm text-muted-foreground">
-                  Приём биоматериала в банк
+                  Срочный заказ с приоритетной обработкой
                 </p>
               </div>
             </div>

@@ -30,11 +30,13 @@ import { formatDate } from "@/lib/utils"
 
 const OPERATION_TYPE_LABELS: Record<string, string> = {
   OBSERVE: "Осмотр",
-  FEED: "Подкормка",
+  FEEDING: "Подкормка",
+  SEED: "Первичный посев",
   PASSAGE: "Пассаж",
   FREEZE: "Заморозка",
   THAW: "Размораживание",
   DISPOSE: "Утилизация",
+  QC: "Контроль качества",
 }
 
 function statusBadge(status: string) {

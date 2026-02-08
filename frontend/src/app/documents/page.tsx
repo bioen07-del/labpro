@@ -280,7 +280,7 @@ function DocumentsContent() {
     }
 
     const observeOps = operations.filter((op: any) => op.type === "OBSERVE")
-    const feedOps = operations.filter((op: any) => op.type === "FEED")
+    const feedOps = operations.filter((op: any) => op.type === "FEEDING")
 
     return (
       <div className="space-y-6">

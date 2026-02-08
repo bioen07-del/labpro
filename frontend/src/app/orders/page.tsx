@@ -72,7 +72,7 @@ export default function OrdersPage() {
 
   const stats = {
     total: orders.length,
-    new: orders.filter(o => o.status === 'NEW').length,
+    new: orders.filter(o => o.status === 'PENDING').length,
     inProgress: orders.filter(o => o.status === 'IN_PROGRESS').length,
     completed: orders.filter(o => o.status === 'COMPLETED').length,
     cancelled: orders.filter(o => o.status === 'CANCELLED').length,

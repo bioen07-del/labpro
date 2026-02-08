@@ -148,7 +148,7 @@ function WorksheetContent() {
   }
 
   // Derived data
-  const lastFeedOp = operations.find((op: any) => op.type === 'FEED')
+  const lastFeedOp = operations.find((op: any) => op.type === 'FEEDING')
   const nextFeedEstimate = lastFeedOp?.completed_at
     ? addHours(new Date(lastFeedOp.completed_at), 48)
     : null

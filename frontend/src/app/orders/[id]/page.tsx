@@ -39,8 +39,9 @@ import type { Order, OrderItem } from "@/types"
 // ---------------------------------------------------------------------------
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
-  BANK_CREATION: "Создание банка",
-  ISSUANCE: "Выдача",
+  STANDARD: "Стандартный",
+  URGENT: "Срочный",
+  RESEARCH: "Исследовательский",
 }
 
 const PRIORITY_LABELS: Record<string, string> = {
@@ -51,7 +52,14 @@ const PRIORITY_LABELS: Record<string, string> = {
 }
 
 function orderTypeBadge(type: string) {
-  if (type === "BANK_CREATION") {
+  if (type === "URGENT") {
+    return (
+      <Badge variant="outline" className="border-red-300 text-red-700">
+        {ORDER_TYPE_LABELS[type] ?? type}
+      </Badge>
+    )
+  }
+  if (type === "RESEARCH") {
     return (
       <Badge variant="outline" className="border-purple-300 text-purple-700">
         {ORDER_TYPE_LABELS[type] ?? type}

@@ -235,7 +235,7 @@ export default function ReferencesPage() {
                           </TableCell>
                           <TableCell>{item.name || '-'}</TableCell>
                           <TableCell>
-                            {EQUIPMENT_TYPE_LABELS[item.equipment_type] || item.equipment_type || '-'}
+                            {EQUIPMENT_TYPE_LABELS[item.type] || item.type || '-'}
                           </TableCell>
                           <TableCell>
                             <Badge className={EQUIPMENT_STATUS_COLORS[item.status] || 'bg-gray-100 text-gray-800'}>

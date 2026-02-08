@@ -643,8 +643,9 @@ export async function createOperationDispose(data: DisposeData) {
       throw new Error('Unknown target_type')
   }
   
-  let updateField = 'status'
-  
+  // containers используют container_status, остальные — status
+  let updateField = data.target_type === 'container' ? 'container_status' : 'status'
+
   const { error: updateError } = await supabase
     .from(tableName)
     .update({ [updateField]: statusValue })
@@ -657,7 +658,7 @@ export async function createOperationDispose(data: DisposeData) {
       .from('containers')
       .select('id')
       .eq('lot_id', lot_id)
-      .neq('status', 'DISPOSE')
+      .neq('container_status', 'DISPOSE')
     
     if (!remainingContainers || remainingContainers.length === 0) {
       await supabase
@@ -1047,6 +1048,7 @@ export async function createDonationInfectionTasks(donationId: string, donationC
   for (let i = 0; i < tests.length; i++) {
     try {
       await supabase.from('tasks').insert({
+        title: `${tests[i]} — ${donationCode}`,
         type: 'QC_DUE',
         target_type: 'DONATION' as any,
         target_id: donationId,
@@ -2218,7 +2220,7 @@ export async function createOperationPassage(data: {
         lot_id: newLot.id,
         container_type_id: data.result.container_type_id,
         position_id: data.result.position_id,
-        status: 'ACTIVE',
+        container_status: 'IN_CULTURE',
         passage_number: newPassageNumber,
         confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
         code: containerCode,
@@ -2226,7 +2228,7 @@ export async function createOperationPassage(data: {
       })
       .select()
       .single()
-    
+
     if (containerError) throw containerError
     resultContainers.push(newContainer)
   }
@@ -2249,7 +2251,7 @@ export async function createOperationPassage(data: {
   for (const sourceContainer of data.source_containers) {
     const { error: disposeError } = await supabase
       .from('containers')
-      .update({ status: 'DISPOSE' })
+      .update({ container_status: 'DISPOSE' })
       .eq('id', sourceContainer.container_id)
     
     if (disposeError) throw disposeError
@@ -2414,7 +2416,7 @@ export async function createOperationFeed(data: {
     .from('operations')
     .insert({
       lot_id: data.lot_id,
-      type: 'FEED',
+      type: 'FEEDING',
       status: 'COMPLETED',
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
@@ -2473,11 +2475,11 @@ export async function createOperationFeed(data: {
         // 5. Создать inventory_movement запись (расход)
         await createInventoryMovement({
           batch_id: medium.batch_id || null,
-          operation_id: operation.id,
           movement_type: 'CONSUME',
-          quantity_change: -container.volume_ml,
-          quantity_after: Math.max(0, newVolume),
-          moved_at: new Date().toISOString()
+          quantity: -container.volume_ml,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Среда для подкормки (${container.volume_ml} мл)`,
         })
       }
     }
@@ -2637,7 +2639,7 @@ export async function createOperationFreeze(data: FreezeData) {
         culture_id: lot.culture_id,
         lot_id: data.lot_id,
         bank_type: bankType,
-        status: 'QC_PENDING', // Требует QC!
+        status: 'QUARANTINE', // Ожидает QC
         cryo_vials_count: data.cryo_vial_count,
         cells_per_vial: data.cells_per_vial,
         total_cells: data.total_cells,
@@ -2663,7 +2665,7 @@ export async function createOperationFreeze(data: FreezeData) {
       .update({
         cryo_vials_count: (existingBank?.cryo_vials_count || 0) + data.cryo_vial_count,
         total_cells: (existingBank?.total_cells || 0) + data.total_cells,
-        status: 'QC_PENDING' // Все равно требует QC!
+        status: 'QUARANTINE' // Ожидает QC
       })
       .eq('id', bankId)
   }
@@ -2729,11 +2731,11 @@ export async function createOperationFreeze(data: FreezeData) {
   
   if (ocError) throw ocError
   
-  // 7. Обновить контейнеры-источники -> FROZEN (не IN_BANK!)
+  // 7. Обновить контейнеры-источники -> IN_BANK
   for (const containerId of data.container_ids) {
     await supabase
       .from('containers')
-      .update({ status: 'IN_BANK' })
+      .update({ container_status: 'IN_BANK' })
       .eq('id', containerId)
   }
   
@@ -2855,7 +2857,7 @@ export async function createOperationThaw(data: ThawData) {
       lot_id: newLot.id,
       container_type_id: data.container_type_id,
       position_id: data.position_id,
-      status: 'ACTIVE',
+      container_status: 'IN_CULTURE',
       passage_number: newPassageNumber,
       confluent_percent: 0,
       code: containerCode,
@@ -2863,9 +2865,9 @@ export async function createOperationThaw(data: ThawData) {
     })
     .select()
     .single()
-  
+
   if (containerError) throw containerError
-  
+
   // 5. Создать Operation THAW
   const { data: operation, error: opError } = await supabase
     .from('operations')

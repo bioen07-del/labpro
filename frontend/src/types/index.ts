@@ -5,7 +5,7 @@
 export type UserRole = 'OPERATOR' | 'LABORANT' | 'MANAGER' | 'QC_ADMIN' | 'ADMIN'
 
 // Culture
-export type CultureStatus = 'ACTIVE' | 'ARCHIVED'
+export type CultureStatus = 'ACTIVE' | 'ARCHIVED' | 'DISPOSE' | 'QUARANTINE'
 
 // Способ первичного выделения клеток
 export type ExtractionMethod = 'ENZYMATIC' | 'EXPLANT' | 'MECHANICAL' | 'OTHER'
@@ -176,7 +176,7 @@ export interface Container {
   position_id?: string
   position?: Position
   parent_container_id?: string
-  status: ContainerStatus
+  container_status: ContainerStatus
   seeded_at?: string
   passage_number?: number
   cells_count?: number
@@ -207,7 +207,7 @@ export interface ContainerType {
 
 // Bank
 export type BankType = 'MCB' | 'WCB' | 'RWB'
-export type BankStatus = 'QUARANTINE' | 'QC_PENDING' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'EXPIRED' | 'DISPOSE'
+export type BankStatus = 'QUARANTINE' | 'APPROVED' | 'RESERVED' | 'ISSUED' | 'DISPOSE'
 
 export interface Bank {
   id: string
@@ -270,7 +270,7 @@ export interface Nomenclature {
   batches?: Batch[]
 }
 
-export type BatchStatus = 'ACTIVE' | 'EXPIRED' | 'DISPOSE'
+export type BatchStatus = 'AVAILABLE' | 'RESERVED' | 'USED' | 'EXPIRED' | 'QUARANTINE' | 'DISPOSE'
 
 export interface Batch {
   id: string
@@ -292,15 +292,12 @@ export interface InventoryMovement {
   id: string
   batch_id: string
   batch?: Batch
-  operation_id?: string
-  operation?: Operation
   movement_type: InventoryMovementType
-  quantity_change: number
-  quantity_after: number
+  quantity: number
+  reference_type?: string
+  reference_id?: string
   notes?: string
-  moved_by?: string
-  moved_by_user?: User
-  moved_at: string
+  created_at: string
 }
 
 // Ready Medium
@@ -326,8 +323,8 @@ export interface ReadyMedium {
 }
 
 // Operations
-export type OperationType = 'SEED' | 'FEED' | 'PASSAGE' | 'FREEZE' | 'THAW' | 'OBSERVE' | 'DISPOSE' | 'QCREG'
-export type OperationStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+export type OperationType = 'SEED' | 'FEEDING' | 'PASSAGE' | 'FREEZE' | 'THAW' | 'OBSERVE' | 'QC' | 'DISPOSE'
+export type OperationStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'ON_HOLD'
 
 export interface Operation {
   id: string
@@ -412,8 +409,8 @@ export interface QCTest {
 }
 
 // Orders
-export type OrderType = 'BANK_CREATION' | 'ISSUANCE'
-export type OrderStatus = 'NEW' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+export type OrderType = 'STANDARD' | 'URGENT' | 'RESEARCH'
+export type OrderStatus = 'PENDING' | 'APPROVED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'ON_HOLD'
 export type OrderItemStatus = 'PENDING' | 'RESERVED' | 'ISSUED'
 
 export interface Order {

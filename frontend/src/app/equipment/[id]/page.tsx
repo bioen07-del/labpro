@@ -203,10 +203,9 @@ export default function EquipmentDetailPage({
         <CardContent>
           <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
             <InfoRow label="Название" value={equipment.name || "---"} />
-            <InfoRow label="Тип" value={typeLabel(equipment.equipment_type || equipment.type)} />
+            <InfoRow label="Тип" value={typeLabel(equipment.type)} />
             <InfoRow label="Модель" value={equipment.model || "---"} />
             <InfoRow label="Серийный номер" value={equipment.serial_number || "---"} />
-            <InfoRow label="Производитель" value={equipment.manufacturer || "---"} />
             <InfoRow
               label="Расположение"
               value={equipment.location || "---"}
@@ -218,13 +217,13 @@ export default function EquipmentDetailPage({
               badge={statusBadge(equipment.status)}
             />
             <InfoRow
-              label="Дата калибровки"
-              value={equipment.calibration_date ? formatDate(equipment.calibration_date) : "---"}
+              label="Дата валидации"
+              value={equipment.validation_date ? formatDate(equipment.validation_date) : "---"}
               icon={<Calendar className="h-3.5 w-3.5 text-muted-foreground" />}
             />
             <InfoRow
-              label="Следующая калибровка"
-              value={equipment.next_calibration_date ? formatDate(equipment.next_calibration_date) : "---"}
+              label="Следующая валидация"
+              value={equipment.next_validation ? formatDate(equipment.next_validation) : "---"}
               icon={<Calendar className="h-3.5 w-3.5 text-muted-foreground" />}
             />
             {equipment.current_temperature != null && (
