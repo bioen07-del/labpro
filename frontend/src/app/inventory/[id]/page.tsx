@@ -2,12 +2,22 @@
 
 import { use, useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, Loader2, AlertCircle, AlertTriangle, Package } from "lucide-react"
+import { ArrowLeft, Loader2, AlertCircle, AlertTriangle, Package, Pencil, Save, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -15,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getBatchById } from "@/lib/api"
+import { getBatchById, updateBatch } from "@/lib/api"
 import { formatDate, daysUntilExpiration, getExpirationWarningLevel } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -93,6 +103,19 @@ export default function BatchDetailPage({
   const [batch, setBatch] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Edit mode
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editData, setEditData] = useState({
+    batch_number: '',
+    quantity: '',
+    unit: '',
+    status: '',
+    supplier: '',
+    expiration_date: '',
+    notes: '',
+  })
+
   useEffect(() => {
     loadBatch()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -109,6 +132,42 @@ export default function BatchDetailPage({
       toast.error(msg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  function startEditing() {
+    setEditData({
+      batch_number: batch.batch_number || '',
+      quantity: batch.quantity != null ? String(batch.quantity) : '',
+      unit: batch.unit || '',
+      status: batch.status || '',
+      supplier: batch.supplier || '',
+      expiration_date: batch.expiration_date ? batch.expiration_date.split('T')[0] : '',
+      notes: batch.notes || '',
+    })
+    setEditing(true)
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      const updates: Record<string, unknown> = {
+        batch_number: editData.batch_number || undefined,
+        quantity: editData.quantity ? parseFloat(editData.quantity) : undefined,
+        unit: editData.unit || undefined,
+        status: editData.status || undefined,
+        supplier: editData.supplier || undefined,
+        expiration_date: editData.expiration_date || undefined,
+        notes: editData.notes || undefined,
+      }
+      await updateBatch(id, updates)
+      toast.success('Партия обновлена')
+      setEditing(false)
+      await loadBatch()
+    } catch (err: any) {
+      toast.error(`Ошибка: ${err?.message || 'Неизвестная ошибка'}`)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -167,6 +226,25 @@ export default function BatchDetailPage({
             </h1>
           </div>
         </div>
+        <div className="flex gap-2">
+          {editing ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>
+                <X className="h-4 w-4 mr-1" />
+                Отмена
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                Сохранить
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" size="sm" onClick={startEditing}>
+              <Pencil className="h-4 w-4 mr-1" />
+              Редактировать
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Expiration warning */}
@@ -181,134 +259,229 @@ export default function BatchDetailPage({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableBody>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground w-[200px]">
-                  Номер партии
-                </TableCell>
-                <TableCell>{batch.batch_number || "---"}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Номенклатура
-                </TableCell>
-                <TableCell>{nomenclatureName}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Количество
-                </TableCell>
-                <TableCell>
-                  {batch.quantity != null ? batch.quantity : "---"}{" "}
-                  {batch.unit || ""}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Единица измерения
-                </TableCell>
-                <TableCell>{batch.unit || "---"}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Статус
-                </TableCell>
-                <TableCell>{statusBadge(batch.status)}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Срок годности
-                </TableCell>
-                <TableCell>
-                  {batch.expiration_date ? (
-                    <div className="flex items-center gap-2">
-                      <span>{formatDate(batch.expiration_date)}</span>
-                      {(() => {
-                        const daysLeft = daysUntilExpiration(batch.expiration_date)
-                        if (daysLeft !== null && daysLeft > 0) {
-                          return (
-                            <Badge variant="outline" className="text-xs">
-                              {daysLeft} дн.
-                            </Badge>
-                          )
-                        }
-                        return null
-                      })()}
-                    </div>
-                  ) : (
-                    "---"
-                  )}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Поставщик
-                </TableCell>
-                <TableCell>{batch.supplier || "---"}</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="font-medium text-muted-foreground">
-                  Примечания
-                </TableCell>
-                <TableCell>{batch.notes || "---"}</TableCell>
-              </TableRow>
-              {batch.nomenclature?.category && (
+          {editing ? (
+            /* Edit form */
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="batch_number">Номер партии</Label>
+                  <Input
+                    id="batch_number"
+                    value={editData.batch_number}
+                    onChange={(e) => setEditData(prev => ({ ...prev, batch_number: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="status">Статус</Label>
+                  <Select value={editData.status} onValueChange={(val) => setEditData(prev => ({ ...prev, status: val }))}>
+                    <SelectTrigger id="status">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AVAILABLE">В наличии</SelectItem>
+                      <SelectItem value="RESERVED">Зарезервировано</SelectItem>
+                      <SelectItem value="EXPIRED">Просрочено</SelectItem>
+                      <SelectItem value="DEPLETED">Израсходовано</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Количество</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={editData.quantity}
+                    onChange={(e) => setEditData(prev => ({ ...prev, quantity: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="unit">Единица измерения</Label>
+                  <Input
+                    id="unit"
+                    value={editData.unit}
+                    onChange={(e) => setEditData(prev => ({ ...prev, unit: e.target.value }))}
+                    placeholder="шт., мл, г..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expiration_date">Срок годности</Label>
+                  <Input
+                    id="expiration_date"
+                    type="date"
+                    value={editData.expiration_date}
+                    onChange={(e) => setEditData(prev => ({ ...prev, expiration_date: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="supplier">Поставщик</Label>
+                <Input
+                  id="supplier"
+                  value={editData.supplier}
+                  onChange={(e) => setEditData(prev => ({ ...prev, supplier: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Примечания</Label>
+                <Textarea
+                  id="notes"
+                  value={editData.notes}
+                  onChange={(e) => setEditData(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+
+              {/* Read-only fields */}
+              {batch.nomenclature && (
+                <div className="pt-2 border-t space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Номенклатура (только чтение)</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">{nomenclatureName}</Badge>
+                    {batch.nomenclature.category && (
+                      <Badge variant="secondary">{batch.nomenclature.category}</Badge>
+                    )}
+                    {batch.nomenclature.container_type?.name && (
+                      <Badge variant="secondary">{batch.nomenclature.container_type.name}</Badge>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Read-only table */
+            <Table>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground w-[200px]">
+                    Номер партии
+                  </TableCell>
+                  <TableCell>{batch.batch_number || "---"}</TableCell>
+                </TableRow>
                 <TableRow>
                   <TableCell className="font-medium text-muted-foreground">
-                    Категория
+                    Номенклатура
+                  </TableCell>
+                  <TableCell>{nomenclatureName}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Количество
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{batch.nomenclature.category}</Badge>
+                    {batch.quantity != null ? batch.quantity : "---"}{" "}
+                    {batch.unit || ""}
                   </TableCell>
                 </TableRow>
-              )}
-              {batch.nomenclature?.container_type && (
-                <>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Единица измерения
+                  </TableCell>
+                  <TableCell>{batch.unit || "---"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Статус
+                  </TableCell>
+                  <TableCell>{statusBadge(batch.status)}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Срок годности
+                  </TableCell>
+                  <TableCell>
+                    {batch.expiration_date ? (
+                      <div className="flex items-center gap-2">
+                        <span>{formatDate(batch.expiration_date)}</span>
+                        {(() => {
+                          const daysLeft = daysUntilExpiration(batch.expiration_date)
+                          if (daysLeft !== null && daysLeft > 0) {
+                            return (
+                              <Badge variant="outline" className="text-xs">
+                                {daysLeft} дн.
+                              </Badge>
+                            )
+                          }
+                          return null
+                        })()}
+                      </div>
+                    ) : (
+                      "---"
+                    )}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Поставщик
+                  </TableCell>
+                  <TableCell>{batch.supplier || "---"}</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Примечания
+                  </TableCell>
+                  <TableCell>{batch.notes || "---"}</TableCell>
+                </TableRow>
+                {batch.nomenclature?.category && (
                   <TableRow>
                     <TableCell className="font-medium text-muted-foreground">
-                      Тип контейнера
+                      Категория
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">
-                        {batch.nomenclature.container_type.name || "---"}
-                      </Badge>
+                      <Badge variant="outline">{batch.nomenclature.category}</Badge>
                     </TableCell>
                   </TableRow>
-                  {batch.nomenclature.container_type.surface_area_cm2 != null && (
+                )}
+                {batch.nomenclature?.container_type && (
+                  <>
                     <TableRow>
                       <TableCell className="font-medium text-muted-foreground">
-                        Площадь поверхности
+                        Тип контейнера
                       </TableCell>
                       <TableCell>
-                        {batch.nomenclature.container_type.surface_area_cm2} см²
+                        <Badge variant="secondary">
+                          {batch.nomenclature.container_type.name || "---"}
+                        </Badge>
                       </TableCell>
                     </TableRow>
-                  )}
-                  {batch.nomenclature.container_type.volume_ml != null && (
-                    <TableRow>
-                      <TableCell className="font-medium text-muted-foreground">
-                        Рабочий объём
-                      </TableCell>
-                      <TableCell>
-                        {batch.nomenclature.container_type.volume_ml} мл
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {batch.nomenclature.container_type.optimal_confluent != null && (
-                    <TableRow>
-                      <TableCell className="font-medium text-muted-foreground">
-                        Оптимальная конфлюэнтность
-                      </TableCell>
-                      <TableCell>
-                        {batch.nomenclature.container_type.optimal_confluent}%
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </>
-              )}
-            </TableBody>
-          </Table>
+                    {batch.nomenclature.container_type.surface_area_cm2 != null && (
+                      <TableRow>
+                        <TableCell className="font-medium text-muted-foreground">
+                          Площадь поверхности
+                        </TableCell>
+                        <TableCell>
+                          {batch.nomenclature.container_type.surface_area_cm2} см²
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {batch.nomenclature.container_type.volume_ml != null && (
+                      <TableRow>
+                        <TableCell className="font-medium text-muted-foreground">
+                          Рабочий объём
+                        </TableCell>
+                        <TableCell>
+                          {batch.nomenclature.container_type.volume_ml} мл
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {batch.nomenclature.container_type.optimal_confluent != null && (
+                      <TableRow>
+                        <TableCell className="font-medium text-muted-foreground">
+                          Оптимальная конфлюэнтность
+                        </TableCell>
+                        <TableCell>
+                          {batch.nomenclature.container_type.optimal_confluent}%
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

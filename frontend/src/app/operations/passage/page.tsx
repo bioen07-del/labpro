@@ -299,14 +299,6 @@ function PassagePageInner() {
   const seedVolumePerContainer = parseFloat(seedVolume) || 0
   const totalSeedVolume = seedVolumePerContainer * totalNewContainers
 
-  // Cells per cm² calculation
-  const totalSurfaceArea = resultRows.reduce((sum, row) => {
-    const ct = filteredContainerTypes.find((t) => t.id === row.containerTypeId)
-    const count = parseInt(row.count, 10) || 0
-    return sum + (ct?.surface_area_cm2 ?? 0) * count
-  }, 0)
-  const cellsPerCm2 = totalSurfaceArea > 0 ? (totalCellsMillions * 1_000_000) / totalSurfaceArea : 0
-
   // Find seed medium details for volume checking
   const seedMediumParsed = parseMediumId(seedMediumId)
   const seedMediumObj = seedMediumParsed?.type === 'ready_medium'
@@ -339,6 +331,15 @@ function PassagePageInner() {
       return !name.includes('CRYO')
     })
   }, [containerStock])
+
+  // Cells per cm² calculation (uses containerStock, must be after it)
+  const totalSurfaceArea = resultRows.reduce((sum, row) => {
+    const batch = containerStock.find(b => b.id === row.stockBatchId)
+    const area = batch?.nomenclature?.container_type?.surface_area_cm2 ?? 0
+    const count = parseInt(row.count, 10) || 0
+    return sum + area * count
+  }, 0)
+  const cellsPerCm2 = totalSurfaceArea > 0 ? (totalCellsMillions * 1_000_000) / totalSurfaceArea : 0
 
   // Combined list of all media/reagents for selection
   const allMediaOptions = useMemo(() => {
