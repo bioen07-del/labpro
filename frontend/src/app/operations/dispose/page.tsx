@@ -90,16 +90,23 @@ function DisposePageInner() {
         const paramType = searchParams.get('type') as TargetType | null
         const paramId = searchParams.get('id')
         const paramLotId = searchParams.get('lot_id')
+        const paramContainerIds = searchParams.get('container_ids') // comma-separated
+        const paramReason = searchParams.get('reason')
 
         if (paramType && ['container', 'batch', 'ready_medium'].includes(paramType)) {
           setTargetType(paramType)
         }
 
+        // Pre-fill reason if provided (e.g. from contamination alert)
+        if (paramReason && reasonsData) {
+          const matchedReason = reasonsData.find((r: DisposeReason) => r.code === paramReason)
+          if (matchedReason) {
+            setReason(matchedReason.code || matchedReason.name)
+          }
+        }
+
         if (paramType === 'container' && paramId) {
           // Find which lot the container belongs to, or just select it
-          // The link passes ?type=container&id=X from container detail page
-          // We need to find the lot and load containers
-          // For now we'll just pre-select the container when its lot is found
           for (const lot of (lotsData || [])) {
             try {
               const containersData = await getContainersByLot(lot.id)
@@ -115,13 +122,39 @@ function DisposePageInner() {
             }
           }
         } else if (paramLotId) {
+          // Auto-link lot from culture card with optional container IDs
           setTargetType('container')
           setSelectedLotId(paramLotId)
           try {
             const data = await getContainersByLot(paramLotId)
-            setContainers((data || []).filter((c: any) => (c.container_status || c.status) !== 'DISPOSE'))
+            const filtered = (data || []).filter((c: any) => (c.container_status || c.status) !== 'DISPOSE')
+            setContainers(filtered)
+            // Pre-select specific containers if provided (e.g. contaminated ones)
+            if (paramContainerIds) {
+              const ids = paramContainerIds.split(',').filter(Boolean)
+              setSelectedContainerIds(ids.filter(id => filtered.some((c: any) => c.id === id)))
+            }
           } catch (err) {
             console.error('Error loading containers from URL param:', err)
+          }
+        } else if (paramContainerIds) {
+          // Container IDs passed without lot - find the lot automatically
+          const ids = paramContainerIds.split(',').filter(Boolean)
+          setTargetType('container')
+          for (const lot of (lotsData || [])) {
+            try {
+              const containersData = await getContainersByLot(lot.id)
+              const filtered = (containersData || []).filter((c: any) => (c.container_status || c.status) !== 'DISPOSE')
+              const matching = ids.filter(id => filtered.some((c: any) => c.id === id))
+              if (matching.length > 0) {
+                setSelectedLotId(lot.id)
+                setContainers(filtered)
+                setSelectedContainerIds(matching)
+                break
+              }
+            } catch (_) {
+              // continue
+            }
           }
         }
       } catch (error) {
@@ -431,12 +464,32 @@ function DisposePageInner() {
                                     {container.container_type.name}
                                   </span>
                                 )}
+                                {container.contaminated && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    Контаминация
+                                  </Badge>
+                                )}
                               </div>
                             </div>
                             <div className="text-sm text-right shrink-0">
-                              <span className="text-muted-foreground">Статус: </span>
-                              <Badge variant="outline" className="text-xs">
-                                {container.status}
+                              {container.confluent_percent != null && (
+                                <span className="text-muted-foreground text-xs mr-2">
+                                  Конф: {container.confluent_percent}%
+                                </span>
+                              )}
+                              <Badge
+                                variant={
+                                  (container.container_status || container.status) === 'QUARANTINE'
+                                    ? 'destructive'
+                                    : 'outline'
+                                }
+                                className="text-xs"
+                              >
+                                {(container.container_status || container.status) === 'QUARANTINE'
+                                  ? 'Карантин'
+                                  : (container.container_status || container.status) === 'IN_CULTURE'
+                                  ? 'В работе'
+                                  : (container.container_status || container.status)}
                               </Badge>
                             </div>
                           </div>

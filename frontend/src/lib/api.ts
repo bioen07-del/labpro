@@ -640,8 +640,8 @@ export async function createOperationObserve(data: {
           type: 'CONTAMINATION',
           title: 'Контаминация обнаружена!',
           message: `Контейнер в лоте помечен как контаминированный. Рекомендуется утилизация.`,
-          related_type: 'CONTAINER',
-          related_id: container.container_id,
+          link_type: 'CONTAINER',
+          link_id: container.container_id,
           is_read: false,
         })
       } catch (notifErr) {
@@ -2177,7 +2177,7 @@ export interface PassageSourceData {
 }
 
 export interface PassageResultData {
-  container_groups: { container_type_id: string; target_count: number }[]
+  container_groups: { container_type_id: string; target_count: number; consumable_batch_id?: string }[]
   position_id: string // позиция для новых контейнеров
 }
 
@@ -2304,6 +2304,24 @@ export async function createOperationPassage(data: {
     }
   }
   
+  // 5b. Списание расходников (контейнеров) со склада
+  for (const group of data.result.container_groups) {
+    if (group.consumable_batch_id) {
+      try {
+        await createInventoryMovement({
+          batch_id: group.consumable_batch_id,
+          movement_type: 'CONSUME',
+          quantity: -group.target_count,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Контейнеры для пассажа (${group.target_count} шт.)`,
+        })
+      } catch (moveErr) {
+        console.error('Failed to create inventory movement for consumables:', moveErr)
+      }
+    }
+  }
+
   // 6. Записать RESULT контейнеры в operation_containers
   const resultOperationContainers = resultContainers.map(container => ({
     operation_id: operation.id,
@@ -2311,13 +2329,13 @@ export async function createOperationPassage(data: {
     role: 'RESULT',
     confluent_percent: 0
   }))
-  
+
   const { error: resultOcError } = await supabase
     .from('operation_containers')
     .insert(resultOperationContainers)
-  
+
   if (resultOcError) throw resultOcError
-  
+
   // 7. Обновить SOURCE контейнеры -> DISPOSE
   for (const sourceContainer of data.source_containers) {
     const { error: disposeError } = await supabase
@@ -2400,7 +2418,29 @@ export async function createOperationPassage(data: {
 
     if (mediaError) throw mediaError
   }
-  
+
+  // 9b. Обновить current_volume_ml у seed ReadyMedia
+  if (data.media.seed_rm_id && data.media.seed_volume_ml && data.media.seed_volume_ml > 0) {
+    try {
+      const { data: seedMedium } = await supabase
+        .from('ready_media')
+        .select('current_volume_ml, volume_ml')
+        .eq('id', data.media.seed_rm_id)
+        .single()
+
+      if (seedMedium) {
+        const currentVol = seedMedium.current_volume_ml ?? seedMedium.volume_ml ?? 0
+        const newVol = Math.max(0, currentVol - data.media.seed_volume_ml)
+        await supabase
+          .from('ready_media')
+          .update({ current_volume_ml: newVol })
+          .eq('id', data.media.seed_rm_id)
+      }
+    } catch (volErr) {
+      console.error('Failed to update seed medium volume:', volErr)
+    }
+  }
+
   // 10. Создать auto-task INSPECT для новых контейнеров
   for (const newContainer of resultContainers) {
     await createAutoTask({

@@ -278,9 +278,12 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
   )
   const maxPassage = lots.reduce((max, l) => Math.max(max, l.passage_number || 0), 0)
 
-  // Contamination check across all containers
+  // Contamination check across all non-disposed containers
   const contaminatedContainers = lots.flatMap(l =>
-    (l.containers || []).filter((c: Container) => (c as any).contaminated === true)
+    (l.containers || []).filter((c: Container) =>
+      (c as any).contaminated === true &&
+      (c.container_status || (c as any).status) !== 'DISPOSE'
+    )
   )
   const hasContamination = contaminatedContainers.length > 0
 
@@ -307,7 +310,18 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => router.push('/operations/dispose')}
+              onClick={() => {
+                const containerIds = contaminatedContainers.map((c: Container) => c.id).join(',')
+                // Find the lot(s) for the contaminated containers
+                const lotId = lots.find(l => (l.containers || []).some((c: Container) => contaminatedContainers.some((cc: Container) => cc.id === c.id)))?.id
+                const params = new URLSearchParams({
+                  type: 'container',
+                  reason: 'CONTAMINATION',
+                  container_ids: containerIds,
+                  ...(lotId ? { lot_id: lotId } : {}),
+                })
+                router.push(`/operations/dispose?${params.toString()}`)
+              }}
             >
               <Trash2 className="h-4 w-4 mr-1" />
               Утилизировать

@@ -34,6 +34,11 @@ function FeedPageInner() {
   const [volumeMl, setVolumeMl] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
 
+  // Individual feeding mode: per-container media + volume
+  const [individualMode, setIndividualMode] = useState(false)
+  const [perContainerMedia, setPerContainerMedia] = useState<Record<string, string>>({})  // containerId -> mediumId
+  const [perContainerVolume, setPerContainerVolume] = useState<Record<string, string>>({}) // containerId -> volume
+
   const [submitting, setSubmitting] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
 
@@ -131,12 +136,15 @@ function FeedPageInner() {
   }
 
   // --- submit ---
-  const canSubmit =
-    selectedLotId !== '' &&
-    selectedContainers.length > 0 &&
-    selectedMediumId !== '' &&
-    volumeMl !== '' &&
-    Number(volumeMl) > 0
+  const canSubmit = (() => {
+    if (selectedLotId === '' || selectedContainers.length === 0) return false
+    if (individualMode) {
+      return selectedContainers.every(cid =>
+        perContainerMedia[cid] && perContainerVolume[cid] && Number(perContainerVolume[cid]) > 0
+      )
+    }
+    return selectedMediumId !== '' && volumeMl !== '' && Number(volumeMl) > 0
+  })()
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -145,8 +153,8 @@ function FeedPageInner() {
     try {
       const containersPayload = selectedContainers.map(containerId => ({
         container_id: containerId,
-        medium_id: selectedMediumId,
-        volume_ml: Number(volumeMl),
+        medium_id: individualMode ? perContainerMedia[containerId] : selectedMediumId,
+        volume_ml: individualMode ? Number(perContainerVolume[containerId]) : Number(volumeMl),
       }))
 
       await createOperationFeed({
@@ -312,96 +320,170 @@ function FeedPageInner() {
             </div>
           )}
 
-          {/* 3. Ready medium selection */}
-          <div className="space-y-2">
-            <Label htmlFor="medium">Готовая среда</Label>
-            <Select value={selectedMediumId} onValueChange={setSelectedMediumId}>
-              <SelectTrigger id="medium">
-                <SelectValue placeholder="Выберите среду..." />
-              </SelectTrigger>
-              <SelectContent>
-                {media.map((m: any, index: number) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.code || m.name}
-                    {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
-                    {m.current_volume_ml != null && ` | ${m.current_volume_ml} мл`}
-                    {index === 0 && ' (FEFO)'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* 3. Feeding mode toggle */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="individual-mode"
+              checked={individualMode}
+              onCheckedChange={(checked) => setIndividualMode(checked === true)}
+            />
+            <Label htmlFor="individual-mode" className="cursor-pointer text-sm">
+              Индивидуальное кормление (разная среда/объём для каждого контейнера)
+            </Label>
+          </div>
 
-            {/* FEFO indicator / warning */}
-            {selectedMediumId && (
-              <div className="flex items-center gap-2 mt-1">
-                {isFefo ? (
-                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                    FEFO ✓
-                  </Badge>
-                ) : (
-                  <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-                    Не FEFO ⚠
-                  </Badge>
+          {!individualMode ? (
+            <>
+              {/* 3a. Shared medium selection */}
+              <div className="space-y-2">
+                <Label htmlFor="medium">Готовая среда</Label>
+                <Select value={selectedMediumId} onValueChange={setSelectedMediumId}>
+                  <SelectTrigger id="medium">
+                    <SelectValue placeholder="Выберите среду..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {media.map((m: any, index: number) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code || m.name}
+                        {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
+                        {m.current_volume_ml != null && ` | ${m.current_volume_ml} мл`}
+                        {index === 0 && ' (FEFO)'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* FEFO indicator / warning */}
+                {selectedMediumId && (
+                  <div className="flex items-center gap-2 mt-1">
+                    {isFefo ? (
+                      <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                        FEFO ✓
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+                        Не FEFO ⚠
+                      </Badge>
+                    )}
+
+                    {selectedMedium && (
+                      <span className="text-sm text-muted-foreground">
+                        {selectedMedium.name || selectedMedium.code}
+                        {selectedMedium.expiration_date &&
+                          ` | Годен до: ${formatDate(selectedMedium.expiration_date)}`}
+                        {selectedMedium.current_volume_ml != null &&
+                          ` | Остаток: ${selectedMedium.current_volume_ml} мл`}
+                      </span>
+                    )}
+                  </div>
                 )}
 
-                {selectedMedium && (
-                  <span className="text-sm text-muted-foreground">
-                    {selectedMedium.name || selectedMedium.code}
-                    {selectedMedium.expiration_date &&
-                      ` | Годен до: ${formatDate(selectedMedium.expiration_date)}`}
-                    {selectedMedium.current_volume_ml != null &&
-                      ` | Остаток: ${selectedMedium.current_volume_ml} мл`}
-                  </span>
+                {selectedMediumId && !isFefo && earliestMedium && (
+                  <Alert className="mt-2 border-yellow-300 bg-yellow-50">
+                    <AlertCircle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800">
+                      Внимание: по принципу FEFO следует использовать среду{' '}
+                      <strong>{earliestMedium.code || earliestMedium.name}</strong> (годна до{' '}
+                      {formatDate(earliestMedium.expiration_date)}).
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
-            )}
 
-            {selectedMediumId && !isFefo && earliestMedium && (
-              <Alert className="mt-2 border-yellow-300 bg-yellow-50">
-                <AlertCircle className="h-4 w-4 text-yellow-600" />
-                <AlertDescription className="text-yellow-800">
-                  Внимание: по принципу FEFO следует использовать среду{' '}
-                  <strong>{earliestMedium.code || earliestMedium.name}</strong> (годна до{' '}
-                  {formatDate(earliestMedium.expiration_date)}).
-                </AlertDescription>
-              </Alert>
-            )}
-          </div>
-
-          {/* 4. Volume per container */}
-          <div className="space-y-2">
-            <Label htmlFor="volume">Объём на контейнер, мл</Label>
-            <Input
-              id="volume"
-              type="number"
-              min={0}
-              step="0.1"
-              placeholder="Введите объём (мл)..."
-              value={volumeMl}
-              onChange={e => setVolumeMl(e.target.value)}
-            />
-            {selectedContainers.length > 0 && volumeMl !== '' && Number(volumeMl) > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Итого: {(Number(volumeMl) * selectedContainers.length).toFixed(1)} мл на{' '}
-                {selectedContainers.length} контейнер(ов)
-              </p>
-            )}
-            {selectedMedium &&
-              selectedContainers.length > 0 &&
-              volumeMl !== '' &&
-              Number(volumeMl) > 0 &&
-              Number(volumeMl) * selectedContainers.length >
-                (selectedMedium.current_volume_ml ?? 0) && (
-                <Alert className="border-red-300 bg-red-50">
-                  <AlertCircle className="h-4 w-4 text-red-600" />
-                  <AlertDescription className="text-red-800">
-                    Недостаточно среды. Требуется{' '}
-                    {(Number(volumeMl) * selectedContainers.length).toFixed(1)} мл, доступно{' '}
-                    {selectedMedium.current_volume_ml ?? 0} мл.
-                  </AlertDescription>
-                </Alert>
-              )}
-          </div>
+              {/* 4a. Shared volume per container */}
+              <div className="space-y-2">
+                <Label htmlFor="volume">Объём на контейнер, мл</Label>
+                <Input
+                  id="volume"
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  placeholder="Введите объём (мл)..."
+                  value={volumeMl}
+                  onChange={e => setVolumeMl(e.target.value)}
+                />
+                {selectedContainers.length > 0 && volumeMl !== '' && Number(volumeMl) > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Итого: {(Number(volumeMl) * selectedContainers.length).toFixed(1)} мл на{' '}
+                    {selectedContainers.length} контейнер(ов)
+                  </p>
+                )}
+                {selectedMedium &&
+                  selectedContainers.length > 0 &&
+                  volumeMl !== '' &&
+                  Number(volumeMl) > 0 &&
+                  Number(volumeMl) * selectedContainers.length >
+                    (selectedMedium.current_volume_ml ?? 0) && (
+                    <Alert className="border-red-300 bg-red-50">
+                      <AlertCircle className="h-4 w-4 text-red-600" />
+                      <AlertDescription className="text-red-800">
+                        Недостаточно среды. Требуется{' '}
+                        {(Number(volumeMl) * selectedContainers.length).toFixed(1)} мл, доступно{' '}
+                        {selectedMedium.current_volume_ml ?? 0} мл.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+              </div>
+            </>
+          ) : (
+            /* 3b+4b. Individual per-container media + volume */
+            selectedContainers.length > 0 && (
+              <div className="space-y-3">
+                <Label>Среда и объём для каждого контейнера</Label>
+                {selectedContainers.map(cid => {
+                  const container = containers.find((c: any) => c.id === cid)
+                  return (
+                    <div key={cid} className="border rounded-lg p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{container?.code || cid}</Badge>
+                        {container?.container_type?.name && (
+                          <span className="text-xs text-muted-foreground">{container.container_type.name}</span>
+                        )}
+                        {container?.confluent_percent != null && (
+                          <span className="text-xs text-muted-foreground">Конф: {container.confluent_percent}%</span>
+                        )}
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-[1fr_120px]">
+                        <Select
+                          value={perContainerMedia[cid] || ''}
+                          onValueChange={(val) => setPerContainerMedia(prev => ({ ...prev, [cid]: val }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Выберите среду..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {media.map((m: any, index: number) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.code || m.name}
+                                {m.current_volume_ml != null && ` (${m.current_volume_ml} мл)`}
+                                {index === 0 && ' FEFO'}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.1"
+                          placeholder="мл"
+                          className="h-8 text-xs"
+                          value={perContainerVolume[cid] || ''}
+                          onChange={(e) => setPerContainerVolume(prev => ({ ...prev, [cid]: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+                {/* Total volume summary */}
+                {selectedContainers.length > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Итого: {selectedContainers.reduce((sum, cid) => sum + (Number(perContainerVolume[cid]) || 0), 0).toFixed(1)} мл
+                    на {selectedContainers.length} контейнер(ов)
+                  </p>
+                )}
+              </div>
+            )
+          )}
 
           {/* 5. Notes */}
           <div className="space-y-2">
