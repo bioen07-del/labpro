@@ -81,6 +81,7 @@ interface Position {
   path: string
   qr_code: string | null
   is_active: boolean
+  parent_id: string | null
   isNew?: boolean // for newly added positions not yet saved
 }
 
@@ -121,12 +122,14 @@ export default function EditEquipmentPage({
   const [showAddPosition, setShowAddPosition] = useState(false)
   const [newPositionPath, setNewPositionPath] = useState("")
   const [newPositionQR, setNewPositionQR] = useState("")
+  const [newPositionParentId, setNewPositionParentId] = useState<string | null>(null)
 
   // Bulk add dialog
   const [showBulkAdd, setShowBulkAdd] = useState(false)
   const [bulkPrefix, setBulkPrefix] = useState("")
   const [bulkFrom, setBulkFrom] = useState(1)
   const [bulkTo, setBulkTo] = useState(10)
+  const [bulkParentId, setBulkParentId] = useState<string | null>(null)
 
   // ---- Load data -----------------------------------------------------------
   useEffect(() => {
@@ -155,6 +158,7 @@ export default function EditEquipmentPage({
           path: p.path || "",
           qr_code: p.qr_code || null,
           is_active: p.is_active !== false,
+          parent_id: p.parent_id || null,
         }))
       )
     } catch (err: any) {
@@ -182,12 +186,29 @@ export default function EditEquipmentPage({
         path: newPositionPath.trim(),
         qr_code: newPositionQR.trim() || null,
         is_active: true,
+        parent_id: newPositionParentId,
         isNew: true,
       },
     ])
     setNewPositionPath("")
     setNewPositionQR("")
+    setNewPositionParentId(null)
     setShowAddPosition(false)
+  }
+
+  function openAddChild(parentId: string) {
+    setNewPositionParentId(parentId)
+    setNewPositionPath("")
+    setNewPositionQR("")
+    setShowAddPosition(true)
+  }
+
+  function openBulkAddChild(parentId: string) {
+    setBulkParentId(parentId)
+    setBulkPrefix("")
+    setBulkFrom(1)
+    setBulkTo(10)
+    setShowBulkAdd(true)
   }
 
   function bulkAddPositions() {
@@ -204,14 +225,16 @@ export default function EditEquipmentPage({
       const tempId = `new-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`
       newOnes.push({
         id: tempId,
-        path: `${bulkPrefix.trim()}/${i}`,
+        path: `${bulkPrefix.trim()} ${i}`,
         qr_code: null,
         is_active: true,
+        parent_id: bulkParentId,
         isNew: true,
       })
     }
     setPositions((prev) => [...prev, ...newOnes])
     setShowBulkAdd(false)
+    setBulkParentId(null)
     toast.success(`Добавлено ${newOnes.length} позиций`)
   }
 
@@ -256,20 +279,26 @@ export default function EditEquipmentPage({
         }
       }
 
-      // 3. Create new positions
+      // 3. Create new positions (parents first, then children)
+      // Map old temp IDs to real IDs for parent references
+      const idMap = new Map<string, string>()
+
+      // First pass: create parent positions (no parent_id)
       for (const pos of positions) {
-        if (pos.isNew) {
+        if (pos.isNew && !pos.parent_id) {
           try {
-            await createPosition({
+            const created = await createPosition({
               equipment_id: id,
               path: pos.path,
               qr_code: pos.qr_code || null,
               is_active: pos.is_active,
+              parent_id: null,
             })
+            if (created?.id) idMap.set(pos.id, created.id)
           } catch (err) {
             console.error("Error creating position:", pos.path, err)
           }
-        } else {
+        } else if (!pos.isNew) {
           // Update existing positions that might have changed
           try {
             await updatePosition(pos.id, {
@@ -278,6 +307,24 @@ export default function EditEquipmentPage({
             })
           } catch (err) {
             console.error("Error updating position:", pos.id, err)
+          }
+        }
+      }
+
+      // Second pass: create child positions with resolved parent_id
+      for (const pos of positions) {
+        if (pos.isNew && pos.parent_id) {
+          try {
+            const resolvedParentId = idMap.get(pos.parent_id) || pos.parent_id
+            await createPosition({
+              equipment_id: id,
+              path: pos.path,
+              qr_code: pos.qr_code || null,
+              is_active: pos.is_active,
+              parent_id: resolvedParentId,
+            })
+          } catch (err) {
+            console.error("Error creating child position:", pos.path, err)
           }
         }
       }
@@ -319,8 +366,10 @@ export default function EditEquipmentPage({
   }
 
   // ---- Render --------------------------------------------------------------
+  // Hierarchical positions
+  const topLevelPositions = positions.filter((p) => !p.parent_id)
+  const getChildren = (parentId: string) => positions.filter((p) => p.parent_id === parentId)
   const activePositions = positions.filter((p) => p.is_active)
-  const inactivePositions = positions.filter((p) => !p.is_active)
 
   return (
     <div className="container mx-auto py-6 max-w-3xl space-y-6">
@@ -480,7 +529,10 @@ export default function EditEquipmentPage({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowBulkAdd(true)}
+                  onClick={() => {
+                    setBulkParentId(null)
+                    setShowBulkAdd(true)
+                  }}
                 >
                   Пакетное добавление
                 </Button>
@@ -488,7 +540,12 @@ export default function EditEquipmentPage({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setShowAddPosition(true)}
+                  onClick={() => {
+                    setNewPositionParentId(null)
+                    setNewPositionPath("")
+                    setNewPositionQR("")
+                    setShowAddPosition(true)
+                  }}
                 >
                   <Plus className="mr-1 h-4 w-4" />
                   Добавить
@@ -498,6 +555,7 @@ export default function EditEquipmentPage({
             <CardDescription>
               Места хранения внутри оборудования (полки, ячейки, кейны).
               Позиции используются для размещения контейнеров с культурами.
+              Используйте иерархию: полки → места внутри полок.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -507,46 +565,118 @@ export default function EditEquipmentPage({
                 добавление&raquo;.
               </p>
             ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {positions.map((pos) => (
-                  <div
-                    key={pos.id}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${
-                      pos.is_active ? "bg-background" : "bg-muted/50 opacity-60"
-                    }`}
-                  >
-                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span className="font-mono text-sm flex-1">{pos.path}</span>
-                    {pos.qr_code && (
-                      <span className="text-xs text-muted-foreground">
-                        QR: {pos.qr_code}
-                      </span>
-                    )}
-                    {pos.isNew && (
-                      <span className="text-xs text-blue-600 font-medium">
-                        Новая
-                      </span>
-                    )}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => togglePositionActive(pos.id)}
-                    >
-                      {pos.is_active ? "Деактивировать" : "Активировать"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive h-8 w-8"
-                      onClick={() => removePosition(pos.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
+              <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                {topLevelPositions.map((pos) => {
+                  const children = getChildren(pos.id)
+                  return (
+                    <div key={pos.id} className="space-y-1">
+                      {/* Parent position */}
+                      <div
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${
+                          pos.is_active ? "bg-background" : "bg-muted/50 opacity-60"
+                        }`}
+                      >
+                        <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="font-mono text-sm flex-1 font-medium">{pos.path}</span>
+                        {children.length > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            {children.filter(c => c.is_active).length} мест
+                          </span>
+                        )}
+                        {pos.qr_code && (
+                          <span className="text-xs text-muted-foreground">
+                            QR: {pos.qr_code}
+                          </span>
+                        )}
+                        {pos.isNew && (
+                          <span className="text-xs text-blue-600 font-medium">
+                            Новая
+                          </span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          onClick={() => openAddChild(pos.id)}
+                          title="Добавить место внутри"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Место
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 px-2"
+                          onClick={() => openBulkAddChild(pos.id)}
+                          title="Пакетно добавить места"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Пакет
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7"
+                          onClick={() => togglePositionActive(pos.id)}
+                        >
+                          {pos.is_active ? "Деакт." : "Акт."}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive h-7 w-7"
+                          onClick={() => removePosition(pos.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
+                      {/* Child positions */}
+                      {children.length > 0 && (
+                        <div className="ml-8 space-y-1">
+                          {children.map((child) => (
+                            <div
+                              key={child.id}
+                              className={`flex items-center gap-3 px-3 py-1.5 rounded-md border border-dashed ${
+                                child.is_active ? "bg-muted/30" : "bg-muted/50 opacity-60"
+                              }`}
+                            >
+                              <div className="w-3 h-3 border-l-2 border-b-2 border-muted-foreground/30 shrink-0" />
+                              <span className="font-mono text-sm flex-1">{child.path}</span>
+                              {child.isNew && (
+                                <span className="text-xs text-blue-600 font-medium">
+                                  Новое
+                                </span>
+                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-6"
+                                onClick={() => togglePositionActive(child.id)}
+                              >
+                                {child.is_active ? "Деакт." : "Акт."}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive h-6 w-6"
+                                onClick={() => removePosition(child.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </CardContent>
@@ -574,12 +704,18 @@ export default function EditEquipmentPage({
       </form>
 
       {/* Add Position Dialog */}
-      <Dialog open={showAddPosition} onOpenChange={setShowAddPosition}>
+      <Dialog open={showAddPosition} onOpenChange={(open) => { setShowAddPosition(open); if (!open) setNewPositionParentId(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Добавить позицию</DialogTitle>
+            <DialogTitle>
+              {newPositionParentId
+                ? `Добавить место в: ${positions.find(p => p.id === newPositionParentId)?.path || ''}`
+                : 'Добавить позицию (полку)'}
+            </DialogTitle>
             <DialogDescription>
-              Укажите путь позиции (напр. &laquo;Полка 1 / Ячейка 3&raquo;)
+              {newPositionParentId
+                ? 'Укажите название места внутри выбранной позиции'
+                : 'Укажите путь позиции (напр. \u00ABПолка 1\u00BB)'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -616,14 +752,18 @@ export default function EditEquipmentPage({
       </Dialog>
 
       {/* Bulk Add Dialog */}
-      <Dialog open={showBulkAdd} onOpenChange={setShowBulkAdd}>
+      <Dialog open={showBulkAdd} onOpenChange={(open) => { setShowBulkAdd(open); if (!open) setBulkParentId(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Пакетное добавление позиций</DialogTitle>
+            <DialogTitle>
+              {bulkParentId
+                ? `Пакетное добавление мест в: ${positions.find(p => p.id === bulkParentId)?.path || ''}`
+                : 'Пакетное добавление позиций'}
+            </DialogTitle>
             <DialogDescription>
-              Создать диапазон позиций с числовой нумерацией.
-              Например: &laquo;Полка 1&raquo; от 1 до 10 создаст
-              &laquo;Полка 1/1&raquo;, &laquo;Полка 1/2&raquo; и т.д.
+              {bulkParentId
+                ? `Создать диапазон мест внутри "${positions.find(p => p.id === bulkParentId)?.path || ''}". Например: "Место" от 1 до 10 создаст "Место 1", "Место 2" и т.д.`
+                : 'Создать диапазон позиций с числовой нумерацией. Например: "Полка" от 1 до 5 создаст "Полка 1", "Полка 2" и т.д.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

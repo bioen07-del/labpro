@@ -1374,10 +1374,9 @@ export async function updateEquipment(id: string, updates: Record<string, unknow
     .update(updates)
     .eq('id', id)
     .select()
-    .single()
-  
+
   if (error) throw error
-  return data
+  return data?.[0] ?? null
 }
 
 export async function createEquipmentLog(equipmentId: string, log: { temperature: number; notes?: string }) {
@@ -1603,10 +1602,9 @@ export async function updatePosition(id: string, updates: Record<string, unknown
     .update(updates)
     .eq('id', id)
     .select()
-    .single()
-  
+
   if (error) throw error
-  return data
+  return data?.[0] ?? null
 }
 
 // ==================== INVENTORY MOVEMENTS ====================
