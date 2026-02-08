@@ -82,11 +82,17 @@ export async function getCultureById(id: string) {
     .select(`
       *,
       culture_type:culture_types(*),
-      lots:lots(*)
+      lots:lots(
+        *,
+        containers:containers!lot_id(
+          *,
+          container_type:container_types(*)
+        )
+      )
     `)
     .eq('id', id)
     .single()
-  
+
   if (error) throw error
   return data
 }
@@ -777,7 +783,12 @@ export async function getBatches(filters?: { status?: string; category?: string 
     console.error('getBatches error:', error)
     return [] as Batch[]
   }
-  return data as Batch[]
+  // Client-side filter by nomenclature category since nested filtering is limited
+  let result = data as Batch[]
+  if (filters?.category) {
+    result = result.filter((b: any) => b.nomenclature?.category === filters.category)
+  }
+  return result
 }
 
 export async function createBatch(batch: Record<string, unknown>) {

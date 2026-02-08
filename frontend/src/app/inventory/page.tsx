@@ -2,18 +2,26 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { 
-  Package, 
-  Plus, 
+// import { useRouter } from 'next/navigation'
+import {
+  Package,
+  Plus,
   Search,
   MoreHorizontal,
   Eye,
-  Edit,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Minus,
+  ArrowDownToLine,
+  Trash2,
+  Beaker,
+  FlaskConical,
+  TestTubes,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -32,28 +40,58 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getBatches } from '@/lib/api'
+import { getBatches, updateBatch, createInventoryMovement } from '@/lib/api'
 import { formatDate, formatNumber, daysUntilExpiration, getExpirationWarningLevel } from '@/lib/utils'
+
+type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'REAGENT'
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [categoryTab, setCategoryTab] = useState<CategoryTab>('all')
   const [batches, setBatches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Receive dialog
+  const [receiveOpen, setReceiveOpen] = useState(false)
+  const [receiveTarget, setReceiveTarget] = useState<any>(null)
+  const [receiveQty, setReceiveQty] = useState('')
+  const [receiveNotes, setReceiveNotes] = useState('')
+  const [receiveSaving, setReceiveSaving] = useState(false)
+
+  // Dispose dialog
+  const [disposeOpen, setDisposeOpen] = useState(false)
+  const [disposeTarget, setDisposeTarget] = useState<any>(null)
+  const [disposeQty, setDisposeQty] = useState('')
+  const [disposeReason, setDisposeReason] = useState('')
+  const [disposeNotes, setDisposeNotes] = useState('')
+  const [disposeSaving, setDisposeSaving] = useState(false)
+
   useEffect(() => {
     loadBatches()
-  }, [selectedStatus])
+  }, [])
 
   const loadBatches = async () => {
     setLoading(true)
     try {
-      const filters: any = {}
-      if (selectedStatus !== 'all') {
-        filters.status = selectedStatus
-      }
-      const data = await getBatches(filters)
+      const data = await getBatches({})
       setBatches(data || [])
     } catch (error) {
       console.error('Error loading batches:', error)
@@ -63,29 +101,120 @@ export default function InventoryPage() {
     }
   }
 
+  // Filter batches by category, status, and search
   const filteredBatches = batches.filter(batch => {
-    const matchesSearch = searchQuery === '' || 
-      batch.id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      batch.nomenclature?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      batch.nomenclature?.catalog_number?.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesSearch
+    // Category filter
+    if (categoryTab !== 'all' && batch.nomenclature?.category !== categoryTab) return false
+
+    // Status filter
+    if (selectedStatus !== 'all' && batch.status !== selectedStatus) return false
+
+    // Search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      const matchesSearch =
+        batch.batch_number?.toLowerCase().includes(q) ||
+        batch.nomenclature?.name?.toLowerCase().includes(q) ||
+        batch.id?.toLowerCase().includes(q)
+      if (!matchesSearch) return false
+    }
+
+    return true
   })
 
+  // Stats for current category
+  const categoryBatches = categoryTab === 'all'
+    ? batches
+    : batches.filter(b => b.nomenclature?.category === categoryTab)
+
   const stats = {
-    total: batches.length,
-    available: batches.filter(b => b.status === 'AVAILABLE').length,
-    reserved: batches.filter(b => b.status === 'RESERVED').length,
-    expired: batches.filter(b => b.status === 'EXPIRED').length,
+    total: categoryBatches.length,
+    available: categoryBatches.filter(b => b.status === 'AVAILABLE' || b.status === 'ACTIVE').length,
+    lowStock: categoryBatches.filter(b => b.quantity <= 5 && b.quantity > 0 && b.status !== 'EXPIRED').length,
+    expired: categoryBatches.filter(b => b.status === 'EXPIRED').length,
   }
 
+  const categoryStats = {
+    consumable: batches.filter(b => b.nomenclature?.category === 'CONSUMABLE').length,
+    medium: batches.filter(b => b.nomenclature?.category === 'MEDIUM').length,
+    reagent: batches.filter(b => b.nomenclature?.category === 'REAGENT').length,
+  }
+
+  // ==================== Receive handler ====================
+  const handleReceive = async () => {
+    if (!receiveTarget || !receiveQty || Number(receiveQty) <= 0) {
+      toast.error('Укажите корректное количество')
+      return
+    }
+    setReceiveSaving(true)
+    try {
+      const newQty = (receiveTarget.quantity || 0) + Number(receiveQty)
+      await updateBatch(receiveTarget.id, { quantity: newQty, status: 'AVAILABLE' })
+      await createInventoryMovement({
+        batch_id: receiveTarget.id,
+        movement_type: 'RECEIVE',
+        quantity: Number(receiveQty),
+        notes: receiveNotes || null,
+      })
+      toast.success(`Принято ${receiveQty} ${receiveTarget.unit || 'шт'}`)
+      setReceiveOpen(false)
+      setReceiveQty('')
+      setReceiveNotes('')
+      loadBatches()
+    } catch (err: any) {
+      toast.error(err?.message || 'Ошибка при приёмке')
+    } finally {
+      setReceiveSaving(false)
+    }
+  }
+
+  // ==================== Dispose handler ====================
+  const handleDispose = async () => {
+    if (!disposeTarget || !disposeQty || Number(disposeQty) <= 0) {
+      toast.error('Укажите корректное количество')
+      return
+    }
+    if (Number(disposeQty) > (disposeTarget.quantity || 0)) {
+      toast.error('Количество превышает остаток')
+      return
+    }
+    setDisposeSaving(true)
+    try {
+      const newQty = (disposeTarget.quantity || 0) - Number(disposeQty)
+      const updates: Record<string, unknown> = { quantity: newQty }
+      if (newQty <= 0) updates.status = 'USED'
+      await updateBatch(disposeTarget.id, updates)
+
+      const movementType = disposeReason === 'EXPIRED' ? 'DISPOSE' :
+                           disposeReason === 'DAMAGED' ? 'DISPOSE' : 'CONSUME'
+      await createInventoryMovement({
+        batch_id: disposeTarget.id,
+        movement_type: movementType,
+        quantity: Number(disposeQty),
+        notes: [disposeReason ? `Причина: ${getDisposeReasonLabel(disposeReason)}` : '', disposeNotes].filter(Boolean).join('. ') || null,
+      })
+      toast.success(`Списано ${disposeQty} ${disposeTarget.unit || 'шт'}`)
+      setDisposeOpen(false)
+      setDisposeQty('')
+      setDisposeReason('')
+      setDisposeNotes('')
+      loadBatches()
+    } catch (err: any) {
+      toast.error(err?.message || 'Ошибка при списании')
+    } finally {
+      setDisposeSaving(false)
+    }
+  }
+
+  // ==================== Render ====================
   return (
     <div className="container py-6 space-y-6">
       {/* Page Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Инвентарь</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Склад</h1>
           <p className="text-muted-foreground">
-            Реагенты, расходные материалы и номенклатура
+            Расходные материалы, среды и реагенты
           </p>
         </div>
         <Button asChild>
@@ -95,6 +224,28 @@ export default function InventoryPage() {
           </Link>
         </Button>
       </div>
+
+      {/* Category Tabs */}
+      <Tabs value={categoryTab} onValueChange={(v) => setCategoryTab(v as CategoryTab)}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="all" className="gap-2">
+            <Package className="h-4 w-4" />
+            Все ({batches.length})
+          </TabsTrigger>
+          <TabsTrigger value="CONSUMABLE" className="gap-2">
+            <TestTubes className="h-4 w-4" />
+            Пластик ({categoryStats.consumable})
+          </TabsTrigger>
+          <TabsTrigger value="MEDIUM" className="gap-2">
+            <FlaskConical className="h-4 w-4" />
+            Среды ({categoryStats.medium})
+          </TabsTrigger>
+          <TabsTrigger value="REAGENT" className="gap-2">
+            <Beaker className="h-4 w-4" />
+            Реагенты ({categoryStats.reagent})
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -121,11 +272,11 @@ export default function InventoryPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Зарезервировано
+              Мало на складе
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.reserved}</div>
+            <div className="text-2xl font-bold text-amber-600">{stats.lowStock}</div>
           </CardContent>
         </Card>
         <Card>
@@ -145,7 +296,7 @@ export default function InventoryPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по номенклатуре, каталожному номеру..."
+            placeholder="Поиск по названию, номеру партии..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -155,8 +306,8 @@ export default function InventoryPage() {
           <TabsList>
             <TabsTrigger value="all">Все</TabsTrigger>
             <TabsTrigger value="AVAILABLE">В наличии</TabsTrigger>
-            <TabsTrigger value="RESERVED">Зарезервировано</TabsTrigger>
             <TabsTrigger value="EXPIRED">Просрочено</TabsTrigger>
+            <TabsTrigger value="USED">Использовано</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -164,9 +315,11 @@ export default function InventoryPage() {
       {/* Inventory Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Складской учёт</CardTitle>
+          <CardTitle>
+            {getCategoryTitle(categoryTab)}
+          </CardTitle>
           <CardDescription>
-            {loading ? 'Загрузка...' : `${filteredBatches.length} позиций найдено`}
+            {loading ? 'Загрузка...' : `${filteredBatches.length} позиций`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -178,12 +331,11 @@ export default function InventoryPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Партия</TableHead>
                   <TableHead>Номенклатура</TableHead>
-                  <TableHead>Кат. номер</TableHead>
-                  <TableHead>Количество</TableHead>
-                  <TableHead>Единица</TableHead>
+                  <TableHead>Партия</TableHead>
+                  <TableHead className="text-center">Остаток</TableHead>
                   <TableHead>Срок годности</TableHead>
+                  <TableHead>Категория</TableHead>
                   <TableHead>Статус</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -192,28 +344,22 @@ export default function InventoryPage() {
                 {filteredBatches.map((batch) => {
                   const daysLeft = daysUntilExpiration(batch.expiration_date)
                   const warningLevel = getExpirationWarningLevel(daysLeft)
-                  
+
                   return (
                     <TableRow key={batch.id}>
                       <TableCell>
-                        <Link href={`/inventory/${batch.id}`} className="font-medium hover:underline">
-                          {batch.id?.slice(0, 8)}...
+                        <Link href={`/inventory/${batch.id}`} className="font-medium hover:underline text-blue-600">
+                          {batch.nomenclature?.name || '---'}
                         </Link>
                       </TableCell>
-                      <TableCell>
-                        {batch.nomenclature?.name || '-'}
-                        <p className="text-xs text-muted-foreground">
-                          {batch.nomenclature?.category}
-                        </p>
+                      <TableCell className="font-mono text-sm">
+                        {batch.batch_number || batch.id?.slice(0, 8)}
                       </TableCell>
-                      <TableCell>
-                        {batch.nomenclature?.catalog_number || '-'}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {formatNumber(batch.quantity)}
-                      </TableCell>
-                      <TableCell>
-                        {batch.unit || 'шт'}
+                      <TableCell className="text-center">
+                        <span className={`font-semibold ${batch.quantity <= 0 ? 'text-red-600' : batch.quantity <= 5 ? 'text-amber-600' : ''}`}>
+                          {formatNumber(batch.quantity)}
+                        </span>
+                        <span className="text-muted-foreground text-xs ml-1">{batch.unit || 'шт'}</span>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -224,14 +370,19 @@ export default function InventoryPage() {
                             warningLevel === 'critical' ? 'text-red-600 font-medium' :
                             warningLevel === 'warning' ? 'text-yellow-600' : ''
                           }>
-                            {batch.expiration_date ? formatDate(batch.expiration_date) : '-'}
+                            {batch.expiration_date ? formatDate(batch.expiration_date) : '---'}
                           </span>
-                          {daysLeft !== null && daysLeft > 0 && (
+                          {daysLeft !== null && daysLeft > 0 && daysLeft <= 60 && (
                             <Badge variant="outline" className="text-xs">
                               {daysLeft} дн
                             </Badge>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={getCategoryColor(batch.nomenclature?.category)}>
+                          {getCategoryLabel(batch.nomenclature?.category)}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(batch.status)}>
@@ -254,9 +405,28 @@ export default function InventoryPage() {
                                 Просмотр
                               </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Редактировать
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => {
+                              setReceiveTarget(batch)
+                              setReceiveQty('')
+                              setReceiveNotes('')
+                              setReceiveOpen(true)
+                            }}>
+                              <ArrowDownToLine className="mr-2 h-4 w-4" />
+                              Приёмка
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setDisposeTarget(batch)
+                                setDisposeQty('')
+                                setDisposeReason('')
+                                setDisposeNotes('')
+                                setDisposeOpen(true)
+                              }}
+                              disabled={batch.quantity <= 0}
+                            >
+                              <Minus className="mr-2 h-4 w-4" />
+                              Списание
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -266,8 +436,9 @@ export default function InventoryPage() {
                 })}
                 {filteredBatches.length === 0 && !loading && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      Позиции не найдены
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <Package className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                      <p>Позиции не найдены</p>
                     </TableCell>
                   </TableRow>
                 )}
@@ -276,17 +447,196 @@ export default function InventoryPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ==================== Receive Dialog ==================== */}
+      <Dialog open={receiveOpen} onOpenChange={setReceiveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowDownToLine className="h-5 w-5 text-green-600" />
+              Приёмка на склад
+            </DialogTitle>
+            <DialogDescription>
+              {receiveTarget?.nomenclature?.name} — партия {receiveTarget?.batch_number || receiveTarget?.id?.slice(0, 8)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between text-sm p-3 rounded-lg bg-muted">
+              <span>Текущий остаток:</span>
+              <span className="font-semibold">{receiveTarget?.quantity || 0} {receiveTarget?.unit || 'шт'}</span>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Количество к приёмке *</Label>
+              <Input
+                type="number"
+                min="1"
+                step="any"
+                value={receiveQty}
+                onChange={(e) => setReceiveQty(e.target.value)}
+                placeholder="0"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Примечание</Label>
+              <Textarea
+                value={receiveNotes}
+                onChange={(e) => setReceiveNotes(e.target.value)}
+                placeholder="Номер накладной, поставщик..."
+                rows={2}
+              />
+            </div>
+
+            {receiveQty && Number(receiveQty) > 0 && (
+              <div className="text-sm p-3 rounded-lg bg-green-50 text-green-700">
+                Новый остаток: <strong>{(receiveTarget?.quantity || 0) + Number(receiveQty)} {receiveTarget?.unit || 'шт'}</strong>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReceiveOpen(false)}>
+              Отмена
+            </Button>
+            <Button onClick={handleReceive} disabled={receiveSaving || !receiveQty || Number(receiveQty) <= 0}>
+              {receiveSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowDownToLine className="mr-2 h-4 w-4" />}
+              Принять
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ==================== Dispose Dialog ==================== */}
+      <Dialog open={disposeOpen} onOpenChange={setDisposeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Списание со склада
+            </DialogTitle>
+            <DialogDescription>
+              {disposeTarget?.nomenclature?.name} — партия {disposeTarget?.batch_number || disposeTarget?.id?.slice(0, 8)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between text-sm p-3 rounded-lg bg-muted">
+              <span>Текущий остаток:</span>
+              <span className="font-semibold">{disposeTarget?.quantity || 0} {disposeTarget?.unit || 'шт'}</span>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Количество к списанию *</Label>
+              <Input
+                type="number"
+                min="1"
+                max={disposeTarget?.quantity || 0}
+                step="any"
+                value={disposeQty}
+                onChange={(e) => setDisposeQty(e.target.value)}
+                placeholder="0"
+                autoFocus
+              />
+              {disposeQty && Number(disposeQty) > (disposeTarget?.quantity || 0) && (
+                <p className="text-sm text-red-600">Превышает остаток!</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Причина списания</Label>
+              <Select value={disposeReason} onValueChange={setDisposeReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите причину" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USED">Использовано в работе</SelectItem>
+                  <SelectItem value="EXPIRED">Истёк срок годности</SelectItem>
+                  <SelectItem value="DAMAGED">Повреждено / брак</SelectItem>
+                  <SelectItem value="OTHER">Другое</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Комментарий</Label>
+              <Textarea
+                value={disposeNotes}
+                onChange={(e) => setDisposeNotes(e.target.value)}
+                placeholder="Подробности списания..."
+                rows={2}
+              />
+            </div>
+
+            {disposeQty && Number(disposeQty) > 0 && Number(disposeQty) <= (disposeTarget?.quantity || 0) && (
+              <div className="text-sm p-3 rounded-lg bg-red-50 text-red-700">
+                Остаток после списания: <strong>{(disposeTarget?.quantity || 0) - Number(disposeQty)} {disposeTarget?.unit || 'шт'}</strong>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisposeOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDispose}
+              disabled={disposeSaving || !disposeQty || Number(disposeQty) <= 0 || Number(disposeQty) > (disposeTarget?.quantity || 0)}
+            >
+              {disposeSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Списать
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
+
+// ==================== Helper functions ====================
+
+function getCategoryTitle(tab: CategoryTab): string {
+  const titles: Record<CategoryTab, string> = {
+    all: 'Все позиции',
+    CONSUMABLE: 'Пластик и расходные материалы',
+    MEDIUM: 'Среды и добавки',
+    REAGENT: 'Реагенты',
+  }
+  return titles[tab]
+}
+
+function getCategoryLabel(category: string): string {
+  const labels: Record<string, string> = {
+    CONSUMABLE: 'Пластик',
+    MEDIUM: 'Среда',
+    REAGENT: 'Реагент',
+    EQUIP: 'Оборудование',
+  }
+  return labels[category] || category || '---'
+}
+
+function getCategoryColor(category: string): string {
+  const colors: Record<string, string> = {
+    CONSUMABLE: 'border-blue-300 text-blue-700',
+    MEDIUM: 'border-purple-300 text-purple-700',
+    REAGENT: 'border-amber-300 text-amber-700',
+    EQUIP: 'border-gray-300 text-gray-700',
+  }
+  return colors[category] || ''
 }
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
     AVAILABLE: 'bg-green-100 text-green-800',
+    ACTIVE: 'bg-green-100 text-green-800',
     RESERVED: 'bg-blue-100 text-blue-800',
     EXPIRED: 'bg-red-100 text-red-800',
     USED: 'bg-gray-100 text-gray-800',
     QUARANTINE: 'bg-yellow-100 text-yellow-800',
+    DISPOSE: 'bg-red-100 text-red-800',
   }
   return colors[status] || 'bg-gray-100 text-gray-800'
 }
@@ -294,10 +644,22 @@ function getStatusColor(status: string): string {
 function getStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     AVAILABLE: 'В наличии',
+    ACTIVE: 'Активна',
     RESERVED: 'Зарезервировано',
     EXPIRED: 'Просрочено',
     USED: 'Использовано',
     QUARANTINE: 'Карантин',
+    DISPOSE: 'Списано',
   }
   return labels[status] || status
+}
+
+function getDisposeReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    USED: 'Использовано в работе',
+    EXPIRED: 'Истёк срок годности',
+    DAMAGED: 'Повреждено / брак',
+    OTHER: 'Другое',
+  }
+  return labels[reason] || reason
 }
