@@ -78,7 +78,7 @@ function DisposePageInner() {
         const [reasonsData, lotsData, batchesData, rmData] = await Promise.all([
           getDisposeReasons(),
           getLots({ status: 'ACTIVE' }),
-          getBatches({ status: 'ACTIVE' }),
+          getBatches({ status: 'AVAILABLE' }),
           getReadyMedia({ status: 'ACTIVE' }),
         ])
         setDisposeReasons(reasonsData || [])

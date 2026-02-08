@@ -278,9 +278,43 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
   )
   const maxPassage = lots.reduce((max, l) => Math.max(max, l.passage_number || 0), 0)
 
+  // Contamination check across all containers
+  const contaminatedContainers = lots.flatMap(l =>
+    (l.containers || []).filter((c: Container) => (c as any).contaminated === true)
+  )
+  const hasContamination = contaminatedContainers.length > 0
+
   // ==================== Main render - single scrollable page ====================
   return (
     <div className="container py-6 space-y-6">
+
+      {/* ==================== CONTAMINATION ALERT ==================== */}
+      {hasContamination && (
+        <div className="flex items-start gap-3 p-4 rounded-lg border border-red-300 bg-red-50 text-red-800">
+          <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+          <div className="flex-1 space-y-2">
+            <p className="font-semibold">
+              Контаминация обнаружена!
+            </p>
+            <p className="text-sm">
+              {contaminatedContainers.length} контейнер(ов) помечены как контаминированные:
+              {' '}
+              {contaminatedContainers.map((c: Container) => c.code).join(', ')}
+            </p>
+            <p className="text-sm text-red-600">
+              Рекомендуется немедленная утилизация контаминированных контейнеров.
+            </p>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => router.push('/operations/dispose')}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Утилизировать
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ==================== HEADER ==================== */}
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -575,6 +609,11 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                                         <span className="text-xs font-medium text-muted-foreground">
                                           {container.confluent_percent}%
                                         </span>
+                                      )}
+                                      {(container as any).contaminated && (
+                                        <Badge variant="destructive" className="text-xs">
+                                          Контаминация
+                                        </Badge>
                                       )}
                                       <Badge className={`text-xs ${getContainerStatusColor(container.container_status)}`}>
                                         {getContainerStatusLabel(container.container_status)}

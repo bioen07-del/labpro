@@ -615,18 +615,41 @@ export async function createOperationObserve(data: {
   if (ocError) throw ocError
   
   for (const container of data.containers) {
+    const updateFields: Record<string, unknown> = {
+      confluent_percent: container.confluent_percent,
+      morphology: container.morphology,
+      contaminated: container.contaminated,
+    }
+
+    // Авто-карантин при обнаружении контаминации
+    if (container.contaminated) {
+      updateFields.container_status = 'QUARANTINE'
+    }
+
     const { error: updateError } = await supabase
       .from('containers')
-      .update({
-        confluent_percent: container.confluent_percent,
-        morphology: container.morphology,
-        contaminated: container.contaminated
-      })
+      .update(updateFields)
       .eq('id', container.container_id)
-    
+
     if (updateError) throw updateError
+
+    // Создать уведомление о контаминации
+    if (container.contaminated) {
+      try {
+        await createNotification({
+          type: 'CONTAMINATION',
+          title: 'Контаминация обнаружена!',
+          message: `Контейнер в лоте помечен как контаминированный. Рекомендуется утилизация.`,
+          related_type: 'CONTAINER',
+          related_id: container.container_id,
+          is_read: false,
+        })
+      } catch (notifErr) {
+        console.error('Failed to create contamination notification:', notifErr)
+      }
+    }
   }
-  
+
   return operation
 }
 
@@ -850,7 +873,7 @@ export async function updateBatch(id: string, updates: Record<string, unknown>) 
 export async function getBatchById(id: string) {
   const { data, error } = await supabase
     .from('batches')
-    .select('*, nomenclature:nomenclatures(*)')
+    .select('*, nomenclature:nomenclatures(*, container_type:container_types(*))')
     .eq('id', id)
     .single()
 
@@ -2154,18 +2177,20 @@ export interface PassageSourceData {
 }
 
 export interface PassageResultData {
-  container_type_id: string
-  target_count: number // количество новых контейнеров
+  container_groups: { container_type_id: string; target_count: number }[]
   position_id: string // позиция для новых контейнеров
 }
 
 export interface PassageMediaData {
   dissociation_batch_id?: string
   dissociation_rm_id?: string
+  dissociation_volume_ml?: number
   wash_batch_id?: string
   wash_rm_id?: string
+  wash_volume_ml?: number
   seed_batch_id?: string
   seed_rm_id?: string
+  seed_volume_ml?: number
 }
 
 export async function createOperationPassage(data: {
@@ -2246,35 +2271,37 @@ export async function createOperationPassage(data: {
   
   if (ocError) throw ocError
   
-  // 5. Создать новые контейнеры-результаты
+  // 5. Создать новые контейнеры-результаты (по группам типов)
   const resultContainers = []
-  for (let i = 0; i < data.result.target_count; i++) {
-    // Генерация кода контейнера
-    const { count: containerCount } = await supabase
-      .from('containers')
-      .select('*', { count: 'exact', head: true })
-      .like('code', `CT-%`)
-    
-    const cultureCode = sourceLot.culture_id.substring(0, 4).toUpperCase()
-    const containerCode = `CT-${cultureCode}-L${newLot.id.substring(0, 1).toUpperCase()}-P${newPassageNumber}-${data.result.container_type_id.substring(0, 2).toUpperCase()}-${String((containerCount || 0) + i + 1).padStart(3, '0')}`
-    
-    const { data: newContainer, error: containerError } = await supabase
-      .from('containers')
-      .insert({
-        lot_id: newLot.id,
-        container_type_id: data.result.container_type_id,
-        position_id: data.result.position_id || null,
-        container_status: 'IN_CULTURE',
-        passage_number: newPassageNumber,
-        confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
-        code: containerCode,
-        qr_code: `CNT:${containerCode}`
-      })
-      .select()
-      .single()
+  for (const group of data.result.container_groups) {
+    for (let i = 0; i < group.target_count; i++) {
+      // Генерация кода контейнера
+      const { count: containerCount } = await supabase
+        .from('containers')
+        .select('*', { count: 'exact', head: true })
+        .like('code', `CT-%`)
 
-    if (containerError) throw containerError
-    resultContainers.push(newContainer)
+      const cultureCode = sourceLot.culture_id.substring(0, 4).toUpperCase()
+      const containerCode = `CT-${cultureCode}-L${newLot.id.substring(0, 1).toUpperCase()}-P${newPassageNumber}-${group.container_type_id.substring(0, 2).toUpperCase()}-${String((containerCount || 0) + i + 1).padStart(3, '0')}`
+
+      const { data: newContainer, error: containerError } = await supabase
+        .from('containers')
+        .insert({
+          lot_id: newLot.id,
+          container_type_id: group.container_type_id,
+          position_id: data.result.position_id || null,
+          container_status: 'IN_CULTURE',
+          passage_number: newPassageNumber,
+          confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
+          code: containerCode,
+          qr_code: `CNT:${containerCode}`
+        })
+        .select()
+        .single()
+
+      if (containerError) throw containerError
+      resultContainers.push(newContainer)
+    }
   }
   
   // 6. Записать RESULT контейнеры в operation_containers
@@ -2309,48 +2336,68 @@ export async function createOperationPassage(data: {
       concentration: data.metrics.concentration,
       viability_percent: data.metrics.viability_percent,
       volume_ml: data.metrics.volume_ml,
-      passage_yield: data.result.target_count
+      passage_yield: data.result.container_groups.reduce((sum, g) => sum + g.target_count, 0)
     })
   
   if (metricsError) throw metricsError
   
   // 9. Создать Operation_Media для сред
-  const operationMedia = []
-  
+  const operationMedia: Record<string, unknown>[] = []
+
   if (data.media.dissociation_batch_id) {
     operationMedia.push({
       operation_id: operation.id,
       batch_id: data.media.dissociation_batch_id,
-      purpose: 'dissociation'
+      purpose: 'dissociation',
+      quantity_ml: data.media.dissociation_volume_ml ?? null,
     })
   }
   if (data.media.dissociation_rm_id) {
     operationMedia.push({
       operation_id: operation.id,
       ready_medium_id: data.media.dissociation_rm_id,
-      purpose: 'dissociation'
+      purpose: 'dissociation',
+      quantity_ml: data.media.dissociation_volume_ml ?? null,
     })
   }
   if (data.media.wash_batch_id) {
     operationMedia.push({
       operation_id: operation.id,
       batch_id: data.media.wash_batch_id,
-      purpose: 'wash'
+      purpose: 'wash',
+      quantity_ml: data.media.wash_volume_ml ?? null,
     })
   }
   if (data.media.wash_rm_id) {
     operationMedia.push({
       operation_id: operation.id,
       ready_medium_id: data.media.wash_rm_id,
-      purpose: 'wash'
+      purpose: 'wash',
+      quantity_ml: data.media.wash_volume_ml ?? null,
     })
   }
-  
+  if (data.media.seed_batch_id) {
+    operationMedia.push({
+      operation_id: operation.id,
+      batch_id: data.media.seed_batch_id,
+      purpose: 'seed',
+      quantity_ml: data.media.seed_volume_ml ?? null,
+    })
+  }
+  if (data.media.seed_rm_id) {
+    operationMedia.push({
+      operation_id: operation.id,
+      ready_medium_id: data.media.seed_rm_id,
+      purpose: 'seed',
+      quantity_ml: data.media.seed_volume_ml ?? null,
+    })
+  }
+
   if (operationMedia.length > 0) {
     const { error: mediaError } = await supabase
       .from('operation_media')
       .insert(operationMedia)
-    
+
     if (mediaError) throw mediaError
   }
   

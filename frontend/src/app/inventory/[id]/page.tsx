@@ -253,6 +253,60 @@ export default function BatchDetailPage({
                 </TableCell>
                 <TableCell>{batch.notes || "---"}</TableCell>
               </TableRow>
+              {batch.nomenclature?.category && (
+                <TableRow>
+                  <TableCell className="font-medium text-muted-foreground">
+                    Категория
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{batch.nomenclature.category}</Badge>
+                  </TableCell>
+                </TableRow>
+              )}
+              {batch.nomenclature?.container_type && (
+                <>
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground">
+                      Тип контейнера
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">
+                        {batch.nomenclature.container_type.name || "---"}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                  {batch.nomenclature.container_type.surface_area_cm2 != null && (
+                    <TableRow>
+                      <TableCell className="font-medium text-muted-foreground">
+                        Площадь поверхности
+                      </TableCell>
+                      <TableCell>
+                        {batch.nomenclature.container_type.surface_area_cm2} см²
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {batch.nomenclature.container_type.volume_ml != null && (
+                    <TableRow>
+                      <TableCell className="font-medium text-muted-foreground">
+                        Рабочий объём
+                      </TableCell>
+                      <TableCell>
+                        {batch.nomenclature.container_type.volume_ml} мл
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {batch.nomenclature.container_type.optimal_confluent != null && (
+                    <TableRow>
+                      <TableCell className="font-medium text-muted-foreground">
+                        Оптимальная конфлюэнтность
+                      </TableCell>
+                      <TableCell>
+                        {batch.nomenclature.container_type.optimal_confluent}%
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
+              )}
             </TableBody>
           </Table>
         </CardContent>
