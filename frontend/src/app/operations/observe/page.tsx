@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +22,7 @@ import {
   getMorphologyTypes,
   createOperationObserve,
 } from '@/lib/api'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 
 // ---------- types ----------
@@ -35,8 +35,9 @@ interface ContainerObservation {
 
 // ---------- component ----------
 
-export default function ObservePage() {
+function ObservePageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // reference data
   const [lots, setLots] = useState<any[]>([])
@@ -66,12 +67,35 @@ export default function ObservePage() {
         ])
         setLots(lotsData || [])
         setMorphologyTypes(morphData || [])
+
+        // Auto-bind from URL params
+        const paramLotId = searchParams.get('lot_id')
+        const paramContainerId = searchParams.get('container_id')
+        if (paramLotId) {
+          setSelectedLotId(paramLotId)
+          const containersData = await getContainersByLot(paramLotId)
+          setContainers(containersData || [])
+          // If a specific container_id was passed, auto-select it
+          if (paramContainerId && containersData?.some((c: any) => c.id === paramContainerId)) {
+            setSelectedIds([paramContainerId])
+            const container = containersData.find((c: any) => c.id === paramContainerId)
+            if (container) {
+              setObservations({
+                [paramContainerId]: {
+                  confluent_percent: container.confluent_percent ?? 0,
+                  morphology: container.morphology ?? '',
+                  contaminated: container.contaminated ?? false,
+                },
+              })
+            }
+          }
+        }
       } catch (err) {
         console.error('Error loading reference data:', err)
         toast.error('Не удалось загрузить справочные данные')
       }
     })()
-  }, [])
+  }, [searchParams])
 
   const loadContainers = useCallback(async (lotId: string) => {
     try {
@@ -212,7 +236,7 @@ export default function ObservePage() {
           {/* ===== 1. Lot selection ===== */}
           <div className="space-y-2">
             <Label>Лот</Label>
-            <Select value={selectedLotId} onValueChange={handleLotChange}>
+            <Select value={selectedLotId} onValueChange={handleLotChange} disabled={!!searchParams.get('lot_id')}>
               <SelectTrigger>
                 <SelectValue placeholder="Выберите лот..." />
               </SelectTrigger>
@@ -426,5 +450,13 @@ export default function ObservePage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function ObservePage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <ObservePageInner />
+    </Suspense>
   )
 }

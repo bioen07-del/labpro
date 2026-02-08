@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -80,8 +80,9 @@ function formatDate(dateStr: string | null | undefined): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function FreezePage() {
+function FreezePageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // --- wizard step (1-based) ---
   const [step, setStep] = useState(1)
@@ -165,6 +166,21 @@ export default function FreezePage() {
         setLots(lotsData || [])
         setMedia(mediaData || [])
         setPositions(positionsData || [])
+
+        // Auto-bind from URL params
+        const paramLotId = searchParams.get('lot_id')
+        if (paramLotId) {
+          setSelectedLotId(paramLotId)
+          setContainersLoading(true)
+          try {
+            const data = await getContainersByLot(paramLotId)
+            setContainers(data || [])
+          } catch (err) {
+            console.error('Error loading containers from URL param:', err)
+          } finally {
+            setContainersLoading(false)
+          }
+        }
       } catch (error) {
         console.error('Error loading initial data:', error)
         toast.error('Ошибка загрузки данных')
@@ -173,7 +189,7 @@ export default function FreezePage() {
       }
     }
     load()
-  }, [])
+  }, [searchParams])
 
   // ---------------------------------------------------------------------------
   // Load containers when lot changes
@@ -420,7 +436,7 @@ export default function FreezePage() {
             {/* Lot selection */}
             <div className="space-y-2">
               <Label htmlFor="lot">Лот</Label>
-              <Select value={selectedLotId} onValueChange={handleLotChange}>
+              <Select value={selectedLotId} onValueChange={handleLotChange} disabled={!!searchParams.get('lot_id')}>
                 <SelectTrigger id="lot">
                   <SelectValue placeholder="Выберите лот..." />
                 </SelectTrigger>
@@ -1105,5 +1121,13 @@ export default function FreezePage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function FreezePage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <FreezePageInner />
+    </Suspense>
   )
 }

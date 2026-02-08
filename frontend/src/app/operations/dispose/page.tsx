@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Trash2, AlertTriangle, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,8 +37,9 @@ interface DisposeReason {
 // Page component
 // ---------------------------------------------------------------------------
 
-export default function DisposePage() {
+function DisposePageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // ---- target type --------------------------------------------------------
   const [targetType, setTargetType] = useState<TargetType>('container')
@@ -84,6 +85,45 @@ export default function DisposePage() {
         setLots(lotsData || [])
         setBatches(batchesData || [])
         setReadyMedia(rmData || [])
+
+        // Auto-bind from URL params
+        const paramType = searchParams.get('type') as TargetType | null
+        const paramId = searchParams.get('id')
+        const paramLotId = searchParams.get('lot_id')
+
+        if (paramType && ['container', 'batch', 'ready_medium'].includes(paramType)) {
+          setTargetType(paramType)
+        }
+
+        if (paramType === 'container' && paramId) {
+          // Find which lot the container belongs to, or just select it
+          // The link passes ?type=container&id=X from container detail page
+          // We need to find the lot and load containers
+          // For now we'll just pre-select the container when its lot is found
+          for (const lot of (lotsData || [])) {
+            try {
+              const containersData = await getContainersByLot(lot.id)
+              const filtered = (containersData || []).filter((c: any) => c.status !== 'DISPOSE')
+              if (filtered.some((c: any) => c.id === paramId)) {
+                setSelectedLotId(lot.id)
+                setContainers(filtered)
+                setSelectedContainerIds([paramId])
+                break
+              }
+            } catch (_) {
+              // continue
+            }
+          }
+        } else if (paramLotId) {
+          setTargetType('container')
+          setSelectedLotId(paramLotId)
+          try {
+            const data = await getContainersByLot(paramLotId)
+            setContainers((data || []).filter((c: any) => c.status !== 'DISPOSE'))
+          } catch (err) {
+            console.error('Error loading containers from URL param:', err)
+          }
+        }
       } catch (error) {
         console.error('Error loading initial data:', error)
         toast.error('Ошибка загрузки данных')
@@ -92,7 +132,7 @@ export default function DisposePage() {
       }
     }
     loadInitial()
-  }, [])
+  }, [searchParams])
 
   // Load containers when lot changes
   const handleLotChange = useCallback(async (lotId: string) => {
@@ -536,6 +576,14 @@ export default function DisposePage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function DisposePage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <DisposePageInner />
+    </Suspense>
   )
 }
 

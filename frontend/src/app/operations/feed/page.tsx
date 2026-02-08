@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { RefreshCw, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -16,8 +16,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getLots, getContainersByLot, getAvailableMediaForFeed, createOperationFeed } from '@/lib/api'
 
-export default function FeedPage() {
+function FeedPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // --- state ---
   const [lots, setLots] = useState<any[]>([])
@@ -51,6 +52,21 @@ export default function FeedPage() {
         ])
         setLots(lotsData || [])
         setMedia(mediaData || [])
+
+        // Auto-bind from URL params
+        const paramLotId = searchParams.get('lot_id')
+        if (paramLotId) {
+          setSelectedLotId(paramLotId)
+          setContainersLoading(true)
+          try {
+            const data = await getContainersByLot(paramLotId)
+            setContainers(data || [])
+          } catch (err) {
+            console.error('Error loading containers from URL param:', err)
+          } finally {
+            setContainersLoading(false)
+          }
+        }
       } catch (error) {
         console.error('Error loading initial data:', error)
         toast.error('Ошибка загрузки данных')
@@ -59,7 +75,7 @@ export default function FeedPage() {
       }
     }
     load()
-  }, [])
+  }, [searchParams])
 
   // --- load containers when lot changes ---
   const loadContainers = useCallback(async (lotId: string) => {
@@ -191,7 +207,7 @@ export default function FeedPage() {
           {/* 1. Lot selection */}
           <div className="space-y-2">
             <Label htmlFor="lot">Лот</Label>
-            <Select value={selectedLotId} onValueChange={handleLotChange}>
+            <Select value={selectedLotId} onValueChange={handleLotChange} disabled={!!searchParams.get('lot_id')}>
               <SelectTrigger id="lot">
                 <SelectValue placeholder="Выберите лот..." />
               </SelectTrigger>
@@ -411,5 +427,13 @@ export default function FeedPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function FeedPage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <FeedPageInner />
+    </Suspense>
   )
 }

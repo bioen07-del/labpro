@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -100,8 +100,9 @@ const STEPS = [
 // Component
 // ---------------------------------------------------------------------------
 
-export default function PassagePage() {
+function PassagePageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // --- wizard state ---
   const [step, setStep] = useState(1)
@@ -151,6 +152,18 @@ export default function PassagePage() {
         setContainerTypes((typesData as ContainerTypeItem[]) || [])
         setReadyMedia((mediaData as ReadyMediumItem[]) || [])
         setPositions((posData as PositionItem[]) || [])
+
+        // Auto-bind from URL params
+        const paramLotId = searchParams.get('lot_id')
+        const paramContainerId = searchParams.get('container_id')
+        if (paramLotId) {
+          setSelectedLotId(paramLotId)
+          // containers will be loaded by the existing useEffect on selectedLotId
+        }
+        if (paramContainerId) {
+          // Will be applied after containers load
+          setSelectedContainerIds(new Set([paramContainerId]))
+        }
       } catch (err) {
         console.error('Error loading reference data:', err)
         toast.error('Ошибка загрузки справочных данных')
@@ -158,7 +171,7 @@ export default function PassagePage() {
         setLoadingData(false)
       }
     })()
-  }, [])
+  }, [searchParams])
 
   // Load containers when lot changes
   useEffect(() => {
@@ -171,13 +184,19 @@ export default function PassagePage() {
       try {
         const data = await getContainersByLot(selectedLotId)
         setContainers((data as ContainerItem[]) || [])
-        setSelectedContainerIds(new Set())
+        // Preserve container selection from URL params
+        const paramContainerId = searchParams.get('container_id')
+        if (paramContainerId && data?.some((c: any) => c.id === paramContainerId)) {
+          setSelectedContainerIds(new Set([paramContainerId]))
+        } else if (!paramContainerId) {
+          setSelectedContainerIds(new Set())
+        }
       } catch (err) {
         console.error('Error loading containers:', err)
         toast.error('Ошибка загрузки контейнеров')
       }
     })()
-  }, [selectedLotId])
+  }, [selectedLotId, searchParams])
 
   // =========================================================================
   // Derived values
@@ -384,7 +403,7 @@ export default function PassagePage() {
             {/* Lot selector */}
             <div className="space-y-2">
               <Label>Лот</Label>
-              <Select value={selectedLotId} onValueChange={setSelectedLotId}>
+              <Select value={selectedLotId} onValueChange={setSelectedLotId} disabled={!!searchParams.get('lot_id')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите активный лот..." />
                 </SelectTrigger>
@@ -828,5 +847,13 @@ export default function PassagePage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function PassagePage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <PassagePageInner />
+    </Suspense>
   )
 }

@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -102,8 +102,9 @@ const STEPS = [
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ThawPage() {
+function ThawPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // -- wizard step --
   const [step, setStep] = useState(1)
@@ -154,6 +155,25 @@ export default function ThawPage() {
         )
         setContainerTypes(nonCryo)
         setPositions(posData || [])
+
+        // Auto-bind from URL params
+        const paramBankId = searchParams.get('bank_id')
+        if (paramBankId && banksData) {
+          const bank = banksData.find((b: BankItem) => b.id === paramBankId)
+          if (bank) {
+            setSelectedBank(bank)
+            // Load vials for selected bank
+            setVialsLoading(true)
+            try {
+              const vialsData = await getCryoVials({ bank_id: paramBankId, status: 'IN_STOCK' })
+              setVials(vialsData || [])
+            } catch (err) {
+              console.error('Error loading vials from URL param:', err)
+            } finally {
+              setVialsLoading(false)
+            }
+          }
+        }
       } catch (error) {
         console.error('Error loading initial data:', error)
         toast.error('Ошибка загрузки данных')
@@ -162,7 +182,7 @@ export default function ThawPage() {
       }
     }
     load()
-  }, [])
+  }, [searchParams])
 
   const loadVials = useCallback(async (bankId: string) => {
     setVialsLoading(true)
@@ -776,5 +796,13 @@ export default function ThawPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function ThawPage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <ThawPageInner />
+    </Suspense>
   )
 }
