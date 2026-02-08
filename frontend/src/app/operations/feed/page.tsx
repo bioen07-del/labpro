@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { RefreshCw, AlertCircle } from 'lucide-react'
+import { RefreshCw, AlertCircle, Plus, X, Beaker } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getLots, getContainersByLot, getAvailableMediaForFeed, createOperationFeed } from '@/lib/api'
+
+function generateRowId(): string {
+  return Math.random().toString(36).substring(2, 9)
+}
 
 function FeedPageInner() {
   const router = useRouter()
@@ -38,6 +42,11 @@ function FeedPageInner() {
   const [individualMode, setIndividualMode] = useState(false)
   const [perContainerMedia, setPerContainerMedia] = useState<Record<string, string>>({})  // containerId -> mediumId
   const [perContainerVolume, setPerContainerVolume] = useState<Record<string, string>>({}) // containerId -> volume
+
+  // Additional components (serum, reagent, additive)
+  const [additionalComponents, setAdditionalComponents] = useState<
+    { id: string; mediumId: string; volumeMl: string }[]
+  >([])
 
   const [submitting, setSubmitting] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
@@ -484,6 +493,79 @@ function FeedPageInner() {
               </div>
             )
           )}
+
+          {/* 4.5. Additional components */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Beaker className="h-4 w-4" />
+                Дополнительные компоненты
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">Сыворотка, реагенты, добавки — необязательно</p>
+
+            {additionalComponents.map((comp, idx) => (
+              <div key={comp.id} className="border rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-muted-foreground">Компонент {idx + 1}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => setAdditionalComponents(prev => prev.filter(c => c.id !== comp.id))}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-[1fr_120px]">
+                  <Select
+                    value={comp.mediumId}
+                    onValueChange={(val) => setAdditionalComponents(prev =>
+                      prev.map(c => c.id === comp.id ? { ...c, mediumId: val } : c)
+                    )}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Выберите компонент..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {media.map((m: any) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.code || m.name}
+                          {m.current_volume_ml != null && ` (${m.current_volume_ml} мл)`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    className="h-8 text-xs"
+                    placeholder="мл / конт."
+                    value={comp.volumeMl}
+                    onChange={(e) => setAdditionalComponents(prev =>
+                      prev.map(c => c.id === comp.id ? { ...c, volumeMl: e.target.value } : c)
+                    )}
+                  />
+                </div>
+                {comp.volumeMl && parseFloat(comp.volumeMl) > 0 && selectedContainers.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Итого: {(parseFloat(comp.volumeMl) * selectedContainers.length).toFixed(1)} мл ({selectedContainers.length} × {comp.volumeMl} мл)
+                  </p>
+                )}
+              </div>
+            ))}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setAdditionalComponents(prev => [...prev, { id: generateRowId(), mediumId: '', volumeMl: '' }])}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Добавить компонент
+            </Button>
+          </div>
 
           {/* 5. Notes */}
           <div className="space-y-2">
