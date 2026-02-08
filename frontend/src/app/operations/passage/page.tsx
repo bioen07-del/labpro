@@ -11,6 +11,8 @@ import {
   AlertTriangle,
   Calculator,
   Loader2,
+  TestTubes,
+  Beaker,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -34,7 +36,9 @@ import {
   getContainersByLot,
   getContainerTypes,
   getAvailableMediaForFeed,
+  getReagentBatches,
   getPositions,
+  getContainerStockByType,
   createOperationPassage,
 } from '@/lib/api'
 
@@ -63,13 +67,18 @@ interface ContainerItem {
   confluent_percent?: number
   passage_number?: number
   position?: { id: string; path: string } | null
+  container_type?: { name: string; surface_area_cm2?: number } | null
 }
 
 interface ContainerTypeItem {
   id: string
   name: string
+  code?: string
   is_cryo?: boolean
   is_active?: boolean
+  surface_area_cm2?: number | null
+  volume_ml?: number | null
+  optimal_confluent?: number | null
 }
 
 interface ReadyMediumItem {
@@ -80,10 +89,32 @@ interface ReadyMediumItem {
   expiration_date?: string
 }
 
+interface ReagentBatchItem {
+  id: string
+  batch_number: string
+  quantity: number
+  nomenclature?: { name?: string; code?: string; category?: string } | null
+  expiration_date?: string
+}
+
 interface PositionItem {
   id: string
   path: string
   is_active?: boolean
+  equipment?: { name?: string; type?: string } | null
+}
+
+interface StockBatchItem {
+  id: string
+  batch_number: string
+  quantity: number
+  nomenclature?: {
+    name?: string
+    code?: string
+    container_type_id?: string
+    container_type?: { id: string; name: string; code: string; surface_area_cm2?: number } | null
+  } | null
+  expiration_date?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -92,8 +123,9 @@ interface PositionItem {
 
 const STEPS = [
   'Источник',
+  'Среды',
   'Метрики',
-  'Среды и результат',
+  'Результат',
   'Подтверждение',
 ] as const
 
@@ -114,26 +146,31 @@ function PassagePageInner() {
   const [containers, setContainers] = useState<ContainerItem[]>([])
   const [containerTypes, setContainerTypes] = useState<ContainerTypeItem[]>([])
   const [readyMedia, setReadyMedia] = useState<ReadyMediumItem[]>([])
+  const [reagentBatches, setReagentBatches] = useState<ReagentBatchItem[]>([])
   const [positions, setPositions] = useState<PositionItem[]>([])
+  const [containerStock, setContainerStock] = useState<StockBatchItem[]>([])
   const [loadingData, setLoadingData] = useState(true)
 
   // --- Step 1: source ---
   const [selectedLotId, setSelectedLotId] = useState<string>('')
   const [selectedContainerIds, setSelectedContainerIds] = useState<Set<string>>(new Set())
 
-  // --- Step 2: metrics (per passage, NOT per container) ---
+  // --- Step 2: media (required) ---
+  const [dissociationMediumId, setDissociationMediumId] = useState<string>('')
+  const [washMediumId, setWashMediumId] = useState<string>('')
+  const [seedMediumId, setSeedMediumId] = useState<string>('')
+
+  // --- Step 3: metrics (per passage) ---
   const [concentration, setConcentration] = useState<string>('')
   const [volumeMl, setVolumeMl] = useState<string>('')
   const [viability, setViability] = useState<string>('')
 
-  // --- Step 3: media & result ---
+  // --- Step 4: result ---
   const [newContainerTypeId, setNewContainerTypeId] = useState<string>('')
   const [newContainerCount, setNewContainerCount] = useState<string>('1')
-  const [dissociationMediumId, setDissociationMediumId] = useState<string>('')
-  const [washMediumId, setWashMediumId] = useState<string>('')
   const [positionId, setPositionId] = useState<string>('')
 
-  // --- Step 4: confirmation ---
+  // --- Step 5: confirmation ---
   const [notes, setNotes] = useState('')
 
   // =========================================================================
@@ -143,26 +180,28 @@ function PassagePageInner() {
   useEffect(() => {
     ;(async () => {
       try {
-        const [lotsData, typesData, mediaData, posData] = await Promise.all([
+        const [lotsData, typesData, mediaData, reagentsData, posData, stockData] = await Promise.all([
           getLots({ status: 'ACTIVE' }),
           getContainerTypes(),
           getAvailableMediaForFeed(),
+          getReagentBatches(),
           getPositions(),
+          getContainerStockByType(),
         ])
         setLots((lotsData as LotItem[]) || [])
         setContainerTypes((typesData as ContainerTypeItem[]) || [])
         setReadyMedia((mediaData as ReadyMediumItem[]) || [])
+        setReagentBatches((reagentsData as ReagentBatchItem[]) || [])
         setPositions((posData as PositionItem[]) || [])
+        setContainerStock((stockData as StockBatchItem[]) || [])
 
         // Auto-bind from URL params
         const paramLotId = searchParams.get('lot_id')
         const paramContainerId = searchParams.get('container_id')
         if (paramLotId) {
           setSelectedLotId(paramLotId)
-          // containers will be loaded by the existing useEffect on selectedLotId
         }
         if (paramContainerId) {
-          // Will be applied after containers load
           setSelectedContainerIds(new Set([paramContainerId]))
         }
       } catch (err) {
@@ -185,7 +224,6 @@ function PassagePageInner() {
       try {
         const data = await getContainersByLot(selectedLotId)
         setContainers((data as ContainerItem[]) || [])
-        // Preserve container selection from URL params
         const paramContainerId = searchParams.get('container_id')
         if (paramContainerId && data?.some((c: any) => c.id === paramContainerId)) {
           setSelectedContainerIds(new Set([paramContainerId]))
@@ -233,7 +271,7 @@ function PassagePageInner() {
 
   // Non-cryo container types
   const filteredContainerTypes = useMemo(
-    () => containerTypes.filter((t) => !t.is_cryo),
+    () => containerTypes.filter((t) => !t.is_cryo && t.is_active !== false),
     [containerTypes],
   )
 
@@ -242,19 +280,68 @@ function PassagePageInner() {
     [filteredContainerTypes, newContainerTypeId],
   )
 
+  // Cells per cm2
+  const cellsPerCm2 = selectedContainerType?.surface_area_cm2 && cellsPerContainer > 0
+    ? (cellsPerContainer * 1_000_000) / selectedContainerType.surface_area_cm2
+    : 0
+
+  // Stock per container type
+  const getStockForType = (typeId: string): number => {
+    return containerStock
+      .filter((b) => b.nomenclature?.container_type_id === typeId)
+      .reduce((sum, b) => sum + (b.quantity || 0), 0)
+  }
+
+  // Combined list of all media/reagents for selection
+  const allMediaOptions = useMemo(() => {
+    const options: { id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[] = []
+
+    // Ready media
+    for (const m of readyMedia) {
+      options.push({
+        id: `rm:${m.id}`,
+        label: `${m.name || m.code} (${m.current_volume_ml ?? '?'} мл) — Готовая среда`,
+        type: 'ready_medium',
+        category: 'MEDIUM',
+      })
+    }
+
+    // Reagent batches (media, buffers, enzymes, additives)
+    for (const b of reagentBatches) {
+      const nom = b.nomenclature
+      if (!nom) continue
+      options.push({
+        id: `batch:${b.id}`,
+        label: `${nom.name || b.batch_number} (${b.quantity} ${nom.category === 'MEDIUM' ? 'мл' : 'шт.'})${b.expiration_date ? ` до ${b.expiration_date}` : ''}`,
+        type: 'batch',
+        category: nom.category || undefined,
+      })
+    }
+
+    return options
+  }, [readyMedia, reagentBatches])
+
+  // Filter incubator positions
+  const incubatorPositions = useMemo(
+    () => positions.filter((p) => p.is_active !== false),
+    [positions],
+  )
+
   // =========================================================================
   // Step validation
   // =========================================================================
 
   const canProceedStep1 = selectedLotId !== '' && selectedContainerIds.size > 0
-  const canProceedStep2 =
+  const canProceedStep2 = dissociationMediumId !== '' && washMediumId !== ''
+  const canProceedStep3 =
     concentrationNum > 0 && volumeNum > 0 && viabilityNum > 0 && viabilityNum <= 100
-  const canProceedStep3 = newContainerTypeId !== '' && newContainerCountNum >= 1
+  const canProceedStep4 = newContainerTypeId !== '' && newContainerCountNum >= 1 && positionId !== '' && seedMediumId !== ''
 
   function canProceed(s: number): boolean {
     if (s === 1) return canProceedStep1
     if (s === 2) return canProceedStep2
     if (s === 3) return canProceedStep3
+    if (s === 4) return canProceedStep4
     return true
   }
 
@@ -279,6 +366,16 @@ function PassagePageInner() {
     }
   }
 
+  // Parse medium ID (rm:xxx or batch:xxx)
+  function parseMediumId(combined: string): { type: 'ready_medium' | 'batch'; id: string } | null {
+    if (!combined) return null
+    const [type, ...rest] = combined.split(':')
+    const id = rest.join(':')
+    if (type === 'rm') return { type: 'ready_medium', id }
+    if (type === 'batch') return { type: 'batch', id }
+    return null
+  }
+
   // =========================================================================
   // Submit
   // =========================================================================
@@ -299,6 +396,10 @@ function PassagePageInner() {
         }
       })
 
+      const dissoc = parseMediumId(dissociationMediumId)
+      const wash = parseMediumId(washMediumId)
+      const seed = parseMediumId(seedMediumId)
+
       await createOperationPassage({
         source_lot_id: selectedLotId,
         source_containers: sourceContainers,
@@ -308,8 +409,12 @@ function PassagePageInner() {
           viability_percent: viabilityNum,
         },
         media: {
-          dissociation_rm_id: dissociationMediumId || undefined,
-          wash_rm_id: washMediumId || undefined,
+          dissociation_rm_id: dissoc?.type === 'ready_medium' ? dissoc.id : undefined,
+          dissociation_batch_id: dissoc?.type === 'batch' ? dissoc.id : undefined,
+          wash_rm_id: wash?.type === 'ready_medium' ? wash.id : undefined,
+          wash_batch_id: wash?.type === 'batch' ? wash.id : undefined,
+          seed_rm_id: seed?.type === 'ready_medium' ? seed.id : undefined,
+          seed_batch_id: seed?.type === 'batch' ? seed.id : undefined,
         },
         result: {
           container_type_id: newContainerTypeId,
@@ -321,7 +426,6 @@ function PassagePageInner() {
       })
 
       toast.success('Пассаж выполнен успешно')
-      // Return to culture card
       const cultureId = selectedLot?.culture_id || selectedLot?.culture?.id
       if (cultureId) {
         router.push(`/cultures/${cultureId}`)
@@ -330,14 +434,15 @@ function PassagePageInner() {
       }
     } catch (err: unknown) {
       console.error('Passage error:', err)
-      toast.error('Ошибка при выполнении пассажа')
+      const msg = err instanceof Error ? err.message : 'Неизвестная ошибка'
+      toast.error(`Ошибка при выполнении пассажа: ${msg}`)
     } finally {
       setSubmitting(false)
     }
   }
 
   // =========================================================================
-  // Render helpers
+  // Render
   // =========================================================================
 
   if (loadingData) {
@@ -348,9 +453,11 @@ function PassagePageInner() {
     )
   }
 
-  // =========================================================================
-  // RENDER
-  // =========================================================================
+  // Find medium label for summary
+  function getMediumLabel(id: string): string {
+    const opt = allMediaOptions.find((o) => o.id === id)
+    return opt?.label || '—'
+  }
 
   return (
     <div className="container py-6 space-y-6 max-w-3xl mx-auto">
@@ -370,15 +477,15 @@ function PassagePageInner() {
       </div>
 
       {/* ---- Step indicator ---- */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 overflow-x-auto">
         {STEPS.map((label, i) => {
           const stepNum = i + 1
           const isCompleted = step > stepNum
           const isCurrent = step === stepNum
           return (
-            <div key={i} className="flex items-center gap-2">
+            <div key={i} className="flex items-center gap-1.5">
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0 ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0 ${
                   isCompleted
                     ? 'bg-primary text-primary-foreground'
                     : isCurrent
@@ -386,16 +493,16 @@ function PassagePageInner() {
                       : 'bg-muted text-muted-foreground'
                 }`}
               >
-                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : stepNum}
+                {isCompleted ? <CheckCircle2 className="h-3.5 w-3.5" /> : stepNum}
               </div>
               <span
-                className={`text-sm whitespace-nowrap ${
+                className={`text-xs whitespace-nowrap ${
                   isCurrent || isCompleted ? 'text-foreground font-medium' : 'text-muted-foreground'
                 }`}
               >
                 {label}
               </span>
-              {i < STEPS.length - 1 && <div className="w-6 h-0.5 bg-border shrink-0" />}
+              {i < STEPS.length - 1 && <div className="w-4 h-0.5 bg-border shrink-0" />}
             </div>
           )
         })}
@@ -525,19 +632,82 @@ function PassagePageInner() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 2 — METRICS                                                   */}
+      {/* STEP 2 — MEDIA (Среды — обязательные)                              */}
       {/* ================================================================== */}
       {step === 2 && (
         <Card>
           <CardHeader>
-            <CardTitle>Метрики пассажа</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <TestTubes className="h-5 w-5" />
+              Среды для пассажа
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Dissociation medium - required */}
+            <div className="space-y-2">
+              <Label>
+                Среда диссоциации (снятие клеток) <span className="text-destructive">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">Фермент или реагент для открепления клеток (трипсин, коллагеназа, аккутаза и т.д.)</p>
+              <Select value={dissociationMediumId} onValueChange={setDissociationMediumId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите среду диссоциации..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allMediaOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Wash medium - required */}
+            <div className="space-y-2">
+              <Label>
+                Среда промывки <span className="text-destructive">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">Буфер для промывки клеток после диссоциации (PBS, HBSS и т.д.)</p>
+              <Select value={washMediumId} onValueChange={setWashMediumId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите среду промывки..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allMediaOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEP 3 — METRICS                                                   */}
+      {/* ================================================================== */}
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Beaker className="h-5 w-5" />
+              Метрики (после снятия клеток)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <p className="text-sm text-muted-foreground">
+              Введите результаты подсчёта клеток после диссоциации
+            </p>
+
             <div className="grid gap-4 md:grid-cols-3">
               {/* Concentration */}
               <div className="space-y-2">
                 <Label htmlFor="concentration">
-                  Концентрация (клеток/мл) <span className="text-destructive">*</span>
+                  Концентрация (кл/мл) <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="concentration"
@@ -598,15 +768,18 @@ function PassagePageInner() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 3 — MEDIA & RESULT                                            */}
+      {/* STEP 4 — RESULT                                                    */}
       {/* ================================================================== */}
-      {step === 3 && (
+      {step === 4 && (
         <Card>
           <CardHeader>
-            <CardTitle>Среды и результат</CardTitle>
+            <CardTitle>Результат пассажа</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* --- Result section --- */}
+            <p className="text-sm text-muted-foreground">
+              Выберите тип и количество новых контейнеров для посева
+            </p>
+
             <div className="grid gap-4 md:grid-cols-2">
               {/* Container type */}
               <div className="space-y-2">
@@ -618,11 +791,26 @@ function PassagePageInner() {
                     <SelectValue placeholder="Выберите тип..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {filteredContainerTypes.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
+                    {filteredContainerTypes.map((t) => {
+                      const stock = getStockForType(t.id)
+                      return (
+                        <SelectItem key={t.id} value={t.id}>
+                          <span className="flex items-center gap-2">
+                            {t.name}
+                            {t.surface_area_cm2 ? ` (${t.surface_area_cm2} см²)` : ''}
+                            {stock > 0 ? (
+                              <Badge variant="secondary" className="ml-1 text-xs">
+                                {stock} шт.
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="ml-1 text-xs text-muted-foreground">
+                                нет
+                              </Badge>
+                            )}
+                          </span>
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -630,7 +818,7 @@ function PassagePageInner() {
               {/* New containers count */}
               <div className="space-y-2">
                 <Label htmlFor="cnt-count">
-                  Количество новых контейнеров <span className="text-destructive">*</span>
+                  Количество <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="cnt-count"
@@ -642,79 +830,89 @@ function PassagePageInner() {
               </div>
             </div>
 
-            {/* Cells per container */}
+            {/* Container type info */}
+            {selectedContainerType && (
+              <div className="grid gap-2 md:grid-cols-3 text-sm p-3 bg-muted rounded-lg">
+                {selectedContainerType.surface_area_cm2 && (
+                  <div>
+                    <span className="text-muted-foreground">Площадь:</span>{' '}
+                    <strong>{selectedContainerType.surface_area_cm2} см²</strong>
+                  </div>
+                )}
+                {selectedContainerType.volume_ml && (
+                  <div>
+                    <span className="text-muted-foreground">Рабочий объём:</span>{' '}
+                    <strong>{selectedContainerType.volume_ml} мл</strong>
+                  </div>
+                )}
+                {selectedContainerType.optimal_confluent && (
+                  <div>
+                    <span className="text-muted-foreground">Оптим. конфлюэнтн.:</span>{' '}
+                    <strong>{selectedContainerType.optimal_confluent}%</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Cells per container + density */}
             {totalCellsMillions > 0 && newContainerCountNum > 0 && (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                <Calculator className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">
-                  Клеток на контейнер: {cellsPerContainer.toFixed(2)} млн
-                </span>
+              <div className="space-y-1 p-3 bg-muted rounded-lg">
+                <div className="flex items-center gap-2 text-sm">
+                  <Calculator className="h-4 w-4 text-muted-foreground" />
+                  <span>
+                    Клеток на контейнер: <strong>{cellsPerContainer.toFixed(2)} млн</strong>
+                  </span>
+                </div>
+                {cellsPerCm2 > 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calculator className="h-4 w-4 text-muted-foreground" />
+                    <span>
+                      Плотность посева: <strong>{Math.round(cellsPerCm2).toLocaleString()} кл/см²</strong>
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
             <Separator />
 
-            {/* --- Media section --- */}
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Dissociation medium */}
-              <div className="space-y-2">
-                <Label>Среда диссоциации (опционально)</Label>
-                <Select value={dissociationMediumId} onValueChange={setDissociationMediumId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Не выбрано" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Не выбрано</SelectItem>
-                    {readyMedia.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code}
-                        {m.name ? ` — ${m.name}` : ''}
-                        {m.current_volume_ml != null ? ` (${m.current_volume_ml} мл)` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Wash medium */}
-              <div className="space-y-2">
-                <Label>Среда промывки (опционально)</Label>
-                <Select value={washMediumId} onValueChange={setWashMediumId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Не выбрано" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Не выбрано</SelectItem>
-                    {readyMedia.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code}
-                        {m.name ? ` — ${m.name}` : ''}
-                        {m.current_volume_ml != null ? ` (${m.current_volume_ml} мл)` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Position - REQUIRED (incubator) */}
+            <div className="space-y-2">
+              <Label>
+                Размещение (инкубатор) <span className="text-destructive">*</span>
+              </Label>
+              <Select value={positionId} onValueChange={setPositionId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите позицию..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {incubatorPositions.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.path}{p.equipment?.name ? ` (${p.equipment.name})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <Separator />
 
-            {/* Position for new containers */}
+            {/* Seed medium - REQUIRED */}
             <div className="space-y-2">
-              <Label>Позиция для новых контейнеров (опционально)</Label>
-              <Select value={positionId} onValueChange={setPositionId}>
+              <Label>
+                Питательная среда для посева <span className="text-destructive">*</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">Среда для ресуспензирования и посева в новые контейнеры</p>
+              <Select value={seedMediumId} onValueChange={setSeedMediumId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Авторазмещение" />
+                  <SelectValue placeholder="Выберите среду..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Авторазмещение</SelectItem>
-                  {positions
-                    .filter((p) => p.is_active !== false)
-                    .map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.path}
-                      </SelectItem>
-                    ))}
+                  {allMediaOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -723,15 +921,14 @@ function PassagePageInner() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 4 — CONFIRMATION                                              */}
+      {/* STEP 5 — CONFIRMATION                                              */}
       {/* ================================================================== */}
-      {step === 4 && (
+      {step === 5 && (
         <Card>
           <CardHeader>
             <CardTitle>Подтверждение</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Summary grid */}
             <div className="grid gap-4 md:grid-cols-2">
               {/* Source */}
               <div className="p-4 bg-muted rounded-lg space-y-2">
@@ -769,7 +966,7 @@ function PassagePageInner() {
                 </p>
                 <p>
                   <span className="text-muted-foreground">Новых контейнеров:</span>{' '}
-                  {newContainerCountNum} x {selectedContainerType?.name ?? '—'}
+                  {newContainerCountNum} × {selectedContainerType?.name ?? '—'}
                 </p>
                 <p>
                   <span className="text-muted-foreground">Всего клеток:</span>{' '}
@@ -779,27 +976,54 @@ function PassagePageInner() {
                   <span className="text-muted-foreground">Клеток/контейнер:</span>{' '}
                   {cellsPerContainer.toFixed(2)} млн
                 </p>
+                {cellsPerCm2 > 0 && (
+                  <p>
+                    <span className="text-muted-foreground">Плотность:</span>{' '}
+                    {Math.round(cellsPerCm2).toLocaleString()} кл/см²
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Metrics summary */}
+            {/* Media summary */}
+            <div className="p-4 bg-muted rounded-lg space-y-1">
+              <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide mb-2">
+                Среды
+              </h3>
+              <p className="text-sm">
+                <span className="text-muted-foreground">Диссоциация:</span>{' '}
+                {getMediumLabel(dissociationMediumId)}
+              </p>
+              <p className="text-sm">
+                <span className="text-muted-foreground">Промывка:</span>{' '}
+                {getMediumLabel(washMediumId)}
+              </p>
+              {seedMediumId && (
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Питательная:</span>{' '}
+                  {getMediumLabel(seedMediumId)}
+                </p>
+              )}
+            </div>
+
+            {/* Metrics */}
             <div className="p-4 bg-muted rounded-lg space-y-1">
               <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide mb-2">
                 Метрики
               </h3>
-              <p>
+              <p className="text-sm">
                 <span className="text-muted-foreground">Концентрация:</span>{' '}
-                {concentrationNum.toLocaleString()} клеток/мл
+                {concentrationNum.toLocaleString()} кл/мл
               </p>
-              <p>
-                <span className="text-muted-foreground">Объём суспензии:</span> {volumeNum} мл
+              <p className="text-sm">
+                <span className="text-muted-foreground">Объём:</span> {volumeNum} мл
               </p>
-              <p>
+              <p className="text-sm">
                 <span className="text-muted-foreground">Жизнеспособность:</span> {viabilityNum}%
               </p>
             </div>
 
-            {/* Info alert */}
+            {/* Info */}
             <Alert>
               <CheckCircle2 className="h-4 w-4" />
               <AlertDescription>
@@ -837,9 +1061,9 @@ function PassagePageInner() {
           Назад
         </Button>
 
-        {step < 4 ? (
+        {step < 5 ? (
           <Button
-            onClick={() => setStep((s) => Math.min(4, s + 1))}
+            onClick={() => setStep((s) => Math.min(5, s + 1))}
             disabled={!canProceed(step)}
           >
             Далее

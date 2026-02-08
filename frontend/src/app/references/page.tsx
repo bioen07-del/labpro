@@ -176,13 +176,15 @@ export default function ReferencesPage() {
               {equipment.length}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="inventory" className="gap-1.5">
-            <Package className="h-4 w-4" />
-            Склад
-            <Badge variant="secondary" className="ml-1 text-xs">
-              {batches.length}
-            </Badge>
-          </TabsTrigger>
+          <Link href="/inventory">
+            <div className="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 gap-1.5 hover:bg-muted cursor-pointer">
+              <Package className="h-4 w-4" />
+              Склад
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {batches.length}
+              </Badge>
+            </div>
+          </Link>
           <TabsTrigger value="media" className="gap-1.5">
             <TestTubes className="h-4 w-4" />
             Среды

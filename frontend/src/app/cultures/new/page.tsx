@@ -29,6 +29,7 @@ import {
   getPositions,
   getAvailableMediaForFeed,
   getAllConsumableBatches,
+  getContainerStockByType,
   createCultureFromDonation,
 } from '@/lib/api'
 
@@ -88,7 +89,7 @@ interface ConsumableBatch {
   id: string
   batch_number: string
   quantity: number
-  nomenclature?: { name?: string } | null
+  nomenclature?: { name?: string; container_type_id?: string } | null
   expiration_date?: string
   [key: string]: unknown
 }
@@ -127,12 +128,10 @@ function generateRowId(): string {
   return Math.random().toString(36).substring(2, 9)
 }
 
-// Найти подходящие партии расходников для типа контейнера
-function matchBatchesToContainerType(batches: ConsumableBatch[], containerTypeName: string): ConsumableBatch[] {
-  const ctName = containerTypeName.toLowerCase()
-  return batches.filter((b) => {
-    const nomName = (b.nomenclature?.name || '').toLowerCase()
-    return nomName.includes(ctName) || ctName.includes(nomName)
+// Найти подходящие партии расходников для типа контейнера по container_type_id
+function matchBatchesToContainerType(batches: ConsumableBatch[], containerTypeId: string): ConsumableBatch[] {
+  return batches.filter((b: any) => {
+    return b.nomenclature?.container_type_id === containerTypeId
   })
 }
 
@@ -183,7 +182,7 @@ function NewCultureForm() {
           getContainerTypes(),
           getPositions(),
           getAvailableMediaForFeed(),
-          getAllConsumableBatches(),
+          getContainerStockByType(),
         ])
         setDonations((donationsData || []) as Donation[])
         // Filter out cryo container types
@@ -312,9 +311,8 @@ function NewCultureForm() {
 
   // Get matching batches for a container type
   const getBatchesForRow = (row: ContainerRow): ConsumableBatch[] => {
-    const ct = containerTypes.find((c) => c.id === row.containerTypeId)
-    if (!ct) return []
-    return matchBatchesToContainerType(allConsumableBatches, ct.name)
+    if (!row.containerTypeId) return []
+    return matchBatchesToContainerType(allConsumableBatches, row.containerTypeId)
   }
 
   // Check consumable overflow for any row
@@ -602,8 +600,8 @@ function NewCultureForm() {
                           </SelectTrigger>
                           <SelectContent>
                             {containerTypes.map((ct) => {
-                              // Show stock availability for each type
-                              const ctBatches = matchBatchesToContainerType(allConsumableBatches, ct.name)
+                              // Show stock availability for each type by container_type_id
+                              const ctBatches = matchBatchesToContainerType(allConsumableBatches, ct.id)
                               const ctStock = ctBatches.reduce((sum, b) => sum + (b.quantity || 0), 0)
                               return (
                                 <SelectItem key={ct.id} value={ct.id}>

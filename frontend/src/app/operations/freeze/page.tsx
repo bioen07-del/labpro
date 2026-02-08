@@ -693,7 +693,6 @@ function FreezePageInner() {
                     <SelectValue placeholder="(необязательно)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">-- Не выбрано --</SelectItem>
                     {media.map((m: any) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.code || m.name}
@@ -711,7 +710,6 @@ function FreezePageInner() {
                     <SelectValue placeholder="(необязательно)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">-- Не выбрано --</SelectItem>
                     {media.map((m: any) => (
                       <SelectItem key={m.id} value={m.id}>
                         {m.code || m.name}
@@ -984,8 +982,7 @@ function FreezePageInner() {
                       '---'}
                   </span>
                 </div>
-                {dissociationMediumId &&
-                  dissociationMediumId !== '__none__' && (
+                {dissociationMediumId && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">
                         Среда диссоциации:
@@ -1001,7 +998,7 @@ function FreezePageInner() {
                       </span>
                     </div>
                   )}
-                {washMediumId && washMediumId !== '__none__' && (
+                {washMediumId && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
                       Среда для промывки:

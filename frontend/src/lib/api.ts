@@ -2164,6 +2164,8 @@ export interface PassageMediaData {
   dissociation_rm_id?: string
   wash_batch_id?: string
   wash_rm_id?: string
+  seed_batch_id?: string
+  seed_rm_id?: string
 }
 
 export async function createOperationPassage(data: {
@@ -2261,7 +2263,7 @@ export async function createOperationPassage(data: {
       .insert({
         lot_id: newLot.id,
         container_type_id: data.result.container_type_id,
-        position_id: data.result.position_id,
+        position_id: data.result.position_id || null,
         container_status: 'IN_CULTURE',
         passage_number: newPassageNumber,
         confluent_percent: 0, // Новый контейнер, конфлюэнтность 0
@@ -2423,6 +2425,41 @@ export async function getAllConsumableBatches() {
     const nom = b.nomenclature
     if (!nom) return false
     return nom.category === 'CONSUMABLE'
+  })
+}
+
+// Получить партии контейнеров со склада с привязкой к container_type_id (через nomenclatures)
+export async function getContainerStockByType() {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*, container_type:container_types(*))')
+    .gt('quantity', 0)
+    .in('status', ['AVAILABLE', 'RESERVED'])
+    .order('expiration_date', { ascending: true })
+
+  if (error) throw error
+
+  // Фильтруем только те, у кого nomenclature.container_type_id не null
+  return (data ?? []).filter((b: any) => {
+    return b.nomenclature?.container_type_id != null
+  })
+}
+
+// Получить все партии реагентов/сред/ферментов/буферов для форм операций
+export async function getReagentBatches() {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*)')
+    .gt('quantity', 0)
+    .in('status', ['AVAILABLE', 'RESERVED'])
+    .order('expiration_date', { ascending: true })
+
+  if (error) throw error
+
+  return (data ?? []).filter((b: any) => {
+    const nom = b.nomenclature
+    if (!nom) return false
+    return nom.category !== 'CONSUMABLE' || nom.container_type_id == null
   })
 }
 
