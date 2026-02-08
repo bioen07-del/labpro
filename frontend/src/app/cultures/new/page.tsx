@@ -24,6 +24,7 @@ import {
 import {
   getDonations,
   getCultureTypesByTissueType,
+  getCultureTypes,
   getContainerTypes,
   getPositions,
   getAvailableMediaForFeed,
@@ -216,8 +217,20 @@ function NewCultureForm() {
       }))
 
       if (mapped.length === 0) {
-        toast.warning('Для данного типа ткани не определены типы клеток. Обратитесь к администратору.')
-        setCultureTypeOptions([])
+        // Fallback: load ALL active culture types for manual selection
+        toast.info('Нет привязки типа клеток к типу ткани — показаны все типы')
+        try {
+          const allTypes = await getCultureTypes()
+          const fallback = ((allTypes || []) as any[]).map((ct) => ({
+            id: ct.id,
+            code: ct.code,
+            name: ct.name,
+            is_primary: false,
+          }))
+          setCultureTypeOptions(fallback)
+        } catch {
+          setCultureTypeOptions([])
+        }
       } else {
         setCultureTypeOptions(mapped)
         // Auto-select primary or single option
