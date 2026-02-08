@@ -119,12 +119,15 @@ export function getStatusLabel(status: string): string {
 // Get operation type label
 export function getOperationTypeLabel(type: string): string {
   const labels: Record<string, string> = {
+    SEED: 'Посев',
     FEED: 'Кормление',
+    FEEDING: 'Кормление',
     PASSAGE: 'Пассирование',
     FREEZE: 'Заморозка',
     THAW: 'Размораживание',
     OBSERVE: 'Наблюдение',
     DISPOSE: 'Утилизация',
+    QC: 'Контроль качества',
     QCREG: 'Регистрация QC',
   }
   return labels[type] || type
