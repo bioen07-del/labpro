@@ -277,7 +277,13 @@ function ThawPageInner() {
         description: `Разморожено виал: ${selectedVials.length}`,
       })
 
-      router.push('/operations')
+      // Return to culture card
+      const cultureId = selectedBank?.culture_id
+      if (cultureId) {
+        router.push(`/cultures/${cultureId}`)
+      } else {
+        router.push('/operations')
+      }
     } catch (error: any) {
       console.error('Error creating thaw operation:', error)
       toast.error('Ошибка выполнения разморозки', {

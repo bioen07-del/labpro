@@ -59,6 +59,7 @@ interface ContainerItem {
   id: string
   code: string
   status: string
+  container_status?: string
   confluent_percent?: number
   passage_number?: number
   position?: { id: string; path: string } | null
@@ -208,7 +209,10 @@ function PassagePageInner() {
   )
 
   const activeContainers = useMemo(
-    () => containers.filter((c) => c.status === 'IN_CULTURE' || c.status === 'ACTIVE'),
+    () => containers.filter((c) => {
+      const st = c.container_status || c.status
+      return st === 'IN_CULTURE' || st === 'ACTIVE'
+    }),
     [containers],
   )
 
@@ -317,7 +321,13 @@ function PassagePageInner() {
       })
 
       toast.success('Пассаж выполнен успешно')
-      router.push('/operations')
+      // Return to culture card
+      const cultureId = selectedLot?.culture_id || selectedLot?.culture?.id
+      if (cultureId) {
+        router.push(`/cultures/${cultureId}`)
+      } else {
+        router.push(`/lots/${selectedLotId}`)
+      }
     } catch (err: unknown) {
       console.error('Passage error:', err)
       toast.error('Ошибка при выполнении пассажа')
@@ -469,7 +479,7 @@ function PassagePageInner() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono text-sm">{c.code}</span>
                             <Badge variant="outline" className="text-xs">
-                              {c.status}
+                              {c.container_status || c.status}
                             </Badge>
                           </div>
                           {c.confluent_percent !== undefined && (

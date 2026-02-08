@@ -103,7 +103,7 @@ function DisposePageInner() {
           for (const lot of (lotsData || [])) {
             try {
               const containersData = await getContainersByLot(lot.id)
-              const filtered = (containersData || []).filter((c: any) => c.status !== 'DISPOSE')
+              const filtered = (containersData || []).filter((c: any) => (c.container_status || c.status) !== 'DISPOSE')
               if (filtered.some((c: any) => c.id === paramId)) {
                 setSelectedLotId(lot.id)
                 setContainers(filtered)
@@ -119,7 +119,7 @@ function DisposePageInner() {
           setSelectedLotId(paramLotId)
           try {
             const data = await getContainersByLot(paramLotId)
-            setContainers((data || []).filter((c: any) => c.status !== 'DISPOSE'))
+            setContainers((data || []).filter((c: any) => (c.container_status || c.status) !== 'DISPOSE'))
           } catch (err) {
             console.error('Error loading containers from URL param:', err)
           }
@@ -145,7 +145,7 @@ function DisposePageInner() {
     try {
       const data = await getContainersByLot(lotId)
       // Only show containers that are not already disposed
-      setContainers((data || []).filter((c: any) => c.status !== 'DISPOSE'))
+      setContainers((data || []).filter((c: any) => (c.container_status || c.status) !== 'DISPOSE'))
     } catch (error) {
       console.error('Error loading containers:', error)
       toast.error('Ошибка загрузки контейнеров')
@@ -257,7 +257,18 @@ function DisposePageInner() {
       }
 
       toast.success(`Утилизация выполнена (${disposeCount} объектов)`)
-      router.push('/operations')
+      // Return to culture card if came from a lot
+      if (targetType === 'container' && selectedLotId) {
+        const lot = lots.find((l: any) => l.id === selectedLotId)
+        const cultureId = lot?.culture_id || lot?.culture?.id
+        if (cultureId) {
+          router.push(`/cultures/${cultureId}`)
+        } else {
+          router.push(`/lots/${selectedLotId}`)
+        }
+      } else {
+        router.push('/operations')
+      }
     } catch (error) {
       console.error('Dispose error:', error)
       toast.error('Ошибка при утилизации. Попробуйте ещё раз.')

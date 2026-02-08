@@ -202,7 +202,13 @@ function ObservePageInner() {
         description: `Данные сохранены для ${selectedIds.length} контейнеров`,
       })
 
-      router.push('/operations')
+      // Return to culture card
+      const cultureId = selectedLot?.culture_id || selectedLot?.culture?.id
+      if (cultureId) {
+        router.push(`/cultures/${cultureId}`)
+      } else {
+        router.push(`/lots/${selectedLotId}`)
+      }
     } catch (err) {
       console.error('Error creating observation:', err)
       toast.error('Ошибка при сохранении наблюдения')

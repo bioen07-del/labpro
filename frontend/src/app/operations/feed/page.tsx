@@ -159,7 +159,14 @@ function FeedPageInner() {
         description: `Обработано контейнеров: ${selectedContainers.length}`,
       })
 
-      router.push('/operations')
+      // Return to culture card
+      const lot = lots.find((l: any) => l.id === selectedLotId)
+      const cultureId = lot?.culture_id || lot?.culture?.id
+      if (cultureId) {
+        router.push(`/cultures/${cultureId}`)
+      } else {
+        router.push(`/lots/${selectedLotId}`)
+      }
     } catch (error: any) {
       console.error('Error creating feed operation:', error)
       toast.error('Ошибка выполнения операции', {

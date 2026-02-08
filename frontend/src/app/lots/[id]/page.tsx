@@ -161,7 +161,14 @@ export default function LotDetailPage({
 
   // ---- Selection helpers ----
 
+  const activeContainers = containers.filter(
+    (c) => (c.container_status || c.status) !== 'DISPOSE'
+  )
+
   const toggleSelect = (containerId: string) => {
+    // Don't allow selecting disposed containers
+    const container = containers.find((c) => c.id === containerId)
+    if ((container?.container_status || container?.status) === 'DISPOSE') return
     setSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(containerId)) next.delete(containerId)
@@ -171,15 +178,15 @@ export default function LotDetailPage({
   }
 
   const selectAll = () => {
-    if (selectedIds.size === containers.length) {
+    if (selectedIds.size === activeContainers.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(containers.map((c) => c.id)))
+      setSelectedIds(new Set(activeContainers.map((c) => c.id)))
     }
   }
 
   const allSelected =
-    containers.length > 0 && selectedIds.size === containers.length
+    activeContainers.length > 0 && selectedIds.size === activeContainers.length
 
   // ---- Render states ----
 
@@ -269,6 +276,7 @@ export default function LotDetailPage({
         </div>
 
         {/* ===== ACTION BUTTONS ===== */}
+        {lot.status === 'ACTIVE' && activeContainers.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           <Link href={`/operations/observe?lot_id=${id}`}>
             <Button variant="outline" size="sm">
@@ -305,6 +313,11 @@ export default function LotDetailPage({
             </Button>
           </Link>
         </div>
+        ) : (
+          <Badge variant="outline" className="text-muted-foreground">
+            {lot.status === 'DISPOSE' ? 'Лот утилизирован' : lot.status === 'CLOSED' ? 'Лот закрыт' : 'Нет активных контейнеров'}
+          </Badge>
+        )}
       </div>
 
       <Separator />
@@ -422,6 +435,7 @@ export default function LotDetailPage({
               {containers.map((c) => {
                 const confluent = c.confluent_percent ?? 0
                 const isSelected = selectedIds.has(c.id)
+                const isDisposed = (c.container_status || c.status) === 'DISPOSE'
                 const positionPath =
                   c.position?.equipment?.name && c.position?.path
                     ? `${c.position.equipment.name} / ${c.position.path}`
@@ -431,14 +445,15 @@ export default function LotDetailPage({
                   <div
                     key={c.id}
                     className={`
-                      relative rounded-lg border p-4 transition-all cursor-pointer
+                      relative rounded-lg border p-4 transition-all
+                      ${isDisposed ? "opacity-50 cursor-not-allowed bg-muted/50" : "cursor-pointer"}
                       ${
-                        isSelected
+                        isSelected && !isDisposed
                           ? "border-primary ring-2 ring-primary/20 bg-primary/5"
-                          : "hover:border-muted-foreground/30 hover:shadow-sm"
+                          : !isDisposed ? "hover:border-muted-foreground/30 hover:shadow-sm" : ""
                       }
                     `}
-                    onClick={() => toggleSelect(c.id)}
+                    onClick={() => !isDisposed && toggleSelect(c.id)}
                   >
                     {/* Checkbox */}
                     <div className="absolute top-3 right-3" onClick={(e) => e.stopPropagation()}>
@@ -512,11 +527,11 @@ export default function LotDetailPage({
                       <Badge
                         variant="outline"
                         className={`text-[10px] ${
-                          CONTAINER_STATUS_VARIANT[c.status] ||
+                          CONTAINER_STATUS_VARIANT[c.container_status || c.status] ||
                           "bg-gray-100 text-gray-800"
                         }`}
                       >
-                        {CONTAINER_STATUS_LABEL[c.status] || c.status}
+                        {CONTAINER_STATUS_LABEL[c.container_status || c.status] || c.container_status || c.status}
                       </Badge>
                     </div>
                   </div>

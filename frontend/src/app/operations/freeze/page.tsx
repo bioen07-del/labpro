@@ -335,7 +335,13 @@ function FreezePageInner() {
         description: `Банк ${result.bankType} создан. Криовиалов: ${Number(cryoVialCount)}`,
       })
 
-      router.push('/operations')
+      // Return to culture card
+      const cultureId = selectedLot?.culture_id || selectedLot?.culture?.id
+      if (cultureId) {
+        router.push(`/cultures/${cultureId}`)
+      } else {
+        router.push(`/lots/${selectedLotId}`)
+      }
     } catch (error: any) {
       console.error('Error creating freeze operation:', error)
       toast.error('Ошибка выполнения заморозки', {

@@ -154,7 +154,7 @@ function WorksheetContent() {
     : null
 
   const readyForPassage = containers.filter(
-    (c: any) => (c.confluent_percent ?? 0) >= 80 && c.status !== 'DISPOSE'
+    (c: any) => (c.confluent_percent ?? 0) >= 80 && (c.container_status || c.status) !== 'DISPOSE'
   )
 
   return (
