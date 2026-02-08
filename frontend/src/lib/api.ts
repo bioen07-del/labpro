@@ -113,14 +113,21 @@ export async function createCultureFromDonation(data: {
   donation_id: string
   culture_type_id: string
   extraction_method: string
-  container_type_id: string
-  container_count: number
+  // Поддерживает множественный выбор контейнеров
+  container_type_id?: string   // deprecated — для обратной совместимости
+  container_count?: number     // deprecated — для обратной совместимости
+  containers_list?: Array<{
+    container_type_id: string
+    count: number
+    position_id?: string
+    consumable_batch_id?: string  // ID партии расходников для списания этого типа
+  }>
   position_id?: string
   notes?: string
   // Списание среды
   ready_medium_id?: string
   medium_volume_ml?: number
-  // Списание контейнеров со склада
+  // Списание контейнеров со склада (deprecated — used with single container_type_id)
   consumable_batch_id?: string
 }) {
   // 1. Получить донацию для donor_id и tissue_id
@@ -169,29 +176,42 @@ export async function createCultureFromDonation(data: {
 
   if (lotError) throw lotError
 
-  // 5. Создать контейнеры
-  const containers = []
-  for (let i = 0; i < data.container_count; i++) {
-    const containerCode = `${cultureCode}-L1-P0-${String(i + 1).padStart(3, '0')}`
+  // 5. Создать контейнеры (поддержка множественных типов)
+  // Формируем единый список: containers_list ИЛИ fallback из старых полей
+  const containerGroups = data.containers_list && data.containers_list.length > 0
+    ? data.containers_list
+    : data.container_type_id
+      ? [{ container_type_id: data.container_type_id, count: data.container_count || 1, position_id: data.position_id, consumable_batch_id: data.consumable_batch_id }]
+      : []
 
-    const { data: container, error: contError } = await supabase
-      .from('containers')
-      .insert({
-        code: containerCode,
-        lot_id: lot.id,
-        container_type_id: data.container_type_id,
-        position_id: data.position_id || null,
-        container_status: 'IN_CULTURE',
-        passage_number: 0,
-        confluent_percent: 0,
-        contaminated: false,
-        seeded_at: new Date().toISOString()
-      })
-      .select()
-      .single()
+  if (containerGroups.length === 0) throw new Error('Не указаны контейнеры')
 
-    if (contError) throw contError
-    containers.push(container)
+  const containers: any[] = []
+  let globalIdx = 0
+  for (const group of containerGroups) {
+    for (let i = 0; i < group.count; i++) {
+      globalIdx++
+      const containerCode = `${cultureCode}-L1-P0-${String(globalIdx).padStart(3, '0')}`
+
+      const { data: container, error: contError } = await supabase
+        .from('containers')
+        .insert({
+          code: containerCode,
+          lot_id: lot.id,
+          container_type_id: group.container_type_id,
+          position_id: group.position_id || data.position_id || null,
+          container_status: 'IN_CULTURE',
+          passage_number: 0,
+          confluent_percent: 0,
+          contaminated: false,
+          seeded_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (contError) throw contError
+      containers.push(container)
+    }
   }
 
   // 6. Создать auto-task INSPECT через 1 день
@@ -262,30 +282,43 @@ export async function createCultureFromDonation(data: {
     }
   }
 
-  // 7c. Списание контейнеров со склада (если указано)
-  if (data.consumable_batch_id && data.container_count > 0) {
+  // 7c. Списание контейнеров со склада (поддержка множественных типов)
+  // Собираем все consumable_batch_id из containerGroups + deprecated поле
+  const batchWriteoffs = new Map<string, number>() // batch_id -> total count
+  for (const group of containerGroups) {
+    if (group.consumable_batch_id) {
+      const prev = batchWriteoffs.get(group.consumable_batch_id) || 0
+      batchWriteoffs.set(group.consumable_batch_id, prev + group.count)
+    }
+  }
+  // Deprecated single batch_id (только если containers_list не задан)
+  if (!data.containers_list && data.consumable_batch_id && (data.container_count || 0) > 0) {
+    const prev = batchWriteoffs.get(data.consumable_batch_id) || 0
+    batchWriteoffs.set(data.consumable_batch_id, prev + (data.container_count || 0))
+  }
+
+  for (const [batchId, writeoffQty] of batchWriteoffs.entries()) {
     const { data: batch } = await supabase
       .from('batches')
       .select('*')
-      .eq('id', data.consumable_batch_id)
+      .eq('id', batchId)
       .single()
 
     if (batch) {
-      const newQty = Math.max(0, (batch.quantity || 0) - data.container_count)
+      const newQty = Math.max(0, (batch.quantity || 0) - writeoffQty)
 
       await supabase
         .from('batches')
         .update({ quantity: newQty })
-        .eq('id', data.consumable_batch_id)
+        .eq('id', batchId)
 
-      // inventory_movement
       await createInventoryMovement({
-        batch_id: data.consumable_batch_id,
+        batch_id: batchId,
         movement_type: 'CONSUME',
-        quantity: -data.container_count,
+        quantity: -writeoffQty,
         reference_type: 'OPERATION',
         reference_id: seedOp.id,
-        notes: `Контейнеры для посева ${cultureCode} (${data.container_count} шт.)`,
+        notes: `Контейнеры для посева ${cultureCode} (${writeoffQty} шт.)`,
       })
     }
   }
@@ -2376,6 +2409,23 @@ export async function getAvailableMediaForFeed(batchId?: string) {
 }
 
 // Get consumable batches matching a container type name (for write-off during culture creation)
+export async function getAllConsumableBatches() {
+  const { data, error } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*)')
+    .gt('quantity', 0)
+    .in('status', ['AVAILABLE', 'RESERVED'])
+    .order('expiration_date', { ascending: true })
+
+  if (error) throw error
+
+  return (data ?? []).filter((b: any) => {
+    const nom = b.nomenclature
+    if (!nom) return false
+    return nom.category === 'CONSUMABLE'
+  })
+}
+
 export async function getConsumableBatchesForContainerType(containerTypeName: string) {
   const { data, error } = await supabase
     .from('batches')

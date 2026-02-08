@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical, TestTubes, Package, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical, TestTubes, Package, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ import {
   getContainerTypes,
   getPositions,
   getAvailableMediaForFeed,
-  getConsumableBatchesForContainerType,
+  getAllConsumableBatches,
   createCultureFromDonation,
 } from '@/lib/api'
 
@@ -93,6 +93,16 @@ interface ConsumableBatch {
   [key: string]: unknown
 }
 
+// Строка выбора контейнера
+interface ContainerRow {
+  id: string // unique row key
+  containerTypeId: string
+  count: number
+  positionId: string
+  writeOff: boolean
+  consumableBatchId: string
+}
+
 interface CreatedResult {
   culture: { id: string; name: string; [key: string]: unknown }
   lot: { id: string; lot_number: string; [key: string]: unknown }
@@ -113,6 +123,19 @@ function donationLabel(d: Donation): string {
   return parts.join(' — ')
 }
 
+function generateRowId(): string {
+  return Math.random().toString(36).substring(2, 9)
+}
+
+// Найти подходящие партии расходников для типа контейнера
+function matchBatchesToContainerType(batches: ConsumableBatch[], containerTypeName: string): ConsumableBatch[] {
+  const ctName = containerTypeName.toLowerCase()
+  return batches.filter((b) => {
+    const nomName = (b.nomenclature?.name || '').toLowerCase()
+    return nomName.includes(ctName) || ctName.includes(nomName)
+  })
+}
+
 // ====================================================================
 // Inner component that uses useSearchParams (must be inside Suspense)
 // ====================================================================
@@ -128,24 +151,22 @@ function NewCultureForm() {
   const [containerTypes, setContainerTypes] = useState<ContainerType[]>([])
   const [positions, setPositions] = useState<Position[]>([])
   const [availableMedia, setAvailableMedia] = useState<ReadyMediumOption[]>([])
-  const [consumableBatches, setConsumableBatches] = useState<ConsumableBatch[]>([])
+  const [allConsumableBatches, setAllConsumableBatches] = useState<ConsumableBatch[]>([])
 
   // ---------- form state ----------
   const [donationId, setDonationId] = useState('')
   const [cultureTypeId, setCultureTypeId] = useState('')
   const [extractionMethod, setExtractionMethod] = useState('')
-  const [containerTypeId, setContainerTypeId] = useState('')
-  const [containerCount, setContainerCount] = useState(1)
-  const [positionId, setPositionId] = useState('')
   const [notes, setNotes] = useState('')
+
+  // Multiple container rows
+  const [containerRows, setContainerRows] = useState<ContainerRow[]>([
+    { id: generateRowId(), containerTypeId: '', count: 1, positionId: '', writeOff: false, consumableBatchId: '' }
+  ])
 
   // Media write-off
   const [readyMediumId, setReadyMediumId] = useState('')
   const [mediumVolumePerContainer, setMediumVolumePerContainer] = useState(0)
-
-  // Consumable write-off
-  const [writeOffConsumables, setWriteOffConsumables] = useState(false)
-  const [consumableBatchId, setConsumableBatchId] = useState('')
 
   // ---------- UI state ----------
   const [initialLoading, setInitialLoading] = useState(true)
@@ -157,11 +178,12 @@ function NewCultureForm() {
   useEffect(() => {
     async function load() {
       try {
-        const [donationsData, containerTypesData, positionsData, mediaData] = await Promise.all([
+        const [donationsData, containerTypesData, positionsData, mediaData, batchesData] = await Promise.all([
           getDonations({ statuses: ['APPROVED', 'QUARANTINE'] }),
           getContainerTypes(),
           getPositions(),
           getAvailableMediaForFeed(),
+          getAllConsumableBatches(),
         ])
         setDonations((donationsData || []) as Donation[])
         // Filter out cryo container types
@@ -171,12 +193,12 @@ function NewCultureForm() {
         setContainerTypes(nonCryo)
         setPositions((positionsData || []) as Position[])
         setAvailableMedia((mediaData || []) as ReadyMediumOption[])
+        setAllConsumableBatches((batchesData || []) as ConsumableBatch[])
 
         // Auto-select donation from URL params
         if (urlDonationId && donationsData) {
           const found = (donationsData as Donation[]).find((d) => d.id === urlDonationId)
           if (found) {
-            // Will trigger handleDonationChange via the effect below
             setDonationId(urlDonationId)
           }
         }
@@ -257,40 +279,62 @@ function NewCultureForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [donationId, donations])
 
-  // Load consumable batches when container type changes
-  useEffect(() => {
-    if (!containerTypeId) {
-      setConsumableBatches([])
-      return
-    }
-    const ct = containerTypes.find((c) => c.id === containerTypeId)
-    if (!ct) return
+  // ---------- container rows management ----------
+  const updateContainerRow = (rowId: string, updates: Partial<ContainerRow>) => {
+    setContainerRows((prev) =>
+      prev.map((row) =>
+        row.id === rowId ? { ...row, ...updates } : row
+      )
+    )
+  }
 
-    getConsumableBatchesForContainerType(ct.name).then((batches) => {
-      setConsumableBatches((batches || []) as ConsumableBatch[])
-    }).catch(() => {
-      setConsumableBatches([])
+  const addContainerRow = () => {
+    setContainerRows((prev) => [
+      ...prev,
+      { id: generateRowId(), containerTypeId: '', count: 1, positionId: '', writeOff: false, consumableBatchId: '' }
+    ])
+  }
+
+  const removeContainerRow = (rowId: string) => {
+    setContainerRows((prev) => {
+      if (prev.length <= 1) return prev // Keep at least one
+      return prev.filter((row) => row.id !== rowId)
     })
-  }, [containerTypeId, containerTypes])
+  }
 
   // ---------- derived ----------
   const selectedDonation = donations.find((d) => d.id === donationId)
   const selectedMedium = availableMedia.find((m) => m.id === readyMediumId)
-  const totalMediumVolume = mediumVolumePerContainer * containerCount
+  const totalContainerCount = containerRows.reduce((sum, row) => sum + (row.count || 0), 0)
+  const totalMediumVolume = mediumVolumePerContainer * totalContainerCount
   const mediumAvailable = selectedMedium?.current_volume_ml ?? selectedMedium?.volume_ml ?? 0
   const mediumOverflow = selectedMedium && totalMediumVolume > mediumAvailable
 
-  const selectedConsumable = consumableBatches.find((b) => b.id === consumableBatchId)
-  const consumableOverflow = selectedConsumable && containerCount > selectedConsumable.quantity
+  // Get matching batches for a container type
+  const getBatchesForRow = (row: ContainerRow): ConsumableBatch[] => {
+    const ct = containerTypes.find((c) => c.id === row.containerTypeId)
+    if (!ct) return []
+    return matchBatchesToContainerType(allConsumableBatches, ct.name)
+  }
+
+  // Check consumable overflow for any row
+  const hasConsumableOverflow = containerRows.some((row) => {
+    if (!row.writeOff || !row.consumableBatchId) return false
+    const batch = allConsumableBatches.find((b) => b.id === row.consumableBatchId)
+    return batch && row.count > batch.quantity
+  })
+
+  // All rows have container types selected
+  const allRowsValid = containerRows.every((row) => row.containerTypeId && row.count >= 1)
 
   const canSubmit =
     donationId &&
     cultureTypeId &&
     extractionMethod &&
-    containerTypeId &&
-    containerCount >= 1 &&
+    allRowsValid &&
+    totalContainerCount >= 1 &&
     !submitting &&
-    !consumableOverflow
+    !hasConsumableOverflow
 
   // ---------- submit ----------
   const handleSubmit = async () => {
@@ -298,17 +342,21 @@ function NewCultureForm() {
 
     setSubmitting(true)
     try {
+      const containersList = containerRows.map((row) => ({
+        container_type_id: row.containerTypeId,
+        count: row.count,
+        position_id: row.positionId || undefined,
+        consumable_batch_id: row.writeOff && row.consumableBatchId ? row.consumableBatchId : undefined,
+      }))
+
       const res = await createCultureFromDonation({
         donation_id: donationId,
         culture_type_id: cultureTypeId,
         extraction_method: extractionMethod,
-        container_type_id: containerTypeId,
-        container_count: containerCount,
-        position_id: positionId || undefined,
+        containers_list: containersList,
         notes: notes || undefined,
         ready_medium_id: readyMediumId || undefined,
         medium_volume_ml: readyMediumId && totalMediumVolume > 0 ? totalMediumVolume : undefined,
-        consumable_batch_id: writeOffConsumables && consumableBatchId ? consumableBatchId : undefined,
       })
 
       setResult(res as CreatedResult)
@@ -492,64 +540,207 @@ function NewCultureForm() {
             </CardContent>
           </Card>
 
-          {/* 4-6. Container type, count, position */}
+          {/* 4. Container selection — MULTIPLE ROWS */}
           <Card>
             <CardHeader>
-              <CardTitle>Контейнеры</CardTitle>
-              <CardDescription>Параметры первичных контейнеров культуры</CardDescription>
+              <CardTitle className="flex items-center justify-between">
+                <span>Контейнеры</span>
+                <Badge variant="outline" className="text-base">
+                  Всего: {totalContainerCount} шт.
+                </Badge>
+              </CardTitle>
+              <CardDescription>Выберите типы контейнеров и количество. Можно добавить несколько типов.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                {/* Container type */}
-                <div className="space-y-2">
-                  <Label htmlFor="containerType">Тип контейнера *</Label>
-                  <Select value={containerTypeId} onValueChange={setContainerTypeId}>
-                    <SelectTrigger id="containerType">
-                      <SelectValue placeholder="Выберите тип" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {containerTypes.map((ct) => (
-                        <SelectItem key={ct.id} value={ct.id}>
-                          {ct.name}{ct.code ? ` (${ct.code})` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {containerRows.map((row, index) => {
+                const matchingBatches = getBatchesForRow(row)
+                const selectedBatch = allConsumableBatches.find((b) => b.id === row.consumableBatchId)
+                const rowOverflow = selectedBatch && row.count > selectedBatch.quantity
+                const ct = containerTypes.find((c) => c.id === row.containerTypeId)
 
-                {/* Container count */}
-                <div className="space-y-2">
-                  <Label htmlFor="containerCount">Количество контейнеров *</Label>
-                  <Input
-                    id="containerCount"
-                    type="number"
-                    min={1}
-                    value={containerCount}
-                    onChange={(e) => setContainerCount(Math.max(1, parseInt(e.target.value) || 1))}
-                  />
-                </div>
-              </div>
+                // Calculate total stock for this container type
+                const totalStock = matchingBatches.reduce((sum, b) => sum + (b.quantity || 0), 0)
 
-              {/* Position */}
-              <div className="space-y-2">
-                <Label htmlFor="position">Позиция размещения</Label>
-                <Select value={positionId} onValueChange={setPositionId}>
-                  <SelectTrigger id="position">
-                    <SelectValue placeholder="Не выбрано" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {positions.map((pos) => (
-                      <SelectItem key={pos.id} value={pos.id}>
-                        {pos.path}{pos.equipment?.name ? ` (${pos.equipment.name})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                return (
+                  <div
+                    key={row.id}
+                    className="border rounded-lg p-4 space-y-3 relative"
+                  >
+                    {/* Row header with remove button */}
+                    {containerRows.length > 1 && (
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          Контейнер {index + 1}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeContainerRow(row.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Container type + count */}
+                    <div className="grid gap-3 md:grid-cols-[1fr_120px]">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Тип контейнера *</Label>
+                        <Select
+                          value={row.containerTypeId}
+                          onValueChange={(val) => {
+                            updateContainerRow(row.id, {
+                              containerTypeId: val,
+                              writeOff: false,
+                              consumableBatchId: '',
+                            })
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Выберите тип" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {containerTypes.map((ct) => {
+                              // Show stock availability for each type
+                              const ctBatches = matchBatchesToContainerType(allConsumableBatches, ct.name)
+                              const ctStock = ctBatches.reduce((sum, b) => sum + (b.quantity || 0), 0)
+                              return (
+                                <SelectItem key={ct.id} value={ct.id}>
+                                  <span className="flex items-center gap-2">
+                                    {ct.name}{ct.code ? ` (${ct.code})` : ''}
+                                    {ctStock > 0 ? (
+                                      <Badge variant="secondary" className="ml-1 text-xs">
+                                        {ctStock} на складе
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="ml-1 text-xs text-muted-foreground">
+                                        нет на складе
+                                      </Badge>
+                                    )}
+                                  </span>
+                                </SelectItem>
+                              )
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Кол-во *</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={row.count}
+                          onChange={(e) => updateContainerRow(row.id, { count: Math.max(1, parseInt(e.target.value) || 1) })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Stock availability indicator */}
+                    {row.containerTypeId && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                        {totalStock > 0 ? (
+                          <span className="text-muted-foreground">
+                            На складе: <strong className={totalStock >= row.count ? 'text-green-600' : 'text-orange-600'}>{totalStock} шт.</strong>
+                            {totalStock < row.count && (
+                              <span className="text-orange-600 ml-1">(нужно {row.count})</span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Нет на складе</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Write-off consumables checkbox + batch select */}
+                    {row.containerTypeId && matchingBatches.length > 0 && (
+                      <div className="space-y-2 pt-1 border-t">
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`writeOff-${row.id}`}
+                            checked={row.writeOff}
+                            onCheckedChange={(checked) => {
+                              updateContainerRow(row.id, {
+                                writeOff: checked === true,
+                                consumableBatchId: checked === true && matchingBatches.length === 1 ? matchingBatches[0].id : '',
+                              })
+                            }}
+                          />
+                          <Label htmlFor={`writeOff-${row.id}`} className="text-xs cursor-pointer">
+                            Списать со склада
+                          </Label>
+                        </div>
+
+                        {row.writeOff && (
+                          <div className="space-y-1.5">
+                            <Select value={row.consumableBatchId} onValueChange={(val) => updateContainerRow(row.id, { consumableBatchId: val })}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Выберите партию" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {matchingBatches.map((b) => (
+                                  <SelectItem key={b.id} value={b.id}>
+                                    {b.nomenclature?.name ?? b.batch_number} — {b.quantity} шт.
+                                    {b.expiration_date ? ` (до ${b.expiration_date})` : ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            {selectedBatch && (
+                              <div className="text-xs text-muted-foreground">
+                                Списать: <strong>{row.count} шт.</strong> из {selectedBatch.quantity} шт.
+                                {rowOverflow && (
+                                  <span className="flex items-center gap-1 text-destructive mt-0.5">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Недостаточно на складе
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Position for this row */}
+                    {positions.length > 0 && (
+                      <div className="space-y-1.5 pt-1 border-t">
+                        <Label className="text-xs">Позиция размещения</Label>
+                        <Select value={row.positionId} onValueChange={(val) => updateContainerRow(row.id, { positionId: val })}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue placeholder="Не выбрано" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {positions.map((pos) => (
+                              <SelectItem key={pos.id} value={pos.id}>
+                                {pos.path}{pos.equipment?.name ? ` (${pos.equipment.name})` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* Add row button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addContainerRow}
+                className="w-full"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Добавить тип контейнера
+              </Button>
             </CardContent>
           </Card>
 
-          {/* 7. Питательная среда */}
+          {/* 5. Питательная среда */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -594,7 +785,7 @@ function NewCultureForm() {
               {readyMediumId && mediumVolumePerContainer > 0 && (
                 <div className="flex items-center gap-4 text-sm">
                   <span className="text-muted-foreground">
-                    Итого: <strong>{totalMediumVolume.toFixed(1)} мл</strong> ({containerCount} шт. × {mediumVolumePerContainer} мл)
+                    Итого: <strong>{totalMediumVolume.toFixed(1)} мл</strong> ({totalContainerCount} шт. x {mediumVolumePerContainer} мл)
                   </span>
                   {mediumOverflow && (
                     <span className="flex items-center gap-1 text-yellow-600">
@@ -607,75 +798,7 @@ function NewCultureForm() {
             </CardContent>
           </Card>
 
-          {/* 8. Расходные материалы */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Расходные материалы
-              </CardTitle>
-              <CardDescription>Списание контейнеров со склада (необязательно)</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="writeOff"
-                  checked={writeOffConsumables}
-                  onCheckedChange={(checked) => {
-                    setWriteOffConsumables(checked === true)
-                    if (!checked) setConsumableBatchId('')
-                  }}
-                  disabled={consumableBatches.length === 0}
-                />
-                <Label htmlFor="writeOff" className="cursor-pointer">
-                  Списать контейнеры со склада
-                </Label>
-              </div>
-
-              {consumableBatches.length === 0 && containerTypeId && (
-                <p className="text-sm text-muted-foreground">
-                  Нет подходящих расходников на складе для выбранного типа контейнера
-                </p>
-              )}
-
-              {writeOffConsumables && consumableBatches.length > 0 && (
-                <>
-                  <div className="space-y-2">
-                    <Label>Партия расходников</Label>
-                    <Select value={consumableBatchId} onValueChange={setConsumableBatchId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите партию" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {consumableBatches.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.nomenclature?.name ?? b.batch_number} — {b.quantity} шт.
-                            {b.expiration_date ? ` (до ${b.expiration_date})` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {consumableBatchId && selectedConsumable && (
-                    <div className="text-sm">
-                      <span className="text-muted-foreground">
-                        Будет списано: <strong>{containerCount} шт.</strong> из {selectedConsumable.quantity} шт.
-                      </span>
-                      {consumableOverflow && (
-                        <span className="flex items-center gap-1 text-destructive mt-1">
-                          <AlertTriangle className="h-4 w-4" />
-                          Недостаточно на складе
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* 9. Notes */}
+          {/* 6. Notes */}
           <Card>
             <CardHeader>
               <CardTitle>Примечания</CardTitle>
@@ -729,26 +852,40 @@ function NewCultureForm() {
                   {EXTRACTION_METHODS.find((m) => m.value === extractionMethod)?.label || '—'}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Контейнер</span>
-                <span className="font-medium text-right max-w-[160px] truncate">
-                  {containerTypes.find((ct) => ct.id === containerTypeId)?.name || '—'}
-                </span>
+
+              {/* Container summary */}
+              <div className="border-t pt-2 space-y-1">
+                <span className="text-sm text-muted-foreground">Контейнеры:</span>
+                {containerRows.map((row) => {
+                  const ct = containerTypes.find((c) => c.id === row.containerTypeId)
+                  if (!ct) return null
+                  return (
+                    <div key={row.id} className="flex justify-between text-sm">
+                      <span className="truncate max-w-[130px]">{ct.name}</span>
+                      <span className="font-medium">{row.count} шт.</span>
+                    </div>
+                  )
+                })}
+                <div className="flex justify-between font-medium text-sm border-t pt-1">
+                  <span>Итого</span>
+                  <span>{totalContainerCount} шт.</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Кол-во</span>
-                <span className="font-medium">{containerCount}</span>
-              </div>
+
               {readyMediumId && totalMediumVolume > 0 && (
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">Среда</span>
                   <span className="font-medium">{totalMediumVolume.toFixed(1)} мл</span>
                 </div>
               )}
-              {writeOffConsumables && consumableBatchId && (
+              {containerRows.some((r) => r.writeOff && r.consumableBatchId) && (
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">Списание</span>
-                  <span className="font-medium">{containerCount} шт.</span>
+                  <span className="font-medium">
+                    {containerRows
+                      .filter((r) => r.writeOff && r.consumableBatchId)
+                      .reduce((sum, r) => sum + r.count, 0)} шт.
+                  </span>
                 </div>
               )}
             </CardContent>
