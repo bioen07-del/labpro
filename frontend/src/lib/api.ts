@@ -2272,17 +2272,37 @@ export async function createOperationPassage(data: {
   if (ocError) throw ocError
   
   // 5. Создать новые контейнеры-результаты (по группам типов)
+  // Получаем culture name/code для читаемого кода контейнера
+  const { data: cultureForCode } = await supabase
+    .from('cultures')
+    .select('name')
+    .eq('id', sourceLot.culture_id)
+    .single()
+  const cultureName = cultureForCode?.name || sourceLot.culture_id.substring(0, 8)
+
+  // Считаем существующие контейнеры в этом лоте для уникальной нумерации
+  const { count: existingInLot } = await supabase
+    .from('containers')
+    .select('*', { count: 'exact', head: true })
+    .eq('lot_id', newLot.id)
+
   const resultContainers = []
+  let globalIdx = (existingInLot || 0)
   for (const group of data.result.container_groups) {
     for (let i = 0; i < group.target_count; i++) {
-      // Генерация кода контейнера
-      const { count: containerCount } = await supabase
+      globalIdx++
+      let containerCode = `${cultureName}-${lotNumber}-P${newPassageNumber}-${String(globalIdx).padStart(3, '0')}`
+
+      // Проверяем уникальность кода, при коллизии добавляем суффикс
+      const { count: codeExists } = await supabase
         .from('containers')
         .select('*', { count: 'exact', head: true })
-        .like('code', `CT-%`)
+        .eq('code', containerCode)
 
-      const cultureCode = sourceLot.culture_id.substring(0, 4).toUpperCase()
-      const containerCode = `CT-${cultureCode}-L${newLot.id.substring(0, 1).toUpperCase()}-P${newPassageNumber}-${group.container_type_id.substring(0, 2).toUpperCase()}-${String((containerCount || 0) + i + 1).padStart(3, '0')}`
+      if ((codeExists || 0) > 0) {
+        const suffix = Date.now().toString(36).slice(-4)
+        containerCode = `${containerCode}-${suffix}`
+      }
 
       const { data: newContainer, error: containerError } = await supabase
         .from('containers')
@@ -3025,15 +3045,14 @@ export async function createOperationThaw(data: ThawData) {
   if (newLotError) throw newLotError
   
   // 4. Создать Container для размороженной культуры
-  const { count: containerCount } = await supabase
-    .from('containers')
-    .select('*', { count: 'exact', head: true })
-    .like('code', `CT-%`)
-  
-  const cultureCode = parentLot.culture_id?.substring(0, 4).toUpperCase() || 'UNK'
-  const containerTypeCode = data.container_type_id ? data.container_type_id.substring(0, 2).toUpperCase() : 'CT'
-  const containerCode = `CT-${cultureCode}-L${newLot.id.substring(0, 1).toUpperCase()}-P${newPassageNumber}-${containerTypeCode}-${String((containerCount || 0) + 1).padStart(3, '0')}`
-  
+  const { data: cultureForThaw } = await supabase
+    .from('cultures')
+    .select('name')
+    .eq('id', parentLot.culture_id)
+    .single()
+  const thawCultureName = cultureForThaw?.name || parentLot.culture_id?.substring(0, 8) || 'UNK'
+  const containerCode = `${thawCultureName}-${thawLotNumber}-P${newPassageNumber}-001`
+
   const { data: newContainer, error: containerError } = await supabase
     .from('containers')
     .insert({
