@@ -42,6 +42,7 @@ import {
   getPositions,
   getContainerStockByType,
   createOperationPassage,
+  checkBatchVolumeDeduction,
 } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,8 @@ interface ReagentBatchItem {
   id: string
   batch_number: string
   quantity: number
+  volume_per_unit?: number | null
+  current_unit_volume?: number | null
   nomenclature?: { name?: string; code?: string; category?: string } | null
   expiration_date?: string
 }
@@ -307,6 +310,26 @@ function PassagePageInner() {
   const seedMediumAvailable = seedMediumObj?.current_volume_ml ?? 0
   const seedMediumOverflow = seedMediumObj && totalSeedVolume > seedMediumAvailable
 
+  // --- Volume overflow checks for batch-reagents (пофлаконный учёт) ---
+  function getBatchOverflowInfo(mediumComboId: string, volumeMl: number) {
+    const parsed = parseMediumId(mediumComboId)
+    if (!parsed || parsed.type !== 'batch' || !volumeMl) return null
+    const batch = reagentBatches.find(b => b.id === parsed.id)
+    if (!batch || !batch.volume_per_unit) return null // без пофлаконного учёта
+    const result = checkBatchVolumeDeduction(
+      { quantity: batch.quantity, volume_per_unit: batch.volume_per_unit, current_unit_volume: batch.current_unit_volume },
+      volumeMl
+    )
+    if (result.fits) return null
+    return { unitsNeeded: result.unitsNeeded, currentVol: batch.current_unit_volume ?? batch.volume_per_unit, totalAvailable: result.totalAvailable }
+  }
+
+  const dissocOverflow = getBatchOverflowInfo(dissociationMediumId, parseFloat(dissociationVolume) || 0)
+  const washOverflow = getBatchOverflowInfo(washMediumId, parseFloat(washVolume) || 0)
+  const seedBatchOverflow = seedMediumParsed?.type === 'batch'
+    ? getBatchOverflowInfo(seedMediumId, totalSeedVolume)
+    : null
+
   // Check consumable overflow for any row (must be before step validation)
   const hasConsumableOverflow = resultRows.some(row => {
     if (!row.stockBatchId) return false
@@ -359,9 +382,17 @@ function PassagePageInner() {
     for (const b of reagentBatches) {
       const nom = b.nomenclature
       if (!nom) continue
+      // Пофлаконный лейбл: "Alpha-MEM LOT-001 (3 фл × 500 мл, тек: 320 мл)"
+      let qtyLabel: string
+      if (b.volume_per_unit && b.volume_per_unit > 0) {
+        const curVol = b.current_unit_volume ?? b.volume_per_unit
+        qtyLabel = `${b.quantity} фл × ${b.volume_per_unit} мл, тек: ${curVol} мл`
+      } else {
+        qtyLabel = `${b.quantity} ${nom.category === 'MEDIUM' ? 'мл' : 'шт.'}`
+      }
       options.push({
         id: `batch:${b.id}`,
-        label: `${nom.name || b.batch_number} (${b.quantity} ${nom.category === 'MEDIUM' ? 'мл' : 'шт.'})${b.expiration_date ? ` до ${b.expiration_date}` : ''}`,
+        label: `${nom.name || b.batch_number} (${qtyLabel})${b.expiration_date ? ` до ${b.expiration_date}` : ''}`,
         type: 'batch',
         category: nom.category || undefined,
       })
@@ -748,6 +779,15 @@ function PassagePageInner() {
                     onChange={(e) => setDissociationVolume(e.target.value)} />
                 </div>
               </div>
+              {dissocOverflow && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Недостаточно в текущем флаконе (осталось {dissocOverflow.currentVol} мл).
+                    Будет открыто <strong>{dissocOverflow.unitsNeeded}</strong> нов. ед.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             {/* Wash medium - required */}
@@ -776,6 +816,15 @@ function PassagePageInner() {
                     onChange={(e) => setWashVolume(e.target.value)} />
                 </div>
               </div>
+              {washOverflow && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Недостаточно в текущем флаконе (осталось {washOverflow.currentVol} мл).
+                    Будет открыто <strong>{washOverflow.unitsNeeded}</strong> нов. ед.
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
           </CardContent>
@@ -1102,6 +1151,12 @@ function PassagePageInner() {
                         <span className="flex items-center gap-1 text-yellow-600">
                           <AlertTriangle className="h-4 w-4" />
                           Превышает остаток ({seedMediumAvailable} мл)
+                        </span>
+                      )}
+                      {seedBatchOverflow && (
+                        <span className="flex items-center gap-1 text-yellow-600">
+                          <AlertTriangle className="h-4 w-4" />
+                          Нехватка во флаконе (ост. {seedBatchOverflow.currentVol} мл), откроется {seedBatchOverflow.unitsNeeded} нов. ед.
                         </span>
                       )}
                     </div>

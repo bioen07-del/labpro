@@ -83,11 +83,13 @@ export default function NewBatchPage() {
     setSubmitting(true)
 
     try {
+      const volumePerUnit = formData.volume_per_unit ? Number(formData.volume_per_unit) : null
       await createBatch({
         nomenclature_id: formData.nomenclature_id,
         batch_number: formData.batch_number,
         quantity: Number(formData.quantity),
-        volume_per_unit: formData.volume_per_unit ? Number(formData.volume_per_unit) : null,
+        volume_per_unit: volumePerUnit,
+        current_unit_volume: volumePerUnit, // инициализация: первый флакон полный
         unit: formData.unit,
         expiration_date: formData.expiration_date || null,
         manufacturer: formData.manufacturer || null,
@@ -176,7 +178,7 @@ export default function NewBatchPage() {
                   <SelectItem value="SUPPLEMENT">Добавка</SelectItem>
                   <SelectItem value="ENZYME">Фермент</SelectItem>
                   <SelectItem value="REAGENT">Реагент</SelectItem>
-                  <SelectItem value="CONSUMABLE">Расходный материал</SelectItem>
+                  <SelectItem value="CONSUMABLE">Контейнер</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -381,7 +383,7 @@ function getCatLabel(category: string): string {
   const labels: Record<string, string> = {
     MEDIUM: 'Среда', SERUM: 'Сыворотка', BUFFER: 'Буфер',
     SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент',
-    CONSUMABLE: 'Расходка', EQUIP: 'Оборудование',
+    CONSUMABLE: 'Контейнер', EQUIP: 'Оборудование',
   }
   return labels[category] || category
 }

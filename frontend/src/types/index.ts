@@ -279,8 +279,15 @@ export interface Batch {
   batch_number: string
   expiration_date: string
   quantity: number
+  volume_per_unit?: number | null
+  current_unit_volume?: number | null
   unit: string
   status: BatchStatus
+  supplier?: string | null
+  manufacturer?: string | null
+  catalog_number?: string | null
+  invoice_number?: string | null
+  invoice_date?: string | null
   notes?: string
   created_at: string
   movements?: InventoryMovement[]

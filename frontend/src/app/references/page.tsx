@@ -34,7 +34,7 @@ type TabKey = 'culture_types' | 'media_reagents' | 'consumables' | 'morphology_t
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'culture_types', label: 'Типы культур', icon: <FlaskConical className="h-4 w-4" /> },
   { key: 'media_reagents', label: 'Среды и реагенты', icon: <TestTubes className="h-4 w-4" /> },
-  { key: 'consumables', label: 'Расходные материалы', icon: <Package className="h-4 w-4" /> },
+  { key: 'consumables', label: 'Контейнеры', icon: <Package className="h-4 w-4" /> },
   { key: 'morphology_types', label: 'Морфология', icon: <Microscope className="h-4 w-4" /> },
   { key: 'dispose_reasons', label: 'Утилизация', icon: <Trash2 className="h-4 w-4" /> },
 ]
@@ -95,8 +95,7 @@ export default function ReferencesPage() {
   // Show inactive toggle
   const [showInactive, setShowInactive] = useState(false)
 
-  // Consumables sub-section
-  const [consumablesSub, setConsumablesSub] = useState<'nomenclatures' | 'container_types'>('nomenclatures')
+  // Container types
   const [containerTypes, setContainerTypes] = useState<any[]>([])
 
   // Which entity type is the current dialog for (for consumables tab)
@@ -126,12 +125,9 @@ export default function ReferencesPage() {
           break
         }
         case 'consumables': {
-          const [noms, cts] = await Promise.all([
-            getAllNomenclatures(),
-            getContainerTypes(),
-          ])
-          result = (noms || []).filter((n: any) => n.category === 'CONSUMABLE')
+          const cts = await getContainerTypes()
           setContainerTypes(cts || [])
+          result = [] // tab shows only container_types, not nomenclatures
           break
         }
         case 'morphology_types': result = await getMorphologyTypes(); break
@@ -650,21 +646,16 @@ export default function ReferencesPage() {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex gap-2">
-            <Button variant={consumablesSub === 'nomenclatures' ? 'default' : 'outline'} size="sm" onClick={() => setConsumablesSub('nomenclatures')}>
-              <Package className="mr-1 h-4 w-4" />Номенклатура
-              <Badge variant="secondary" className="ml-1 text-xs">{items.length}</Badge>
-            </Button>
-            <Button variant={consumablesSub === 'container_types' ? 'default' : 'outline'} size="sm" onClick={() => setConsumablesSub('container_types')}>
-              <Layers className="mr-1 h-4 w-4" />Типы контейнеров
-              <Badge variant="secondary" className="ml-1 text-xs">{visibleContainerTypes.length}</Badge>
-            </Button>
+          <div className="flex items-center gap-2">
+            <Layers className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Типы контейнеров</span>
+            <Badge variant="secondary" className="text-xs">{visibleContainerTypes.length}</Badge>
           </div>
-          <Button size="sm" onClick={() => openCreateDialog(consumablesSub === 'container_types' ? 'container_type' : 'main')}>
+          <Button size="sm" onClick={() => openCreateDialog('container_type')}>
             <Plus className="mr-2 h-4 w-4" />Добавить
           </Button>
         </div>
-        {consumablesSub === 'nomenclatures' ? renderNomTable(items, 'nomenclature', 'main') : renderContainerTypesTable(visibleContainerTypes)}
+        {renderContainerTypesTable(visibleContainerTypes)}
       </div>
     )
   }
@@ -822,7 +813,7 @@ export default function ReferencesPage() {
     <div className="container py-6 space-y-6 max-w-7xl">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Справочники</h1>
-        <p className="text-muted-foreground">Типы культур и тканей, среды, расходные материалы, классификаторы</p>
+        <p className="text-muted-foreground">Типы культур и тканей, среды, контейнеры, классификаторы</p>
       </div>
 
       {/* Tab navigation */}
@@ -832,7 +823,7 @@ export default function ReferencesPage() {
             {tab.icon}
             {tab.label}
             <Badge variant="secondary" className="ml-1 text-xs">
-              {tab.key === 'culture_types' ? `${(data[tab.key] || []).length}+${tissueTypes.length}` : (data[tab.key] || []).length}
+              {tab.key === 'culture_types' ? `${(data[tab.key] || []).length}+${tissueTypes.length}` : tab.key === 'consumables' ? containerTypes.length : (data[tab.key] || []).length}
             </Badge>
           </Button>
         ))}

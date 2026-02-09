@@ -438,12 +438,39 @@ export default function BatchDetailPage({
                   </TableCell>
                   <TableCell>
                     {batch.quantity != null ? batch.quantity : "---"}{" "}
-                    {batch.unit || ""}
+                    {batch.volume_per_unit ? 'фл' : (batch.unit || "")}
                     {batch.volume_per_unit != null && (
-                      <span className="text-muted-foreground"> ({batch.volume_per_unit} {batch.unit || 'мл'} / ед.)</span>
+                      <span className="text-muted-foreground"> × {batch.volume_per_unit} мл / ед.</span>
                     )}
                   </TableCell>
                 </TableRow>
+                {batch.volume_per_unit != null && (
+                  <>
+                    <TableRow>
+                      <TableCell className="font-medium text-muted-foreground">
+                        Остаток в текущем флаконе
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-semibold">{batch.current_unit_volume ?? batch.volume_per_unit}</span>
+                        <span className="text-muted-foreground"> / {batch.volume_per_unit} мл</span>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-muted-foreground">
+                        Общий доступный объём
+                      </TableCell>
+                      <TableCell>
+                        <span className="font-semibold">
+                          {(
+                            (batch.current_unit_volume ?? batch.volume_per_unit) +
+                            (Math.max(0, (batch.quantity || 0) - 1)) * batch.volume_per_unit
+                          ).toFixed(1)}
+                        </span>
+                        <span className="text-muted-foreground"> мл</span>
+                      </TableCell>
+                    </TableRow>
+                  </>
+                )}
                 <TableRow>
                   <TableCell className="font-medium text-muted-foreground">
                     Статус

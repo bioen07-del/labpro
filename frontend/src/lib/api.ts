@@ -922,6 +922,120 @@ export async function updateBatch(id: string, updates: Record<string, unknown>) 
   return data
 }
 
+// ---- Volume-per-unit batch deduction ----
+
+/**
+ * Проверяет, поместится ли списание volumeMl в текущий флакон.
+ * Чистая функция для UI-предупреждений (не обращается к БД).
+ */
+export function checkBatchVolumeDeduction(
+  batch: { quantity: number; volume_per_unit?: number | null; current_unit_volume?: number | null },
+  volumeMl: number
+): { fits: boolean; unitsNeeded: number; totalAvailable: number } {
+  if (!batch.volume_per_unit || batch.volume_per_unit <= 0) {
+    return { fits: true, unitsNeeded: 0, totalAvailable: batch.quantity }
+  }
+  const vpu = batch.volume_per_unit
+  const currentUnitVol = batch.current_unit_volume ?? vpu
+  const totalAvailable = currentUnitVol + Math.max(0, batch.quantity - 1) * vpu
+
+  if (volumeMl <= currentUnitVol) {
+    return { fits: true, unitsNeeded: 0, totalAvailable }
+  }
+
+  const overflow = volumeMl - currentUnitVol
+  const fullUnitsNeeded = Math.ceil(overflow / vpu)
+
+  return { fits: false, unitsNeeded: fullUnitsNeeded, totalAvailable }
+}
+
+/**
+ * Списание объёма из партии с пофлаконным учётом.
+ * Если volume_per_unit не задан — fallback на старое поведение (quantity -= volumeMl).
+ * Если volume_per_unit задан — списание из текущего флакона, при нехватке — открытие новых.
+ */
+export async function writeOffBatchVolume(
+  batchId: string,
+  volumeMl: number,
+  operationId: string,
+  purpose: string
+): Promise<{ newQuantity: number; newCurrentUnitVolume: number | null; unitsOpened: number }> {
+  const { data: batch, error } = await supabase
+    .from('batches')
+    .select('quantity, volume_per_unit, current_unit_volume')
+    .eq('id', batchId)
+    .single()
+
+  if (error || !batch) throw new Error(`Batch ${batchId} not found`)
+
+  let newQuantity: number
+  let newCurrentUnitVolume: number | null
+  let unitsOpened = 0
+
+  if (batch.volume_per_unit == null || batch.volume_per_unit <= 0) {
+    // Старое поведение: quantity -= volumeMl
+    newQuantity = Math.max(0, (batch.quantity || 0) - volumeMl)
+    newCurrentUnitVolume = null
+  } else {
+    const vpu = batch.volume_per_unit
+    let curVol = batch.current_unit_volume ?? vpu
+    let qty = batch.quantity || 0
+    let toDeduct = volumeMl
+
+    if (toDeduct <= curVol) {
+      curVol -= toDeduct
+      toDeduct = 0
+    } else {
+      // Исчерпываем текущий флакон
+      toDeduct -= curVol
+      curVol = 0
+      qty = Math.max(0, qty - 1)
+      unitsOpened++
+
+      // Открываем новые по необходимости
+      while (toDeduct > 0 && qty > 0) {
+        unitsOpened++
+        if (toDeduct <= vpu) {
+          curVol = vpu - toDeduct
+          toDeduct = 0
+        } else {
+          toDeduct -= vpu
+          qty = Math.max(0, qty - 1)
+        }
+      }
+
+      if (toDeduct > 0) curVol = 0
+    }
+
+    // Если текущий флакон пуст, но есть ещё — просто ждём следующего списания
+    newQuantity = qty
+    newCurrentUnitVolume = curVol
+  }
+
+  const batchDepleted = newQuantity <= 0 && (newCurrentUnitVolume == null || newCurrentUnitVolume <= 0)
+
+  const updateData: Record<string, unknown> = {
+    quantity: newQuantity,
+    status: batchDepleted ? 'USED' : 'AVAILABLE',
+  }
+  if (newCurrentUnitVolume != null) {
+    updateData.current_unit_volume = newCurrentUnitVolume
+  }
+
+  await supabase.from('batches').update(updateData).eq('id', batchId)
+
+  await createInventoryMovement({
+    batch_id: batchId,
+    movement_type: 'CONSUME',
+    quantity: -volumeMl,
+    reference_type: 'OPERATION',
+    reference_id: operationId,
+    notes: `${purpose} (${volumeMl} мл)${unitsOpened > 0 ? ` [открыто ${unitsOpened} нов. ед.]` : ''}`,
+  })
+
+  return { newQuantity, newCurrentUnitVolume, unitsOpened }
+}
+
 export async function getBatchById(id: string) {
   const { data, error } = await supabase
     .from('batches')
@@ -2575,29 +2689,10 @@ export async function createOperationPassage(data: {
       console.error(`Failed to write off ready medium (${purpose}):`, err)
     }
   }
-  // Хелпер для списания реактивов из партии
+  // Хелпер для списания реактивов из партии (пофлаконный учёт)
   async function writeOffBatch(batchId: string, volumeMl: number, purpose: string) {
     try {
-      const { data: batch } = await supabase
-        .from('batches')
-        .select('quantity')
-        .eq('id', batchId)
-        .single()
-      if (batch) {
-        const newQty = Math.max(0, (batch.quantity || 0) - volumeMl)
-        await supabase
-          .from('batches')
-          .update({ quantity: newQty, status: newQty <= 0 ? 'USED' : 'AVAILABLE' })
-          .eq('id', batchId)
-        await createInventoryMovement({
-          batch_id: batchId,
-          movement_type: 'CONSUME',
-          quantity: -volumeMl,
-          reference_type: 'OPERATION',
-          reference_id: operation.id,
-          notes: `Реактив для пассажа (${purpose}, ${volumeMl} мл)`,
-        })
-      }
+      await writeOffBatchVolume(batchId, volumeMl, operation.id, `Реактив для пассажа (${purpose}, ${volumeMl} мл)`)
     } catch (err) {
       console.error(`Failed to write off batch (${purpose}):`, err)
     }

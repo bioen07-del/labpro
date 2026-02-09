@@ -271,7 +271,7 @@ export default function InventoryPage() {
           <Package className="h-4 w-4" />Все<Badge variant="secondary" className="ml-1 text-xs">{batches.length}</Badge>
         </Button>
         <Button variant={categoryTab === 'CONSUMABLE' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('CONSUMABLE')} className="gap-1.5">
-          <TestTubes className="h-4 w-4" />Расходка<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.consumable}</Badge>
+          <TestTubes className="h-4 w-4" />Контейнеры<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.consumable}</Badge>
         </Button>
         <Button variant={categoryTab === 'MEDIUM' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('MEDIUM')} className="gap-1.5">
           <FlaskConical className="h-4 w-4" />Среды и реагенты<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.media}</Badge>
@@ -446,7 +446,13 @@ export default function InventoryPage() {
                         <span className={`font-semibold ${batch.quantity <= 0 ? 'text-red-600' : batch.quantity <= 5 ? 'text-amber-600' : ''}`}>
                           {formatNumber(batch.quantity)}
                         </span>
-                        <span className="text-muted-foreground text-xs ml-1">{batch.unit || 'шт'}</span>
+                        {batch.volume_per_unit ? (
+                          <span className="text-muted-foreground text-xs ml-1">
+                            фл, тек: {batch.current_unit_volume ?? batch.volume_per_unit}/{batch.volume_per_unit} мл
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs ml-1">{batch.unit || 'шт'}</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -688,7 +694,7 @@ export default function InventoryPage() {
 function getCategoryTitle(tab: CategoryTab): string {
   const titles: Record<string, string> = {
     all: 'Все позиции',
-    CONSUMABLE: 'Пластик и расходные материалы',
+    CONSUMABLE: 'Контейнеры',
     MEDIUM: 'Среды и реагенты',
     ready_media: 'Готовые среды',
   }
@@ -697,7 +703,7 @@ function getCategoryTitle(tab: CategoryTab): string {
 
 function getCategoryLabel(category: string): string {
   const labels: Record<string, string> = {
-    CONSUMABLE: 'Пластик',
+    CONSUMABLE: 'Контейнер',
     MEDIUM: 'Среда',
     SERUM: 'Сыворотка',
     BUFFER: 'Буфер',
