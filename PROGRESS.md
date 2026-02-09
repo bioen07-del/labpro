@@ -1,6 +1,6 @@
 # LabPro - Прогресс разработки
 
-## Текущий статус: Фаза 16 — Тестирование полного цикла (багфиксы)
+## Текущий статус: Фаза 17 — Мониторинг оборудования, справочники, складской учёт
 
 ### Завершённые фазы
 
@@ -139,15 +139,39 @@
 - [x] Чистка БД: удалены осиротевшие данные неудачного пассажа (лот L2, 2 контейнера, операция)
 - [x] Восстановлен статус контейнера CT-0001-L1-P0-004 (DISPOSE → IN_CULTURE)
 
+#### Фаза 17: Мониторинг оборудования, справочники, складской учёт
+- [x] БД: миграция equipment_monitoring — удалён current_temperature, добавлен inventory_number
+- [x] БД: таблица equipment_monitoring_params (тип-специфичные параметры мониторинга)
+- [x] БД: equipment_logs расширен — humidity, co2_level, o2_level, logged_by
+- [x] БД: seed monitoring params (INCUBATOR: temp/co2/humidity; FRIDGE: temp; FREEZER: temp)
+- [x] БД: RLS-политики для equipment_monitoring_params и equipment_logs
+- [x] Справочники: перезаполнены все 10 таблиц через Management API (UTF-8)
+  - tissue_types (13), culture_types (16), container_types (11), morphology_types (9)
+  - dispose_reasons (8), culture_type_tissue_types (38), nomenclatures (37)
+  - equipment (14), equipment_monitoring_params (5), users (6)
+- [x] Оборудование: страница списка — мониторинг-модаль с динамическими параметрами
+- [x] Оборудование: карточка — inventory_number, даты ТО, убран current_temperature
+- [x] Оборудование: форма создания — inventory_number, модель, серийный, даты валидации/ТО
+- [x] Оборудование: форма редактирования — те же поля, убран temperature
+- [x] API: getMonitoringParams() — загрузка параметров по типу оборудования
+- [x] API: createEquipmentLog() — humidity, co2_level, o2_level, убрано обновление temperature
+- [x] Типы: EquipmentLog, EquipmentMonitoringParam интерфейсы
+- [x] Чистка: удалены все ссылки на current_temperature (containers, documents, scan, freeze, banks)
+- [x] **Багфикс: Пассаж** — списание контейнеров со склада (batch.quantity decrement + inventory_movement)
+- [x] **Багфикс: Пассаж** — списание ВСЕХ сред (диссоциация, промывка, посев) для ready_media и batch
+- [x] **Багфикс: Заморозка** — списание среды заморозки и криовиалов со склада
+- [x] **Багфикс: Разморозка** — списание среды разморозки и контейнера со склада
+- [x] TypeScript: 0 ошибок (npx tsc --noEmit)
+
 ### Статистика
 
 | Метрика | Значение |
 |---------|----------|
 | Страницы | 38 маршрутов |
 | UI-компоненты | 20 (shadcn/ui) |
-| API (api.ts) | ~3050 строк |
-| Типы (index.ts) | ~730 строк |
-| SQL миграции | 8 файлов |
+| API (api.ts) | ~3540 строк |
+| Типы (index.ts) | ~750 строк |
+| SQL миграции | 11 файлов |
 
 ### Стек: Next.js 16.1.6 + TypeScript 5.9.3 + React 19.2.3 + Tailwind 4 + Supabase + Vercel
 

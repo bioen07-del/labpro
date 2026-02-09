@@ -456,9 +456,8 @@ export interface Equipment {
   type: EquipmentType
   model?: string
   serial_number?: string
+  inventory_number?: string
   location?: string
-  temperature?: number
-  current_temperature?: number
   status: EquipmentStatus
   last_maintenance?: string
   next_maintenance?: string
@@ -467,6 +466,30 @@ export interface Equipment {
   notes?: string
   created_at: string
   positions?: Position[]
+}
+
+export interface EquipmentLog {
+  id: string
+  equipment_id: string
+  temperature?: number
+  humidity?: number
+  co2_level?: number
+  o2_level?: number
+  notes?: string
+  logged_by?: string
+  logged_at: string
+}
+
+export interface EquipmentMonitoringParam {
+  id: string
+  equipment_type: string
+  param_key: string
+  param_label: string
+  unit: string
+  min_value?: number
+  max_value?: number
+  is_required: boolean
+  sort_order: number
 }
 
 export interface Position {

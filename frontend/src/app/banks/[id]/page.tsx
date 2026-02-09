@@ -404,11 +404,9 @@ export default function BankDetailPage() {
                           <p className="font-medium">{bank.position.equipment.name}</p>
                         </div>
                         <div>
-                          <label className="text-muted-foreground">Температура</label>
+                          <label className="text-muted-foreground">Тип оборудования</label>
                           <p className="font-medium">
-                            {bank.position.equipment.temperature 
-                              ? `${bank.position.equipment.temperature}°C` 
-                              : '-196°C (LN2)'}
+                            {bank.position.equipment.type || '---'}
                           </p>
                         </div>
                       </div>

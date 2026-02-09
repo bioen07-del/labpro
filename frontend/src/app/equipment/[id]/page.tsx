@@ -206,6 +206,7 @@ export default function EquipmentDetailPage({
             <InfoRow label="Тип" value={typeLabel(equipment.type)} />
             <InfoRow label="Модель" value={equipment.model || "---"} />
             <InfoRow label="Серийный номер" value={equipment.serial_number || "---"} />
+            <InfoRow label="Инвентарный номер" value={equipment.inventory_number || "---"} icon={<Hash className="h-3.5 w-3.5 text-muted-foreground" />} />
             <InfoRow
               label="Расположение"
               value={equipment.location || "---"}
@@ -226,13 +227,16 @@ export default function EquipmentDetailPage({
               value={equipment.next_validation ? formatDate(equipment.next_validation) : "---"}
               icon={<Calendar className="h-3.5 w-3.5 text-muted-foreground" />}
             />
-            {equipment.current_temperature != null && (
-              <InfoRow
-                label="Текущая температура"
-                value={`${equipment.current_temperature}\u00B0C`}
-                icon={<Thermometer className="h-3.5 w-3.5 text-muted-foreground" />}
-              />
-            )}
+            <InfoRow
+              label="Последнее ТО"
+              value={equipment.last_maintenance ? formatDate(equipment.last_maintenance) : "---"}
+              icon={<Calendar className="h-3.5 w-3.5 text-muted-foreground" />}
+            />
+            <InfoRow
+              label="Следующее ТО"
+              value={equipment.next_maintenance ? formatDate(equipment.next_maintenance) : "---"}
+              icon={<Calendar className="h-3.5 w-3.5 text-muted-foreground" />}
+            />
           </div>
 
           {equipment.notes && (

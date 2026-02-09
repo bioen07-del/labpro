@@ -134,8 +134,8 @@ function EntityPreview({
     case "equipment": {
       rows.push({ label: "Название", value: (entity.name ?? "—") as string })
       rows.push({ label: "Тип", value: (entity.type ?? "—") as string })
-      if (entity.current_temperature !== undefined && entity.current_temperature !== null) {
-        rows.push({ label: "Температура", value: `${entity.current_temperature}°C` })
+      if (entity.inventory_number) {
+        rows.push({ label: "Инв. номер", value: entity.inventory_number as string })
       }
       break
     }

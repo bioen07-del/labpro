@@ -656,11 +656,9 @@ function DocumentsContent() {
               <Field
                 label="Температура хранения"
                 value={
-                  bankData.position?.equipment?.current_temperature != null
-                    ? `${bankData.position.equipment.current_temperature}\u00B0C`
-                    : bankData.storage_temperature != null
-                      ? `${bankData.storage_temperature}\u00B0C`
-                      : "-196\u00B0C (жидкий азот)"
+                  bankData.storage_temperature != null
+                    ? `${bankData.storage_temperature}\u00B0C`
+                    : "-196\u00B0C (жидкий азот)"
                 }
               />
               <Field

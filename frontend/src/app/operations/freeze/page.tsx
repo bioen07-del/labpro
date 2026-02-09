@@ -865,13 +865,13 @@ function FreezePageInner() {
                       </span>
                     </div>
                   )}
-                  {selectedPosition.equipment?.current_temperature != null && (
+                  {selectedPosition.equipment?.type && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">
-                        Температура:
+                        Тип:
                       </span>
                       <span className="font-medium">
-                        {selectedPosition.equipment.current_temperature}&#176;C
+                        {selectedPosition.equipment.type}
                       </span>
                     </div>
                   )}

@@ -2,23 +2,23 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { 
-  Plus, 
-  Search, 
-  Thermometer, 
+import {
+  Plus,
+  Search,
+  Thermometer,
   Settings,
   Calendar,
-  AlertTriangle,
   CheckCircle2,
   XCircle,
-  Zap
+  Zap,
+  ClipboardList
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getEquipment, createEquipmentLog } from "@/lib/api"
+import { getEquipment, createEquipmentLog, getMonitoringParams } from "@/lib/api"
 import { format } from "date-fns"
 import { ru } from "date-fns/locale"
 
@@ -26,26 +26,43 @@ const STATUS_COLORS: Record<string, string> = {
   ACTIVE: "bg-green-500",
   MAINTENANCE: "bg-yellow-500",
   BROKEN: "bg-red-500",
-  OFFLINE: "bg-gray-500",
+  DECOMMISSIONED: "bg-gray-500",
 }
 
 const STATUS_LABELS: Record<string, string> = {
   ACTIVE: "Работает",
   MAINTENANCE: "Обслуживание",
   BROKEN: "Неисправен",
-  OFFLINE: "Офлайн",
+  DECOMMISSIONED: "Списано",
 }
 
 const TYPE_LABELS: Record<string, string> = {
   INCUBATOR: "Инкубатор",
   FREEZER: "Морозильник",
-  REFRIGERATOR: "Холодильник",
-  LN2_TANK: "Сосуд Дьюара",
-  BSC: "Бокс биологической безопасности",
-  MICROSCOPE: "Микроскоп",
+  FRIDGE: "Холодильник",
+  CABINET: "Бокс",
+  RACK: "Стеллаж",
+  LAMINAR: "Ламинарный шкаф",
   CENTRIFUGE: "Центрифуга",
-  AUTOCLAVE: "Автоклав",
+  MICROSCOPE: "Микроскоп",
+  NITROGEN_TANK: "Сосуд Дьюара",
+  WATER_BATH: "Водяная баня",
   OTHER: "Другое",
+}
+
+// Equipment types that support monitoring
+const MONITORED_TYPES = ["INCUBATOR", "FRIDGE", "FREEZER"]
+
+interface MonitoringParam {
+  id: string
+  equipment_type: string
+  param_key: string
+  param_label: string
+  unit: string
+  min_value?: number
+  max_value?: number
+  is_required: boolean
+  sort_order: number
 }
 
 export default function EquipmentPage() {
@@ -56,9 +73,10 @@ export default function EquipmentPage() {
   const [typeFilter, setTypeFilter] = useState("all")
   const [search, setSearch] = useState("")
   const [selectedEquip, setSelectedEquip] = useState<any>(null)
-  const [showTempModal, setShowTempModal] = useState(false)
-  const [tempValue, setTempValue] = useState<number | "">("")
-  const [tempNotes, setTempNotes] = useState("")
+  const [showMonitoringModal, setShowMonitoringModal] = useState(false)
+  const [monitoringValues, setMonitoringValues] = useState<Record<string, string>>({})
+  const [monitoringNotes, setMonitoringNotes] = useState("")
+  const [monitoringParams, setMonitoringParams] = useState<MonitoringParam[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
@@ -76,20 +94,37 @@ export default function EquipmentPage() {
     }
   }
 
-  const handleLogTemp = async () => {
-    if (!selectedEquip || tempValue === "") return
-    
+  const openMonitoring = async (item: any) => {
+    setSelectedEquip(item)
+    setMonitoringValues({})
+    setMonitoringNotes("")
+    try {
+      const params = await getMonitoringParams(item.type)
+      setMonitoringParams(params || [])
+    } catch (err) {
+      console.error(err)
+      setMonitoringParams([])
+    }
+    setShowMonitoringModal(true)
+  }
+
+  const handleLogMonitoring = async () => {
+    if (!selectedEquip) return
+
     setIsSubmitting(true)
     try {
-      await createEquipmentLog(selectedEquip.id, {
-        temperature: Number(tempValue),
-        notes: tempNotes
-      })
-      setShowTempModal(false)
+      const logData: Record<string, any> = { notes: monitoringNotes || undefined }
+      for (const param of monitoringParams) {
+        const val = monitoringValues[param.param_key]
+        if (val !== undefined && val !== "") {
+          logData[param.param_key] = Number(val)
+        }
+      }
+      await createEquipmentLog(selectedEquip.id, logData)
+      setShowMonitoringModal(false)
       setSelectedEquip(null)
-      setTempValue("")
-      setTempNotes("")
-      loadEquipment()
+      setMonitoringValues({})
+      setMonitoringNotes("")
     } catch (err) {
       console.error(err)
     } finally {
@@ -97,19 +132,25 @@ export default function EquipmentPage() {
     }
   }
 
-  const getTemperatureStatus = (temp: number, minTemp: number, maxTemp: number) => {
-    if (temp < minTemp || temp > maxTemp) return "critical"
-    if (temp >= minTemp - 1 && temp <= maxTemp + 1) return "warning"
-    return "normal"
+  const isValidationSoon = (item: any) => {
+    if (!item.next_validation) return false
+    const diff = new Date(item.next_validation).getTime() - Date.now()
+    return diff > 0 && diff < 30 * 24 * 60 * 60 * 1000 // 30 days
+  }
+
+  const isValidationOverdue = (item: any) => {
+    if (!item.next_validation) return false
+    return new Date(item.next_validation).getTime() < Date.now()
   }
 
   const filteredEquipment = equipment.filter(item => {
     const matchesStatus = filter === "all" || item.status === filter
     const matchesType = typeFilter === "all" || item.type === typeFilter
-    const matchesSearch = !search || 
+    const matchesSearch = !search ||
       item.name?.toLowerCase().includes(search.toLowerCase()) ||
       item.code?.toLowerCase().includes(search.toLowerCase()) ||
-      item.location?.toLowerCase().includes(search.toLowerCase())
+      item.location?.toLowerCase().includes(search.toLowerCase()) ||
+      item.inventory_number?.toLowerCase().includes(search.toLowerCase())
     return matchesStatus && matchesType && matchesSearch
   })
 
@@ -225,7 +266,7 @@ export default function EquipmentPage() {
             <TabsTrigger value="all">Все типы</TabsTrigger>
             <TabsTrigger value="INCUBATOR">Инкубаторы</TabsTrigger>
             <TabsTrigger value="FREEZER">Морозилки</TabsTrigger>
-            <TabsTrigger value="REFRIGERATOR">Холодильники</TabsTrigger>
+            <TabsTrigger value="FRIDGE">Холодильники</TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -239,138 +280,137 @@ export default function EquipmentPage() {
             </CardContent>
           </Card>
         ) : (
-          filteredEquipment.map(item => {
-            const tempStatus = item.current_temperature !== undefined 
-              ? getTemperatureStatus(item.current_temperature, item.min_temp || -100, item.max_temp || 100)
-              : null
-
-            return (
-              <Card key={item.id} className="hover:bg-muted/50 transition-colors">
-                <CardContent className="py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-muted rounded-lg">
-                        {item.type?.includes("FREEZER") || item.type?.includes("REFRIGERATOR") ? (
-                          <Thermometer className="h-5 w-5" />
-                        ) : (
-                          <Settings className="h-5 w-5" />
-                        )}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{item.name}</p>
-                          <Badge className={STATUS_COLORS[item.status]}>
-                            {STATUS_LABELS[item.status]}
-                          </Badge>
-                          {tempStatus === "critical" && (
-                            <Badge variant="destructive">Критичная температура</Badge>
-                          )}
-                          {tempStatus === "warning" && (
-                            <Badge variant="outline">Отклонение</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                          <span>{TYPE_LABELS[item.type] || item.type}</span>
-                          <span>Код: {item.code}</span>
-                          <span>{item.location}</span>
-                        </div>
-                        {item.serial_number && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Серийный: {item.serial_number}
-                          </p>
-                        )}
-                      </div>
+          filteredEquipment.map(item => (
+            <Card key={item.id} className="hover:bg-muted/50 transition-colors">
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-muted rounded-lg">
+                      {MONITORED_TYPES.includes(item.type) ? (
+                        <Thermometer className="h-5 w-5" />
+                      ) : (
+                        <Settings className="h-5 w-5" />
+                      )}
                     </div>
-                    <div className="text-right">
-                      {item.current_temperature !== undefined && (
-                        <div className="flex items-center gap-2">
-                          <Thermometer className={`h-5 w-5 ${
-                            tempStatus === "critical" ? "text-red-500" : 
-                            tempStatus === "warning" ? "text-yellow-500" : "text-green-500"
-                          }`} />
-                          <span className={`text-2xl font-bold ${
-                            tempStatus === "critical" ? "text-red-600" : 
-                            tempStatus === "warning" ? "text-yellow-600" : ""
-                          }`}>
-                            {item.current_temperature}°C
-                          </span>
-                        </div>
-                      )}
-                      {item.min_temp !== undefined && item.max_temp !== undefined && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Норма: {item.min_temp}°C ... {item.max_temp}°C
-                        </p>
-                      )}
-                      {item.last_calibration_date && (
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Калибровка: {format(new Date(item.last_calibration_date), "dd MMM yyyy", { locale: ru })}
-                        </p>
-                      )}
-                      <div className="flex gap-2 mt-3">
-                        {item.current_temperature !== undefined && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => {
-                              setSelectedEquip(item)
-                              setTempValue(item.current_temperature)
-                              setShowTempModal(true)
-                            }}
-                          >
-                            <Thermometer className="mr-2 h-4 w-4" />
-                            Температура
-                          </Button>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold">{item.name}</p>
+                        <Badge className={STATUS_COLORS[item.status]}>
+                          {STATUS_LABELS[item.status]}
+                        </Badge>
+                        {isValidationOverdue(item) && (
+                          <Badge variant="destructive">Валидация просрочена</Badge>
                         )}
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => router.push(`/equipment/${item.id}`)}
-                        >
-                          <Settings className="mr-2 h-4 w-4" />
-                          Детали
-                        </Button>
+                        {isValidationSoon(item) && !isValidationOverdue(item) && (
+                          <Badge variant="outline" className="text-yellow-600 border-yellow-400">Скоро валидация</Badge>
+                        )}
                       </div>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                        <span>{TYPE_LABELS[item.type] || item.type}</span>
+                        {item.code && <span>Код: {item.code}</span>}
+                        {item.inventory_number && <span>Инв.: {item.inventory_number}</span>}
+                        {item.location && <span>{item.location}</span>}
+                      </div>
+                      {item.serial_number && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Серийный: {item.serial_number}
+                        </p>
+                      )}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })
+                  <div className="text-right">
+                    {item.next_validation && (
+                      <p className="text-sm text-muted-foreground">
+                        <Calendar className="inline h-3.5 w-3.5 mr-1" />
+                        Валидация: {format(new Date(item.next_validation), "dd.MM.yyyy", { locale: ru })}
+                      </p>
+                    )}
+                    {item.next_maintenance && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        <Settings className="inline h-3.5 w-3.5 mr-1" />
+                        ТО: {format(new Date(item.next_maintenance), "dd.MM.yyyy", { locale: ru })}
+                      </p>
+                    )}
+                    <div className="flex gap-2 mt-3">
+                      {MONITORED_TYPES.includes(item.type) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openMonitoring(item)}
+                        >
+                          <ClipboardList className="mr-2 h-4 w-4" />
+                          Мониторинг
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => router.push(`/equipment/${item.id}`)}
+                      >
+                        <Settings className="mr-2 h-4 w-4" />
+                        Детали
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
         )}
       </div>
 
-      {/* Temperature Modal */}
-      {showTempModal && selectedEquip && (
+      {/* Monitoring Modal */}
+      {showMonitoringModal && selectedEquip && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md mx-4">
             <CardHeader>
-              <CardTitle>Запись температуры</CardTitle>
+              <CardTitle>Мониторинг</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="p-4 bg-muted rounded-lg">
                 <p className="font-medium">{selectedEquip.name}</p>
                 <p className="text-sm text-muted-foreground">
-                  Норма: {selectedEquip.min_temp}°C ... {selectedEquip.max_temp}°C
+                  {TYPE_LABELS[selectedEquip.type] || selectedEquip.type}
                 </p>
               </div>
-              
-              <div>
-                <label className="text-sm font-medium">Температура (°C) *</label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={tempValue}
-                  onChange={(e) => setTempValue(e.target.value ? Number(e.target.value) : "")}
-                  className="mt-1"
-                  placeholder="Например: 37.0"
-                />
-              </div>
+
+              {monitoringParams.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  Параметры мониторинга не настроены для этого типа оборудования.
+                  Добавьте их в справочнике параметров мониторинга.
+                </p>
+              ) : (
+                monitoringParams.map(param => (
+                  <div key={param.param_key}>
+                    <label className="text-sm font-medium">
+                      {param.param_label} ({param.unit})
+                      {param.is_required && " *"}
+                    </label>
+                    {param.min_value != null && param.max_value != null && (
+                      <p className="text-xs text-muted-foreground mb-1">
+                        Норма: {param.min_value} ... {param.max_value} {param.unit}
+                      </p>
+                    )}
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={monitoringValues[param.param_key] || ""}
+                      onChange={(e) => setMonitoringValues(prev => ({
+                        ...prev,
+                        [param.param_key]: e.target.value
+                      }))}
+                      className="mt-1"
+                      placeholder={`Введите ${param.param_label.toLowerCase()}`}
+                    />
+                  </div>
+                ))
+              )}
 
               <div>
                 <label className="text-sm font-medium">Примечания</label>
                 <textarea
-                  value={tempNotes}
-                  onChange={(e) => setTempNotes(e.target.value)}
+                  value={monitoringNotes}
+                  onChange={(e) => setMonitoringNotes(e.target.value)}
                   className="w-full mt-1 p-3 border rounded-lg"
                   rows={3}
                   placeholder="Дополнительные заметки..."
@@ -378,16 +418,19 @@ export default function EquipmentPage() {
               </div>
 
               <div className="flex gap-2 justify-end pt-4">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
-                    setShowTempModal(false)
+                    setShowMonitoringModal(false)
                     setSelectedEquip(null)
                   }}
                 >
                   Отмена
                 </Button>
-                <Button onClick={handleLogTemp} disabled={isSubmitting || tempValue === ""}>
+                <Button
+                  onClick={handleLogMonitoring}
+                  disabled={isSubmitting || (monitoringParams.length > 0 && monitoringParams.some(p => p.is_required && !monitoringValues[p.param_key]))}
+                >
                   {isSubmitting ? "Сохранение..." : "Сохранить"}
                 </Button>
               </div>

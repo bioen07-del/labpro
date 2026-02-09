@@ -1446,27 +1446,23 @@ export async function updateEquipment(id: string, updates: Record<string, unknow
   return data?.[0] ?? null
 }
 
-export async function createEquipmentLog(equipmentId: string, log: { temperature: number; notes?: string }) {
+export async function createEquipmentLog(equipmentId: string, log: { temperature?: number; humidity?: number; co2_level?: number; o2_level?: number; notes?: string }) {
   const { data: logData, error: logError } = await supabase
     .from('equipment_logs')
     .insert({
       equipment_id: equipmentId,
-      temperature: log.temperature,
+      temperature: log.temperature ?? null,
+      humidity: log.humidity ?? null,
+      co2_level: log.co2_level ?? null,
+      o2_level: log.o2_level ?? null,
       notes: log.notes,
       logged_at: new Date().toISOString()
     })
     .select()
     .single()
-  
+
   if (logError) throw logError
-  
-  const { error: updateError } = await supabase
-    .from('equipment')
-    .update({ current_temperature: log.temperature })
-    .eq('id', equipmentId)
-  
-  if (updateError) throw updateError
-  
+
   return logData
 }
 
@@ -1477,7 +1473,22 @@ export async function getEquipmentLogs(equipmentId: string, limit = 100) {
     .eq('equipment_id', equipmentId)
     .order('logged_at', { ascending: false })
     .limit(limit)
-  
+
+  if (error) throw error
+  return data
+}
+
+export async function getMonitoringParams(equipmentType?: string) {
+  let query = supabase
+    .from('equipment_monitoring_params')
+    .select('*')
+    .order('sort_order')
+
+  if (equipmentType) {
+    query = query.eq('equipment_type', equipmentType)
+  }
+
+  const { data, error } = await query
   if (error) throw error
   return data
 }
@@ -2325,20 +2336,36 @@ export async function createOperationPassage(data: {
   }
   
   // 5b. Списание расходников (контейнеров) со склада
+  const passageBatchWriteoffs = new Map<string, number>()
   for (const group of data.result.container_groups) {
     if (group.consumable_batch_id) {
-      try {
-        await createInventoryMovement({
-          batch_id: group.consumable_batch_id,
-          movement_type: 'CONSUME',
-          quantity: -group.target_count,
-          reference_type: 'OPERATION',
-          reference_id: operation.id,
-          notes: `Контейнеры для пассажа (${group.target_count} шт.)`,
-        })
-      } catch (moveErr) {
-        console.error('Failed to create inventory movement for consumables:', moveErr)
-      }
+      const prev = passageBatchWriteoffs.get(group.consumable_batch_id) || 0
+      passageBatchWriteoffs.set(group.consumable_batch_id, prev + group.target_count)
+    }
+  }
+  for (const [batchId, writeoffQty] of passageBatchWriteoffs) {
+    try {
+      const { data: batchData } = await supabase
+        .from('batches')
+        .select('quantity')
+        .eq('id', batchId)
+        .single()
+      const currentQty = batchData?.quantity || 0
+      const newQty = Math.max(0, currentQty - writeoffQty)
+      await supabase
+        .from('batches')
+        .update({ quantity: newQty, status: newQty <= 0 ? 'USED' : 'AVAILABLE' })
+        .eq('id', batchId)
+      await createInventoryMovement({
+        batch_id: batchId,
+        movement_type: 'CONSUME',
+        quantity: -writeoffQty,
+        reference_type: 'OPERATION',
+        reference_id: operation.id,
+        notes: `Контейнеры для пассажа (${writeoffQty} шт.)`,
+      })
+    } catch (moveErr) {
+      console.error('Failed to write off consumables for passage:', moveErr)
     }
   }
 
@@ -2439,26 +2466,83 @@ export async function createOperationPassage(data: {
     if (mediaError) throw mediaError
   }
 
-  // 9b. Обновить current_volume_ml у seed ReadyMedia
-  if (data.media.seed_rm_id && data.media.seed_volume_ml && data.media.seed_volume_ml > 0) {
+  // 9b. Списание всех сред/реактивов для пассажа
+  // Хелпер для списания готовой среды
+  async function writeOffReadyMedium(rmId: string, volumeMl: number, purpose: string) {
     try {
-      const { data: seedMedium } = await supabase
+      const { data: rm } = await supabase
         .from('ready_media')
         .select('current_volume_ml, volume_ml')
-        .eq('id', data.media.seed_rm_id)
+        .eq('id', rmId)
         .single()
-
-      if (seedMedium) {
-        const currentVol = seedMedium.current_volume_ml ?? seedMedium.volume_ml ?? 0
-        const newVol = Math.max(0, currentVol - data.media.seed_volume_ml)
+      if (rm) {
+        const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
+        const newVol = Math.max(0, currentVol - volumeMl)
         await supabase
           .from('ready_media')
-          .update({ current_volume_ml: newVol })
-          .eq('id', data.media.seed_rm_id)
+          .update({ current_volume_ml: newVol, status: newVol <= 0 ? 'USED' : undefined })
+          .eq('id', rmId)
+        await createInventoryMovement({
+          batch_id: rmId,
+          movement_type: 'CONSUME',
+          quantity: -volumeMl,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Среда для пассажа (${purpose}, ${volumeMl} мл)`,
+        })
       }
-    } catch (volErr) {
-      console.error('Failed to update seed medium volume:', volErr)
+    } catch (err) {
+      console.error(`Failed to write off ready medium (${purpose}):`, err)
     }
+  }
+  // Хелпер для списания реактивов из партии
+  async function writeOffBatch(batchId: string, volumeMl: number, purpose: string) {
+    try {
+      const { data: batch } = await supabase
+        .from('batches')
+        .select('quantity')
+        .eq('id', batchId)
+        .single()
+      if (batch) {
+        const newQty = Math.max(0, (batch.quantity || 0) - volumeMl)
+        await supabase
+          .from('batches')
+          .update({ quantity: newQty, status: newQty <= 0 ? 'USED' : 'AVAILABLE' })
+          .eq('id', batchId)
+        await createInventoryMovement({
+          batch_id: batchId,
+          movement_type: 'CONSUME',
+          quantity: -volumeMl,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Реактив для пассажа (${purpose}, ${volumeMl} мл)`,
+        })
+      }
+    } catch (err) {
+      console.error(`Failed to write off batch (${purpose}):`, err)
+    }
+  }
+
+  // Списание диссоциации
+  if (data.media.dissociation_rm_id && data.media.dissociation_volume_ml) {
+    await writeOffReadyMedium(data.media.dissociation_rm_id, data.media.dissociation_volume_ml, 'диссоциация')
+  }
+  if (data.media.dissociation_batch_id && data.media.dissociation_volume_ml) {
+    await writeOffBatch(data.media.dissociation_batch_id, data.media.dissociation_volume_ml, 'диссоциация')
+  }
+  // Списание промывки
+  if (data.media.wash_rm_id && data.media.wash_volume_ml) {
+    await writeOffReadyMedium(data.media.wash_rm_id, data.media.wash_volume_ml, 'промывка')
+  }
+  if (data.media.wash_batch_id && data.media.wash_volume_ml) {
+    await writeOffBatch(data.media.wash_batch_id, data.media.wash_volume_ml, 'промывка')
+  }
+  // Списание среды для посева
+  if (data.media.seed_rm_id && data.media.seed_volume_ml) {
+    await writeOffReadyMedium(data.media.seed_rm_id, data.media.seed_volume_ml, 'посев')
+  }
+  if (data.media.seed_batch_id && data.media.seed_volume_ml) {
+    await writeOffBatch(data.media.seed_batch_id, data.media.seed_volume_ml, 'посев')
   }
 
   // 10. Создать auto-task INSPECT для новых контейнеров
@@ -2810,6 +2894,9 @@ export interface FreezeData {
   cells_per_vial: number
   total_cells: number
   freezing_medium: string
+  freezing_medium_rm_id?: string     // ID готовой среды для заморозки
+  freezing_medium_volume_ml?: number // Объём среды для заморозки
+  cryo_batch_id?: string             // Партия криовиалов со склада
   viability_percent: number
   concentration: number
   notes?: string
@@ -2958,7 +3045,64 @@ export async function createOperationFreeze(data: FreezeData) {
     await createQCTask(bankId)
   }
   
-  // 10. Создать уведомление о необходимости QC
+  // 10. Списание среды для заморозки
+  if (data.freezing_medium_rm_id && data.freezing_medium_volume_ml && data.freezing_medium_volume_ml > 0) {
+    try {
+      const { data: rm } = await supabase
+        .from('ready_media')
+        .select('current_volume_ml, volume_ml')
+        .eq('id', data.freezing_medium_rm_id)
+        .single()
+      if (rm) {
+        const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
+        const newVol = Math.max(0, currentVol - data.freezing_medium_volume_ml)
+        await supabase
+          .from('ready_media')
+          .update({ current_volume_ml: newVol })
+          .eq('id', data.freezing_medium_rm_id)
+        await createInventoryMovement({
+          batch_id: data.freezing_medium_rm_id,
+          movement_type: 'CONSUME',
+          quantity: -data.freezing_medium_volume_ml,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Среда для заморозки (${data.freezing_medium_volume_ml} мл)`,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to write off freezing medium:', err)
+    }
+  }
+
+  // 11. Списание криовиалов со склада
+  if (data.cryo_batch_id) {
+    try {
+      const { data: batchData } = await supabase
+        .from('batches')
+        .select('quantity')
+        .eq('id', data.cryo_batch_id)
+        .single()
+      if (batchData) {
+        const newQty = Math.max(0, (batchData.quantity || 0) - data.cryo_vial_count)
+        await supabase
+          .from('batches')
+          .update({ quantity: newQty, status: newQty <= 0 ? 'USED' : 'AVAILABLE' })
+          .eq('id', data.cryo_batch_id)
+        await createInventoryMovement({
+          batch_id: data.cryo_batch_id,
+          movement_type: 'CONSUME',
+          quantity: -data.cryo_vial_count,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Криовиалы для заморозки (${data.cryo_vial_count} шт.)`,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to write off cryo vials:', err)
+    }
+  }
+
+  // 12. Создать уведомление о необходимости QC
   if (bankId) {
     await createNotification({
       type: 'QC_READY',
@@ -2969,10 +3113,10 @@ export async function createOperationFreeze(data: FreezeData) {
       is_read: false
     })
   }
-  
-  return { 
-    operation, 
-    cryoVials, 
+
+  return {
+    operation,
+    cryoVials,
     bankId,
     bankType
   }
@@ -2986,6 +3130,8 @@ export interface ThawData {
   container_type_id: string
   position_id: string
   thaw_medium_id: string
+  thaw_medium_volume_ml?: number    // Объём среды для разморозки
+  consumable_batch_id?: string      // Партия контейнера со склада
   viability_percent?: number
   notes?: string
 }
@@ -3120,9 +3266,67 @@ export async function createOperationThaw(data: ThawData) {
     .insert({
       operation_id: operation.id,
       ready_medium_id: data.thaw_medium_id,
-      purpose: 'thaw'
+      purpose: 'thaw',
+      quantity_ml: data.thaw_medium_volume_ml ?? null,
     })
-  
+
+  // 9b. Списание среды для разморозки
+  if (data.thaw_medium_id && data.thaw_medium_volume_ml && data.thaw_medium_volume_ml > 0) {
+    try {
+      const { data: rm } = await supabase
+        .from('ready_media')
+        .select('current_volume_ml, volume_ml')
+        .eq('id', data.thaw_medium_id)
+        .single()
+      if (rm) {
+        const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
+        const newVol = Math.max(0, currentVol - data.thaw_medium_volume_ml)
+        await supabase
+          .from('ready_media')
+          .update({ current_volume_ml: newVol })
+          .eq('id', data.thaw_medium_id)
+        await createInventoryMovement({
+          batch_id: data.thaw_medium_id,
+          movement_type: 'CONSUME',
+          quantity: -data.thaw_medium_volume_ml,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: `Среда для разморозки (${data.thaw_medium_volume_ml} мл)`,
+        })
+      }
+    } catch (err) {
+      console.error('Failed to write off thaw medium:', err)
+    }
+  }
+
+  // 9c. Списание контейнера со склада
+  if (data.consumable_batch_id) {
+    try {
+      const { data: batchData } = await supabase
+        .from('batches')
+        .select('quantity')
+        .eq('id', data.consumable_batch_id)
+        .single()
+      if (batchData) {
+        const newQty = Math.max(0, (batchData.quantity || 0) - 1)
+        await supabase
+          .from('batches')
+          .update({ quantity: newQty, status: newQty <= 0 ? 'USED' : 'AVAILABLE' })
+          .eq('id', data.consumable_batch_id)
+        await createInventoryMovement({
+          batch_id: data.consumable_batch_id,
+          movement_type: 'CONSUME',
+          quantity: -1,
+          reference_type: 'OPERATION',
+          reference_id: operation.id,
+          notes: 'Контейнер для разморозки (1 шт.)',
+        })
+      }
+    } catch (err) {
+      console.error('Failed to write off container for thaw:', err)
+    }
+  }
+
   // 10. Проверить банк: если все криовиалы THAWED -> status=EXPIRED
   const { data: allVials } = await supabase
     .from('cryo_vials')

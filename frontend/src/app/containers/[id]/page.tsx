@@ -345,11 +345,8 @@ export default function ContainerDetailPage({
                     <p className="font-semibold">{equipment.name}</p>
                   )}
                   <p className="text-sm text-muted-foreground">{position.path}</p>
-                  {equipment?.current_temperature != null && (
-                    <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                      <Thermometer className="h-3.5 w-3.5" />
-                      {equipment.current_temperature}&deg;C
-                    </p>
+                  {equipment?.type && (
+                    <p className="mt-1 text-xs text-muted-foreground">{equipment.type}</p>
                   )}
                 </div>
               </div>

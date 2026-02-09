@@ -108,10 +108,14 @@ export default function EditEquipmentPage({
     type: "INCUBATOR",
     model: "",
     serial_number: "",
+    inventory_number: "",
     location: "",
     status: "ACTIVE",
     notes: "",
-    temperature: "",
+    validation_date: "",
+    next_validation: "",
+    last_maintenance: "",
+    next_maintenance: "",
   })
 
   // Positions
@@ -147,10 +151,14 @@ export default function EditEquipmentPage({
         type: data.type || "INCUBATOR",
         model: data.model || "",
         serial_number: data.serial_number || "",
+        inventory_number: data.inventory_number || "",
         location: data.location || "",
         status: data.status || "ACTIVE",
         notes: data.notes || "",
-        temperature: data.current_temperature != null ? String(data.current_temperature) : "",
+        validation_date: data.validation_date || "",
+        next_validation: data.next_validation || "",
+        last_maintenance: data.last_maintenance || "",
+        next_maintenance: data.next_maintenance || "",
       })
       setPositions(
         (data.positions || []).map((p: any) => ({
@@ -265,9 +273,13 @@ export default function EditEquipmentPage({
         location: formData.location || null,
         model: formData.model || null,
         serial_number: formData.serial_number || null,
+        inventory_number: formData.inventory_number || null,
         status: formData.status,
         notes: formData.notes || null,
-        current_temperature: formData.temperature ? parseFloat(formData.temperature) : null,
+        validation_date: formData.validation_date || null,
+        next_validation: formData.next_validation || null,
+        last_maintenance: formData.last_maintenance || null,
+        next_maintenance: formData.next_maintenance || null,
       })
 
       // 2. Delete removed positions (soft delete — mark inactive)
@@ -479,6 +491,15 @@ export default function EditEquipmentPage({
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
+                <Label htmlFor="inventory_number">Инвентарный номер</Label>
+                <Input
+                  id="inventory_number"
+                  value={formData.inventory_number}
+                  onChange={(e) => handleChange("inventory_number", e.target.value)}
+                  placeholder="ИНВ-00123"
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="location">Расположение</Label>
                 <Input
                   id="location"
@@ -491,14 +512,42 @@ export default function EditEquipmentPage({
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="temperature">Текущая температура (&deg;C)</Label>
+                <Label htmlFor="validation_date">Дата валидации</Label>
                 <Input
-                  id="temperature"
-                  type="number"
-                  step="0.1"
-                  value={formData.temperature}
-                  onChange={(e) => handleChange("temperature", e.target.value)}
-                  placeholder="37.0"
+                  id="validation_date"
+                  type="date"
+                  value={formData.validation_date}
+                  onChange={(e) => handleChange("validation_date", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="next_validation">Следующая валидация</Label>
+                <Input
+                  id="next_validation"
+                  type="date"
+                  value={formData.next_validation}
+                  onChange={(e) => handleChange("next_validation", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="last_maintenance">Последнее ТО</Label>
+                <Input
+                  id="last_maintenance"
+                  type="date"
+                  value={formData.last_maintenance}
+                  onChange={(e) => handleChange("last_maintenance", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="next_maintenance">Следующее ТО</Label>
+                <Input
+                  id="next_maintenance"
+                  type="date"
+                  value={formData.next_maintenance}
+                  onChange={(e) => handleChange("next_maintenance", e.target.value)}
                 />
               </div>
             </div>

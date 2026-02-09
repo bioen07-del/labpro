@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS equipment (
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
-    current_temperature NUMERIC
+    inventory_number TEXT
 );
 
 -- Positions
@@ -566,8 +566,26 @@ CREATE TABLE IF NOT EXISTS equipment_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     equipment_id UUID REFERENCES equipment(id),
     temperature NUMERIC,
+    humidity NUMERIC,
+    co2_level NUMERIC,
+    o2_level NUMERIC,
     notes TEXT,
+    logged_by UUID,
     logged_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Equipment Monitoring Parameters (what to monitor per equipment type)
+CREATE TABLE IF NOT EXISTS equipment_monitoring_params (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipment_type TEXT NOT NULL,
+    param_key TEXT NOT NULL,
+    param_label TEXT NOT NULL,
+    unit TEXT NOT NULL,
+    min_value NUMERIC,
+    max_value NUMERIC,
+    is_required BOOLEAN DEFAULT true,
+    sort_order INTEGER DEFAULT 0,
+    UNIQUE(equipment_type, param_key)
 );
 
 -- ============================================
