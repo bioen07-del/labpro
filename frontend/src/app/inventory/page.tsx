@@ -57,16 +57,20 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getBatches, updateBatch, createInventoryMovement } from '@/lib/api'
+// Note: Tabs still used for status filter
+import { getBatches, updateBatch, createInventoryMovement, getReadyMedia } from '@/lib/api'
 import { formatDate, formatNumber, daysUntilExpiration, getExpirationWarningLevel } from '@/lib/utils'
 
-type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'REAGENT'
+type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'ready_media'
+
+const MEDIA_CATEGORIES = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'ENZYME', 'REAGENT'])
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('all')
   const [batches, setBatches] = useState<any[]>([])
+  const [readyMedia, setReadyMedia] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   // Receive dialog
@@ -91,11 +95,16 @@ export default function InventoryPage() {
   const loadBatches = async () => {
     setLoading(true)
     try {
-      const data = await getBatches({})
-      setBatches(data || [])
+      const [batchData, mediaData] = await Promise.all([
+        getBatches({}),
+        getReadyMedia(),
+      ])
+      setBatches(batchData || [])
+      setReadyMedia(mediaData || [])
     } catch (error) {
       console.error('Error loading batches:', error)
       setBatches([])
+      setReadyMedia([])
     } finally {
       setLoading(false)
     }
@@ -104,7 +113,10 @@ export default function InventoryPage() {
   // Filter batches by category, status, and search
   const filteredBatches = batches.filter(batch => {
     // Category filter
-    if (categoryTab !== 'all' && batch.nomenclature?.category !== categoryTab) return false
+    if (categoryTab === 'ready_media') return false // separate section
+    if (categoryTab === 'MEDIUM') {
+      if (!MEDIA_CATEGORIES.has(batch.nomenclature?.category)) return false
+    } else if (categoryTab !== 'all' && batch.nomenclature?.category !== categoryTab) return false
 
     // Status filter
     if (selectedStatus !== 'all' && batch.status !== selectedStatus) return false
@@ -122,22 +134,42 @@ export default function InventoryPage() {
     return true
   })
 
+  // Filtered ready media
+  const filteredReadyMedia = readyMedia.filter(media => {
+    if (selectedStatus !== 'all' && media.status !== selectedStatus) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      return media.code?.toLowerCase().includes(q) ||
+        media.name?.toLowerCase().includes(q) ||
+        media.batch?.nomenclature?.name?.toLowerCase().includes(q)
+    }
+    return true
+  })
+
   // Stats for current category
   const categoryBatches = categoryTab === 'all'
     ? batches
-    : batches.filter(b => b.nomenclature?.category === categoryTab)
+    : categoryTab === 'ready_media'
+      ? []
+      : batches.filter(b => b.nomenclature?.category === categoryTab)
 
   const stats = {
-    total: categoryBatches.length,
-    available: categoryBatches.filter(b => b.status === 'AVAILABLE' || b.status === 'ACTIVE').length,
-    lowStock: categoryBatches.filter(b => b.quantity <= 5 && b.quantity > 0 && b.status !== 'EXPIRED').length,
-    expired: categoryBatches.filter(b => b.status === 'EXPIRED').length,
+    total: categoryTab === 'ready_media' ? readyMedia.length : categoryBatches.length,
+    available: categoryTab === 'ready_media'
+      ? readyMedia.filter(m => m.status === 'ACTIVE').length
+      : categoryBatches.filter(b => b.status === 'AVAILABLE' || b.status === 'ACTIVE').length,
+    lowStock: categoryTab === 'ready_media'
+      ? 0
+      : categoryBatches.filter(b => b.quantity <= 5 && b.quantity > 0 && b.status !== 'EXPIRED').length,
+    expired: categoryTab === 'ready_media'
+      ? readyMedia.filter(m => m.status === 'EXPIRED').length
+      : categoryBatches.filter(b => b.status === 'EXPIRED').length,
   }
 
   const categoryStats = {
     consumable: batches.filter(b => b.nomenclature?.category === 'CONSUMABLE').length,
-    medium: batches.filter(b => b.nomenclature?.category === 'MEDIUM').length,
-    reagent: batches.filter(b => b.nomenclature?.category === 'REAGENT').length,
+    media: batches.filter(b => MEDIA_CATEGORIES.has(b.nomenclature?.category)).length,
+    readyMedia: readyMedia.length,
   }
 
   // ==================== Receive handler ====================
@@ -217,35 +249,37 @@ export default function InventoryPage() {
             Расходные материалы, среды и реагенты
           </p>
         </div>
-        <Button asChild>
-          <Link href="/inventory/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Добавить партию
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild>
+            <Link href="/inventory/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Добавить партию
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/ready-media/new">
+              <Beaker className="mr-2 h-4 w-4" />
+              Приготовить среду
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Category Tabs */}
-      <Tabs value={categoryTab} onValueChange={(v) => setCategoryTab(v as CategoryTab)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all" className="gap-2">
-            <Package className="h-4 w-4" />
-            Все ({batches.length})
-          </TabsTrigger>
-          <TabsTrigger value="CONSUMABLE" className="gap-2">
-            <TestTubes className="h-4 w-4" />
-            Пластик ({categoryStats.consumable})
-          </TabsTrigger>
-          <TabsTrigger value="MEDIUM" className="gap-2">
-            <FlaskConical className="h-4 w-4" />
-            Среды ({categoryStats.medium})
-          </TabsTrigger>
-          <TabsTrigger value="REAGENT" className="gap-2">
-            <Beaker className="h-4 w-4" />
-            Реагенты ({categoryStats.reagent})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap gap-2">
+        <Button variant={categoryTab === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('all')} className="gap-1.5">
+          <Package className="h-4 w-4" />Все<Badge variant="secondary" className="ml-1 text-xs">{batches.length}</Badge>
+        </Button>
+        <Button variant={categoryTab === 'CONSUMABLE' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('CONSUMABLE')} className="gap-1.5">
+          <TestTubes className="h-4 w-4" />Расходка<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.consumable}</Badge>
+        </Button>
+        <Button variant={categoryTab === 'MEDIUM' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('MEDIUM')} className="gap-1.5">
+          <FlaskConical className="h-4 w-4" />Среды и реагенты<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.media}</Badge>
+        </Button>
+        <Button variant={categoryTab === 'ready_media' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('ready_media')} className="gap-1.5">
+          <Beaker className="h-4 w-4" />Готовые среды<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.readyMedia}</Badge>
+        </Button>
+      </div>
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -312,14 +346,14 @@ export default function InventoryPage() {
         </Tabs>
       </div>
 
-      {/* Inventory Table */}
+      {/* Inventory Table or Ready Media */}
       <Card>
         <CardHeader>
           <CardTitle>
             {getCategoryTitle(categoryTab)}
           </CardTitle>
           <CardDescription>
-            {loading ? 'Загрузка...' : `${filteredBatches.length} позиций`}
+            {loading ? 'Загрузка...' : categoryTab === 'ready_media' ? `${filteredReadyMedia.length} готовых сред` : `${filteredBatches.length} позиций`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -327,6 +361,59 @@ export default function InventoryPage() {
             <div className="flex justify-center items-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : categoryTab === 'ready_media' ? (
+            /* Ready media table */
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Код</TableHead>
+                  <TableHead>Состав</TableHead>
+                  <TableHead className="text-center">Объём</TableHead>
+                  <TableHead>Приготовлено</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredReadyMedia.map((media) => (
+                  <TableRow key={media.id}>
+                    <TableCell>
+                      <Link href={`/ready-media/${media.id}`} className="font-medium hover:underline text-blue-600">
+                        {media.code || media.id?.slice(0, 8)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</div>
+                      {media.notes && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{media.notes}</p>}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className="font-semibold">{media.volume_ml || media.current_volume_ml || 0}</span>
+                      <span className="text-muted-foreground text-xs ml-1">мл</span>
+                    </TableCell>
+                    <TableCell>{media.created_at ? formatDate(media.created_at) : '—'}</TableCell>
+                    <TableCell>
+                      <Badge className={getReadyMediaStatusColor(media.status)}>
+                        {getReadyMediaStatusLabel(media.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" asChild>
+                        <Link href={`/ready-media/${media.id}`}><Eye className="h-4 w-4" /></Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {filteredReadyMedia.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <Beaker className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                      <p>Готовые среды не найдены</p>
+                      <Button variant="link" asChild className="mt-2"><Link href="/ready-media/new">Приготовить среду</Link></Button>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           ) : (
             <Table>
               <TableHeader>
@@ -599,19 +686,23 @@ export default function InventoryPage() {
 // ==================== Helper functions ====================
 
 function getCategoryTitle(tab: CategoryTab): string {
-  const titles: Record<CategoryTab, string> = {
+  const titles: Record<string, string> = {
     all: 'Все позиции',
     CONSUMABLE: 'Пластик и расходные материалы',
-    MEDIUM: 'Среды и добавки',
-    REAGENT: 'Реагенты',
+    MEDIUM: 'Среды и реагенты',
+    ready_media: 'Готовые среды',
   }
-  return titles[tab]
+  return titles[tab] || 'Позиции'
 }
 
 function getCategoryLabel(category: string): string {
   const labels: Record<string, string> = {
     CONSUMABLE: 'Пластик',
     MEDIUM: 'Среда',
+    SERUM: 'Сыворотка',
+    BUFFER: 'Буфер',
+    SUPPLEMENT: 'Добавка',
+    ENZYME: 'Фермент',
     REAGENT: 'Реагент',
     EQUIP: 'Оборудование',
   }
@@ -622,10 +713,36 @@ function getCategoryColor(category: string): string {
   const colors: Record<string, string> = {
     CONSUMABLE: 'border-blue-300 text-blue-700',
     MEDIUM: 'border-purple-300 text-purple-700',
+    SERUM: 'border-pink-300 text-pink-700',
+    BUFFER: 'border-cyan-300 text-cyan-700',
+    SUPPLEMENT: 'border-emerald-300 text-emerald-700',
+    ENZYME: 'border-orange-300 text-orange-700',
     REAGENT: 'border-amber-300 text-amber-700',
     EQUIP: 'border-gray-300 text-gray-700',
   }
   return colors[category] || ''
+}
+
+function getReadyMediaStatusColor(status: string): string {
+  const colors: Record<string, string> = {
+    PREPARED: 'bg-blue-100 text-blue-800',
+    ACTIVE: 'bg-green-100 text-green-800',
+    IN_USE: 'bg-yellow-100 text-yellow-800',
+    EXPIRED: 'bg-red-100 text-red-800',
+    DISPOSE: 'bg-gray-100 text-gray-800',
+  }
+  return colors[status] || 'bg-gray-100 text-gray-800'
+}
+
+function getReadyMediaStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    PREPARED: 'Приготовлена',
+    ACTIVE: 'Готова',
+    IN_USE: 'В использовании',
+    EXPIRED: 'Просрочена',
+    DISPOSE: 'Утилизирована',
+  }
+  return labels[status] || status
 }
 
 function getStatusColor(status: string): string {

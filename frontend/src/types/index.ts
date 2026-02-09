@@ -257,7 +257,7 @@ export interface CryoVial {
 }
 
 // Inventory
-export type NomenclatureCategory = 'MEDIUM' | 'CONSUMABLE' | 'REAGENT' | 'EQUIP'
+export type NomenclatureCategory = 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'CONSUMABLE' | 'EQUIP'
 
 export interface Nomenclature {
   id: string

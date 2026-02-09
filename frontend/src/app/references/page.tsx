@@ -41,8 +41,19 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
 
 const NOM_MEDIA_CATEGORIES = [
   { value: 'MEDIUM', label: 'Среда' },
+  { value: 'SERUM', label: 'Сыворотка' },
+  { value: 'BUFFER', label: 'Буфер' },
+  { value: 'SUPPLEMENT', label: 'Добавка' },
+  { value: 'ENZYME', label: 'Фермент' },
   { value: 'REAGENT', label: 'Реагент' },
 ]
+
+const MEDIA_CATEGORY_SET = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'ENZYME', 'REAGENT'])
+
+const CATEGORY_LABELS: Record<string, string> = {
+  MEDIUM: 'Среда', SERUM: 'Сыворотка', BUFFER: 'Буфер',
+  SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент', CONSUMABLE: 'Пластик',
+}
 
 const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'growth_rate', 'passage_interval_days'])
 
@@ -108,7 +119,7 @@ export default function ReferencesPage() {
         }
         case 'media_reagents': {
           const all = await getAllNomenclatures()
-          result = (all || []).filter((n: any) => n.category === 'MEDIUM' || n.category === 'REAGENT')
+          result = (all || []).filter((n: any) => MEDIA_CATEGORY_SET.has(n.category))
           break
         }
         case 'consumables': {
@@ -563,7 +574,7 @@ export default function ReferencesPage() {
             <TableCell className="font-medium">{item.name || '-'}</TableCell>
             <TableCell>
               <Badge variant="outline">
-                {item.category === 'MEDIUM' ? 'Среда' : item.category === 'REAGENT' ? 'Реагент' : item.category === 'CONSUMABLE' ? 'Пластик' : item.category}
+                {CATEGORY_LABELS[item.category] || item.category}
               </Badge>
             </TableCell>
             <TableCell>{item.unit || '-'}</TableCell>

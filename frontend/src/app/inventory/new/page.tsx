@@ -36,6 +36,8 @@ export default function NewBatchPage() {
   const [nomenclatures, setNomenclatures] = useState<any[]>([])
   const [nomenclaturesLoading, setNomenclaturesLoading] = useState(true)
 
+  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+
   const [formData, setFormData] = useState({
     nomenclature_id: "",
     batch_number: "",
@@ -145,7 +147,25 @@ export default function NewBatchPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Nomenclature */}
+            {/* Category filter + Nomenclature */}
+            <div className="space-y-2">
+              <Label>Категория</Label>
+              <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setFormData({ ...formData, nomenclature_id: '' }) }}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Все категории" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  <SelectItem value="MEDIUM">Среда</SelectItem>
+                  <SelectItem value="SERUM">Сыворотка</SelectItem>
+                  <SelectItem value="BUFFER">Буфер</SelectItem>
+                  <SelectItem value="SUPPLEMENT">Добавка</SelectItem>
+                  <SelectItem value="ENZYME">Фермент</SelectItem>
+                  <SelectItem value="REAGENT">Реагент</SelectItem>
+                  <SelectItem value="CONSUMABLE">Расходный материал</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="nomenclature_id">Номенклатура *</Label>
               {nomenclaturesLoading ? (
@@ -164,10 +184,12 @@ export default function NewBatchPage() {
                     <SelectValue placeholder="Выберите номенклатуру" />
                   </SelectTrigger>
                   <SelectContent>
-                    {nomenclatures.map((n) => (
+                    {nomenclatures
+                      .filter((n) => categoryFilter === 'all' || n.category === categoryFilter)
+                      .map((n) => (
                       <SelectItem key={n.id} value={n.id}>
                         {n.name}
-                        {n.catalog_number ? ` (${n.catalog_number})` : ""}
+                        {n.category ? ` [${getCatLabel(n.category)}]` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -289,4 +311,13 @@ export default function NewBatchPage() {
       </Card>
     </div>
   )
+}
+
+function getCatLabel(category: string): string {
+  const labels: Record<string, string> = {
+    MEDIUM: 'Среда', SERUM: 'Сыворотка', BUFFER: 'Буфер',
+    SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент',
+    CONSUMABLE: 'Расходка', EQUIP: 'Оборудование',
+  }
+  return labels[category] || category
 }
