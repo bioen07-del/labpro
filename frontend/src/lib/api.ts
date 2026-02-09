@@ -51,6 +51,58 @@ export async function getTissueTypesByCultureType(cultureTypeId: string) {
   return data
 }
 
+// --- CRUD для связей culture_type ↔ tissue_type ---
+
+export async function getAllCultureTypeTissueLinks() {
+  const { data, error } = await supabase
+    .from('culture_type_tissue_types')
+    .select('*, culture_type:culture_types(*), tissue_type:tissue_types(*)')
+  if (error) throw error
+  return data ?? []
+}
+
+export async function linkCultureTypeToTissueType(
+  cultureTypeId: string,
+  tissueTypeId: string,
+  isPrimary: boolean = false,
+) {
+  const { data, error } = await supabase
+    .from('culture_type_tissue_types')
+    .insert({ culture_type_id: cultureTypeId, tissue_type_id: tissueTypeId, is_primary: isPrimary })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function unlinkCultureTypeFromTissueType(
+  cultureTypeId: string,
+  tissueTypeId: string,
+) {
+  const { error } = await supabase
+    .from('culture_type_tissue_types')
+    .delete()
+    .eq('culture_type_id', cultureTypeId)
+    .eq('tissue_type_id', tissueTypeId)
+  if (error) throw error
+}
+
+export async function updateCultureTypeTissueLink(
+  cultureTypeId: string,
+  tissueTypeId: string,
+  isPrimary: boolean,
+) {
+  const { data, error } = await supabase
+    .from('culture_type_tissue_types')
+    .update({ is_primary: isPrimary })
+    .eq('culture_type_id', cultureTypeId)
+    .eq('tissue_type_id', tissueTypeId)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 // ==================== CULTURES ====================
 
 export async function getCultures(filters?: { status?: string; type_id?: string }) {

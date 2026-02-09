@@ -186,7 +186,7 @@ export default function NewReadyMediumPage() {
       })
 
       toast.success("Рабочая среда создана")
-      router.push("/references")
+      router.push("/ready-media")
     } catch (err) {
       console.error("Error creating ready medium:", err)
       toast.error("Ошибка при создании рабочей среды")
@@ -200,7 +200,7 @@ export default function NewReadyMediumPage() {
       {/* Back link */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/references">
+          <Link href="/ready-media">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -444,7 +444,7 @@ export default function NewReadyMediumPage() {
             )}
           </Button>
           <Button type="button" variant="outline" asChild>
-            <Link href="/references">Отмена</Link>
+            <Link href="/ready-media">Отмена</Link>
           </Button>
         </div>
       </form>

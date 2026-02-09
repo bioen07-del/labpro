@@ -286,8 +286,8 @@ export function Header() {
 }
 
 function NavLink({ href, pathname, children }: { href: string; pathname: string; children: React.ReactNode }) {
-  const invPaths = ['/inventory']
-  const refPaths = ['/references', '/equipment', '/ready-media']
+  const invPaths = ['/inventory', '/ready-media']
+  const refPaths = ['/references', '/equipment']
   const isActive = href === '/inventory'
     ? invPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
     : href === '/references'
