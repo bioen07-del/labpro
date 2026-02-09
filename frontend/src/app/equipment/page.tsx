@@ -50,8 +50,7 @@ const TYPE_LABELS: Record<string, string> = {
   OTHER: "Другое",
 }
 
-// Equipment types that support monitoring
-const MONITORED_TYPES = ["INCUBATOR", "FRIDGE", "FREEZER"]
+// Monitoring is now per-equipment (configured via checkboxes)
 
 interface MonitoringParam {
   id: string
@@ -99,7 +98,7 @@ export default function EquipmentPage() {
     setMonitoringValues({})
     setMonitoringNotes("")
     try {
-      const params = await getMonitoringParams(item.type)
+      const params = await getMonitoringParams(item.id)
       setMonitoringParams(params || [])
     } catch (err) {
       console.error(err)
@@ -286,7 +285,7 @@ export default function EquipmentPage() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-muted rounded-lg">
-                      {MONITORED_TYPES.includes(item.type) ? (
+                      {["INCUBATOR", "FRIDGE", "FREEZER"].includes(item.type) ? (
                         <Thermometer className="h-5 w-5" />
                       ) : (
                         <Settings className="h-5 w-5" />
@@ -332,7 +331,7 @@ export default function EquipmentPage() {
                       </p>
                     )}
                     <div className="flex gap-2 mt-3">
-                      {MONITORED_TYPES.includes(item.type) && (
+                      {(
                         <Button
                           size="sm"
                           variant="outline"

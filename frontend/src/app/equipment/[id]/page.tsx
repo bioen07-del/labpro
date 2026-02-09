@@ -35,8 +35,15 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getEquipmentById, updateEquipment } from "@/lib/api"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog"
+
+import { getEquipmentById, updateEquipment, getMonitoringParams, getEquipmentLogs, createEquipmentLog } from "@/lib/api"
 import { formatDate } from "@/lib/utils"
+import type { EquipmentMonitoringParam, EquipmentLog } from "@/types"
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -100,6 +107,12 @@ export default function EquipmentDetailPage({
   const [equipment, setEquipment] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [monitoringParams, setMonitoringParams] = useState<EquipmentMonitoringParam[]>([])
+  const [logs, setLogs] = useState<EquipmentLog[]>([])
+  const [showLogDialog, setShowLogDialog] = useState(false)
+  const [logValues, setLogValues] = useState<Record<string, string>>({})
+  const [logNotes, setLogNotes] = useState('')
+  const [savingLog, setSavingLog] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -111,6 +124,15 @@ export default function EquipmentDetailPage({
     try {
       const data = await getEquipmentById(id)
       setEquipment(data)
+
+      // Load monitoring params and logs
+      const params = await getMonitoringParams(id)
+      setMonitoringParams(params || [])
+
+      if (params && params.length > 0) {
+        const logData = await getEquipmentLogs(id, 50)
+        setLogs(logData || [])
+      }
     } catch (err: any) {
       const msg = err?.message || "Ошибка загрузки оборудования"
       setError(msg)
@@ -118,6 +140,38 @@ export default function EquipmentDetailPage({
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleSaveLog() {
+    setSavingLog(true)
+    try {
+      const logData: Record<string, any> = { notes: logNotes || undefined }
+      for (const param of monitoringParams) {
+        const val = logValues[param.param_key]
+        if (val !== undefined && val !== '') {
+          logData[param.param_key] = Number(val)
+        }
+      }
+      await createEquipmentLog(id, logData)
+      toast.success('Показатели сохранены')
+      setShowLogDialog(false)
+      setLogValues({})
+      setLogNotes('')
+      // Reload logs
+      const freshLogs = await getEquipmentLogs(id, 50)
+      setLogs(freshLogs || [])
+    } catch (err: any) {
+      toast.error(err?.message || 'Ошибка сохранения')
+    } finally {
+      setSavingLog(false)
+    }
+  }
+
+  function isOutOfRange(param: EquipmentMonitoringParam, value: number | null | undefined): boolean {
+    if (value == null) return false
+    if (param.min_value != null && value < param.min_value) return true
+    if (param.max_value != null && value > param.max_value) return true
+    return false
   }
 
   // ---- Loading state -------------------------------------------------------
@@ -247,6 +301,114 @@ export default function EquipmentDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* ================================================================= */}
+      {/* MONITORING SECTION                                                */}
+      {/* ================================================================= */}
+      {monitoringParams.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Thermometer className="h-4 w-4" />
+              Мониторинг
+            </CardTitle>
+            <Button size="sm" onClick={() => {
+              setLogValues({})
+              setLogNotes('')
+              setShowLogDialog(true)
+            }}>
+              Внести показатели
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {/* Configured params */}
+            <div className="flex flex-wrap gap-3 mb-4">
+              {monitoringParams.map(p => (
+                <Badge key={p.param_key} variant="outline" className="text-sm px-3 py-1">
+                  {p.param_label} ({p.unit})
+                  {p.min_value != null || p.max_value != null ? (
+                    <span className="ml-1 text-muted-foreground">
+                      [{p.min_value ?? '…'} — {p.max_value ?? '…'}]
+                    </span>
+                  ) : null}
+                </Badge>
+              ))}
+            </div>
+
+            {/* Logs table */}
+            {logs.length === 0 ? (
+              <p className="py-4 text-center text-muted-foreground">Нет записей мониторинга</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Дата/время</TableHead>
+                      {monitoringParams.map(p => (
+                        <TableHead key={p.param_key}>{p.param_label} ({p.unit})</TableHead>
+                      ))}
+                      <TableHead>Примечание</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map(log => (
+                      <TableRow key={log.id}>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {log.logged_at ? new Date(log.logged_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </TableCell>
+                        {monitoringParams.map(p => {
+                          const val = (log as any)[p.param_key] as number | null
+                          const outOfRange = isOutOfRange(p, val)
+                          return (
+                            <TableCell key={p.param_key} className={outOfRange ? 'text-red-600 font-bold' : ''}>
+                              {val != null ? val : '-'}
+                              {outOfRange && ' ⚠'}
+                            </TableCell>
+                          )
+                        })}
+                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{log.notes || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Log Dialog */}
+      <Dialog open={showLogDialog} onOpenChange={setShowLogDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Внести показатели мониторинга</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {monitoringParams.map(p => (
+              <div key={p.param_key} className="flex items-center gap-4">
+                <Label className="min-w-[140px]">{p.param_label} ({p.unit})</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={logValues[p.param_key] || ''}
+                  onChange={(e) => setLogValues(prev => ({ ...prev, [p.param_key]: e.target.value }))}
+                  placeholder={p.min_value != null && p.max_value != null ? `${p.min_value} — ${p.max_value}` : ''}
+                />
+              </div>
+            ))}
+            <div>
+              <Label>Примечание</Label>
+              <Input value={logNotes} onChange={(e) => setLogNotes(e.target.value)} placeholder="Дополнительная информация" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLogDialog(false)}>Отмена</Button>
+            <Button onClick={handleSaveLog} disabled={savingLog}>
+              {savingLog ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ================================================================= */}
       {/* POSITIONS TABLE                                                   */}

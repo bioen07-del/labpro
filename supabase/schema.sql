@@ -574,9 +574,10 @@ CREATE TABLE IF NOT EXISTS equipment_logs (
     logged_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Equipment Monitoring Parameters (what to monitor per equipment type)
+-- Equipment Monitoring Parameters (what to monitor per equipment)
 CREATE TABLE IF NOT EXISTS equipment_monitoring_params (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE,
     equipment_type TEXT NOT NULL,
     param_key TEXT NOT NULL,
     param_label TEXT NOT NULL,
@@ -585,7 +586,7 @@ CREATE TABLE IF NOT EXISTS equipment_monitoring_params (
     max_value NUMERIC,
     is_required BOOLEAN DEFAULT true,
     sort_order INTEGER DEFAULT 0,
-    UNIQUE(equipment_type, param_key)
+    UNIQUE(equipment_id, param_key)
 );
 
 -- ============================================

@@ -1478,17 +1478,45 @@ export async function getEquipmentLogs(equipmentId: string, limit = 100) {
   return data
 }
 
-export async function getMonitoringParams(equipmentType?: string) {
-  let query = supabase
+export async function getMonitoringParams(equipmentId?: string) {
+  if (!equipmentId) return []
+  const { data, error } = await supabase
     .from('equipment_monitoring_params')
     .select('*')
+    .eq('equipment_id', equipmentId)
     .order('sort_order')
 
-  if (equipmentType) {
-    query = query.eq('equipment_type', equipmentType)
-  }
+  if (error) throw error
+  return data ?? []
+}
 
-  const { data, error } = await query
+export async function saveMonitoringParams(
+  equipmentId: string,
+  equipmentType: string,
+  params: { param_key: string; param_label: string; unit: string; min_value?: number; max_value?: number; is_required: boolean; sort_order: number }[]
+) {
+  // Delete existing params for this equipment
+  const { error: delError } = await supabase
+    .from('equipment_monitoring_params')
+    .delete()
+    .eq('equipment_id', equipmentId)
+
+  if (delError) throw delError
+
+  if (params.length === 0) return []
+
+  // Insert new params
+  const rows = params.map(p => ({
+    equipment_id: equipmentId,
+    equipment_type: equipmentType,
+    ...p,
+  }))
+
+  const { data, error } = await supabase
+    .from('equipment_monitoring_params')
+    .insert(rows)
+    .select()
+
   if (error) throw error
   return data
 }
@@ -3533,4 +3561,94 @@ export async function checkEquipmentValidation(equipmentId: string): Promise<{ne
   }
 
   return { needsValidation: false, urgency: 'ok' }
+}
+
+// ==================== REFERENCE TABLES CRUD ====================
+
+// --- Container Types ---
+export async function createContainerType(data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('container_types').insert(data).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function updateContainerType(id: string, data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('container_types').update(data).eq('id', id).select().single()
+  if (error) throw error
+  return result
+}
+
+// --- Culture Types ---
+export async function createCultureType(data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('culture_types').insert(data).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function updateCultureType(id: string, data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('culture_types').update(data).eq('id', id).select().single()
+  if (error) throw error
+  return result
+}
+
+// --- Tissue Types ---
+export async function createTissueType(data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('tissue_types').insert(data).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function updateTissueType(id: string, data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('tissue_types').update(data).eq('id', id).select().single()
+  if (error) throw error
+  return result
+}
+
+// --- Morphology Types ---
+export async function createMorphologyType(data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('morphology_types').insert(data).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function updateMorphologyType(id: string, data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('morphology_types').update(data).eq('id', id).select().single()
+  if (error) throw error
+  return result
+}
+
+// --- Dispose Reasons ---
+export async function createDisposeReason(data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('dispose_reasons').insert(data).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function updateDisposeReason(id: string, data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('dispose_reasons').update(data).eq('id', id).select().single()
+  if (error) throw error
+  return result
+}
+
+// --- Nomenclatures ---
+export async function createNomenclature(data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('nomenclatures').insert(data).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function updateNomenclature(id: string, data: Record<string, unknown>) {
+  const { data: result, error } = await supabase.from('nomenclatures').update(data).eq('id', id).select().single()
+  if (error) throw error
+  return result
+}
+
+export async function getAllNomenclatures() {
+  const { data, error } = await supabase
+    .from('nomenclatures')
+    .select('*, container_type:container_types(*)')
+    .order('name')
+
+  if (error) throw error
+  return data ?? []
 }

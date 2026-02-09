@@ -41,12 +41,29 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+import { Checkbox } from "@/components/ui/checkbox"
+
 import {
   getEquipmentById,
   updateEquipment,
   createPosition,
   updatePosition,
+  getMonitoringParams,
+  saveMonitoringParams,
 } from "@/lib/api"
+
+const MONITORING_PARAMS_DEF = [
+  { key: 'temperature', label: 'Температура', unit: '°C' },
+  { key: 'humidity', label: 'Влажность', unit: '%' },
+  { key: 'co2_level', label: 'CO₂', unit: '%' },
+  { key: 'o2_level', label: 'O₂', unit: '%' },
+]
+
+interface MonitoringConfig {
+  enabled: boolean
+  min_value: string
+  max_value: string
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -128,6 +145,14 @@ export default function EditEquipmentPage({
   const [newPositionQR, setNewPositionQR] = useState("")
   const [newPositionParentId, setNewPositionParentId] = useState<string | null>(null)
 
+  // Monitoring
+  const [monitoringEnabled, setMonitoringEnabled] = useState(false)
+  const [monitoringConfig, setMonitoringConfig] = useState<Record<string, MonitoringConfig>>(() => {
+    const cfg: Record<string, MonitoringConfig> = {}
+    MONITORING_PARAMS_DEF.forEach(p => { cfg[p.key] = { enabled: false, min_value: '', max_value: '' } })
+    return cfg
+  })
+
   // Bulk add dialog
   const [showBulkAdd, setShowBulkAdd] = useState(false)
   const [bulkPrefix, setBulkPrefix] = useState("")
@@ -169,6 +194,28 @@ export default function EditEquipmentPage({
           parent_id: p.parent_id || null,
         }))
       )
+
+      // Load monitoring params
+      try {
+        const params = await getMonitoringParams(id)
+        if (params && params.length > 0) {
+          setMonitoringEnabled(true)
+          const cfg: Record<string, MonitoringConfig> = {}
+          MONITORING_PARAMS_DEF.forEach(p => { cfg[p.key] = { enabled: false, min_value: '', max_value: '' } })
+          for (const p of params) {
+            if (cfg[p.param_key]) {
+              cfg[p.param_key] = {
+                enabled: true,
+                min_value: p.min_value != null ? String(p.min_value) : '',
+                max_value: p.max_value != null ? String(p.max_value) : '',
+              }
+            }
+          }
+          setMonitoringConfig(cfg)
+        }
+      } catch (err) {
+        console.error('Error loading monitoring params:', err)
+      }
     } catch (err: any) {
       setError(err?.message || "Ошибка загрузки оборудования")
     } finally {
@@ -340,6 +387,22 @@ export default function EditEquipmentPage({
           }
         }
       }
+
+      // 4. Save monitoring params
+      const params = monitoringEnabled
+        ? MONITORING_PARAMS_DEF
+            .filter(p => monitoringConfig[p.key].enabled)
+            .map((p, idx) => ({
+              param_key: p.key,
+              param_label: p.label,
+              unit: p.unit,
+              min_value: monitoringConfig[p.key].min_value ? Number(monitoringConfig[p.key].min_value) : undefined,
+              max_value: monitoringConfig[p.key].max_value ? Number(monitoringConfig[p.key].max_value) : undefined,
+              is_required: true,
+              sort_order: idx,
+            }))
+        : []
+      await saveMonitoringParams(id, formData.type, params)
 
       toast.success("Оборудование обновлено")
       router.push(`/equipment/${id}`)
@@ -563,6 +626,74 @@ export default function EditEquipmentPage({
               />
             </div>
           </CardContent>
+        </Card>
+
+        {/* Monitoring Card */}
+        <Card className="border-2 border-dashed">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="monitoring"
+                checked={monitoringEnabled}
+                onCheckedChange={(v) => setMonitoringEnabled(!!v)}
+              />
+              <Label htmlFor="monitoring" className="text-base font-semibold cursor-pointer">
+                Мониторинг показателей
+              </Label>
+            </div>
+            <CardDescription className="ml-7">
+              Включите для регулярного внесения показателей (1-2 раза в день)
+            </CardDescription>
+          </CardHeader>
+          {monitoringEnabled && (
+            <CardContent className="space-y-3">
+              {MONITORING_PARAMS_DEF.map(param => (
+                <div key={param.key} className="flex items-center gap-4 p-3 border rounded-md">
+                  <Checkbox
+                    id={`mon_${param.key}`}
+                    checked={monitoringConfig[param.key].enabled}
+                    onCheckedChange={(v) => setMonitoringConfig(prev => ({
+                      ...prev,
+                      [param.key]: { ...prev[param.key], enabled: !!v }
+                    }))}
+                  />
+                  <Label htmlFor={`mon_${param.key}`} className="min-w-[120px] cursor-pointer">
+                    {param.label} ({param.unit})
+                  </Label>
+                  {monitoringConfig[param.key].enabled && (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">min:</span>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          className="w-20 h-8"
+                          value={monitoringConfig[param.key].min_value}
+                          onChange={(e) => setMonitoringConfig(prev => ({
+                            ...prev,
+                            [param.key]: { ...prev[param.key], min_value: e.target.value }
+                          }))}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">max:</span>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          className="w-20 h-8"
+                          value={monitoringConfig[param.key].max_value}
+                          onChange={(e) => setMonitoringConfig(prev => ({
+                            ...prev,
+                            [param.key]: { ...prev[param.key], max_value: e.target.value }
+                          }))}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          )}
         </Card>
 
         {/* Positions Card */}

@@ -482,6 +482,7 @@ export interface EquipmentLog {
 
 export interface EquipmentMonitoringParam {
   id: string
+  equipment_id?: string
   equipment_type: string
   param_key: string
   param_label: string
