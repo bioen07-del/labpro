@@ -109,9 +109,14 @@ export default function BatchDetailPage({
   const [editData, setEditData] = useState({
     batch_number: '',
     quantity: '',
+    volume_per_unit: '',
     unit: '',
     status: '',
+    manufacturer: '',
+    catalog_number: '',
     supplier: '',
+    invoice_number: '',
+    invoice_date: '',
     expiration_date: '',
     notes: '',
   })
@@ -139,9 +144,14 @@ export default function BatchDetailPage({
     setEditData({
       batch_number: batch.batch_number || '',
       quantity: batch.quantity != null ? String(batch.quantity) : '',
+      volume_per_unit: batch.volume_per_unit != null ? String(batch.volume_per_unit) : '',
       unit: batch.unit || '',
       status: batch.status || '',
+      manufacturer: batch.manufacturer || '',
+      catalog_number: batch.catalog_number || '',
       supplier: batch.supplier || '',
+      invoice_number: batch.invoice_number || '',
+      invoice_date: batch.invoice_date ? batch.invoice_date.split('T')[0] : '',
       expiration_date: batch.expiration_date ? batch.expiration_date.split('T')[0] : '',
       notes: batch.notes || '',
     })
@@ -154,9 +164,14 @@ export default function BatchDetailPage({
       const updates: Record<string, unknown> = {
         batch_number: editData.batch_number || undefined,
         quantity: editData.quantity ? parseFloat(editData.quantity) : undefined,
+        volume_per_unit: editData.volume_per_unit ? parseFloat(editData.volume_per_unit) : null,
         unit: editData.unit || undefined,
         status: editData.status || undefined,
-        supplier: editData.supplier || undefined,
+        manufacturer: editData.manufacturer || null,
+        catalog_number: editData.catalog_number || null,
+        supplier: editData.supplier || null,
+        invoice_number: editData.invoice_number || null,
+        invoice_date: editData.invoice_date || null,
         expiration_date: editData.expiration_date || undefined,
         notes: editData.notes || undefined,
       }
@@ -299,6 +314,17 @@ export default function BatchDetailPage({
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="volume_per_unit">Объём / масса на ед.</Label>
+                  <Input
+                    id="volume_per_unit"
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={editData.volume_per_unit}
+                    onChange={(e) => setEditData(prev => ({ ...prev, volume_per_unit: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="unit">Единица измерения</Label>
                   <Input
                     id="unit"
@@ -307,13 +333,33 @@ export default function BatchDetailPage({
                     placeholder="шт., мл, г..."
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="expiration_date">Срок годности</Label>
+                <Input
+                  id="expiration_date"
+                  type="date"
+                  value={editData.expiration_date}
+                  onChange={(e) => setEditData(prev => ({ ...prev, expiration_date: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="expiration_date">Срок годности</Label>
+                  <Label htmlFor="manufacturer">Производитель</Label>
                   <Input
-                    id="expiration_date"
-                    type="date"
-                    value={editData.expiration_date}
-                    onChange={(e) => setEditData(prev => ({ ...prev, expiration_date: e.target.value }))}
+                    id="manufacturer"
+                    value={editData.manufacturer}
+                    onChange={(e) => setEditData(prev => ({ ...prev, manufacturer: e.target.value }))}
+                    placeholder="Gibco, Sigma-Aldrich..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="catalog_number">Каталожный номер</Label>
+                  <Input
+                    id="catalog_number"
+                    value={editData.catalog_number}
+                    onChange={(e) => setEditData(prev => ({ ...prev, catalog_number: e.target.value }))}
+                    placeholder="12571-063"
                   />
                 </div>
               </div>
@@ -324,6 +370,25 @@ export default function BatchDetailPage({
                   value={editData.supplier}
                   onChange={(e) => setEditData(prev => ({ ...prev, supplier: e.target.value }))}
                 />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="invoice_number">Номер накладной</Label>
+                  <Input
+                    id="invoice_number"
+                    value={editData.invoice_number}
+                    onChange={(e) => setEditData(prev => ({ ...prev, invoice_number: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="invoice_date">Дата накладной</Label>
+                  <Input
+                    id="invoice_date"
+                    type="date"
+                    value={editData.invoice_date}
+                    onChange={(e) => setEditData(prev => ({ ...prev, invoice_date: e.target.value }))}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="notes">Примечания</Label>
@@ -374,13 +439,10 @@ export default function BatchDetailPage({
                   <TableCell>
                     {batch.quantity != null ? batch.quantity : "---"}{" "}
                     {batch.unit || ""}
+                    {batch.volume_per_unit != null && (
+                      <span className="text-muted-foreground"> ({batch.volume_per_unit} {batch.unit || 'мл'} / ед.)</span>
+                    )}
                   </TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium text-muted-foreground">
-                    Единица измерения
-                  </TableCell>
-                  <TableCell>{batch.unit || "---"}</TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell className="font-medium text-muted-foreground">
@@ -413,12 +475,39 @@ export default function BatchDetailPage({
                     )}
                   </TableCell>
                 </TableRow>
+                {batch.manufacturer && (
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground">
+                      Производитель
+                    </TableCell>
+                    <TableCell>{batch.manufacturer}</TableCell>
+                  </TableRow>
+                )}
+                {batch.catalog_number && (
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground">
+                      Каталожный номер
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">{batch.catalog_number}</TableCell>
+                  </TableRow>
+                )}
                 <TableRow>
                   <TableCell className="font-medium text-muted-foreground">
                     Поставщик
                   </TableCell>
                   <TableCell>{batch.supplier || "---"}</TableCell>
                 </TableRow>
+                {(batch.invoice_number || batch.invoice_date) && (
+                  <TableRow>
+                    <TableCell className="font-medium text-muted-foreground">
+                      Накладная
+                    </TableCell>
+                    <TableCell>
+                      {batch.invoice_number || '—'}
+                      {batch.invoice_date && <span className="text-muted-foreground"> от {formatDate(batch.invoice_date)}</span>}
+                    </TableCell>
+                  </TableRow>
+                )}
                 <TableRow>
                   <TableCell className="font-medium text-muted-foreground">
                     Примечания

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, Plus, Save, X, Pencil, ToggleLeft, ToggleRight, TestTubes, Package, FlaskConical, Microscope, Trash2, Layers, AlertTriangle, Link2 } from 'lucide-react'
+import { Loader2, Plus, Save, X, Pencil, ToggleLeft, ToggleRight, TestTubes, Package, FlaskConical, Microscope, Trash2, Layers, AlertTriangle, Link2, EyeOff, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -55,7 +55,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент', CONSUMABLE: 'Пластик',
 }
 
-const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'growth_rate', 'passage_interval_days'])
+const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days'])
 
 // ---- Component ----
 
@@ -91,6 +91,9 @@ export default function ReferencesPage() {
   // Link dialog
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linkCultureType, setLinkCultureType] = useState<any | null>(null)
+
+  // Show inactive toggle
+  const [showInactive, setShowInactive] = useState(false)
 
   // Consumables sub-section
   const [consumablesSub, setConsumablesSub] = useState<'nomenclatures' | 'container_types'>('nomenclatures')
@@ -190,7 +193,7 @@ export default function ReferencesPage() {
   const getDefaultForm = (tab: TabKey): Record<string, any> => {
     switch (tab) {
       case 'culture_types':
-        return { code: '', name: '', description: '', growth_rate: '', optimal_confluent: '', passage_interval_days: '', is_active: true }
+        return { code: '', name: '', description: '', optimal_confluent: '', observe_interval_days: '', feed_interval_days: '', is_active: true }
       case 'media_reagents':
         return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', is_active: true }
       case 'consumables':
@@ -205,7 +208,7 @@ export default function ReferencesPage() {
   }
 
   const TABLE_FIELDS: Record<string, string[]> = {
-    culture_types: ['code', 'name', 'description', 'growth_rate', 'optimal_confluent', 'passage_interval_days', 'is_active'],
+    culture_types: ['code', 'name', 'description', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'is_active'],
     tissue_types: ['code', 'name', 'tissue_form', 'is_active'],
     media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'is_active'],
     consumables: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'is_active'],
@@ -367,7 +370,20 @@ export default function ReferencesPage() {
       const newActive = !(item.is_active ?? true)
       switch (entityType) {
         case 'culture_type': await updateCultureType(item.id, { is_active: newActive }); break
-        case 'tissue_type': await updateTissueType(item.id, { is_active: newActive }); break
+        case 'tissue_type': {
+          await updateTissueType(item.id, { is_active: newActive })
+          // При деактивации ткани — удаляем все привязки к культурам
+          if (!newActive) {
+            const linksToRemove = tissueLinks.filter((l: any) => l.tissue_type_id === item.id)
+            for (const link of linksToRemove) {
+              await unlinkCultureTypeFromTissueType(link.culture_type_id, item.id)
+            }
+            if (linksToRemove.length > 0) {
+              toast.info(`Удалено ${linksToRemove.length} привязок к культурам`)
+            }
+          }
+          break
+        }
         case 'nomenclature': await updateNomenclature(item.id, { is_active: newActive }); break
         case 'container_type': await updateContainerType(item.id, { is_active: newActive }); break
       }
@@ -412,7 +428,11 @@ export default function ReferencesPage() {
 
   // ---- Current tab items ----
 
-  const items = data[activeTab] || []
+  const allItems = data[activeTab] || []
+  const items = showInactive ? allItems : allItems.filter((i: any) => i.is_active !== false)
+  const visibleTissueTypes = showInactive ? tissueTypes : tissueTypes.filter((t: any) => t.is_active !== false)
+  const visibleContainerTypes = showInactive ? containerTypes : containerTypes.filter((ct: any) => ct.is_active !== false)
+  const inactiveCount = allItems.filter((i: any) => i.is_active === false).length
   const isLoading = loading[activeTab] ?? true
 
   // ==================== RENDER: Status badge ====================
@@ -466,7 +486,8 @@ export default function ReferencesPage() {
               <TableRow>
                 <TableHead>Код</TableHead>
                 <TableHead>Название</TableHead>
-                <TableHead>Интервал пассажа</TableHead>
+                <TableHead>Осмотр</TableHead>
+                <TableHead>Подкормка</TableHead>
                 <TableHead>Связанные ткани</TableHead>
                 <TableHead>Статус</TableHead>
                 <TableHead className="text-right">Действия</TableHead>
@@ -474,14 +495,15 @@ export default function ReferencesPage() {
             </TableHeader>
             <TableBody>
               {items.length === 0 ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Нет данных</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Нет данных</TableCell></TableRow>
               ) : items.map(item => {
                 const links = linksForCulture(item.id)
                 return (
                   <TableRow key={item.id} className={item.is_active === false ? 'opacity-50' : ''}>
                     <TableCell className="font-mono text-sm">{item.code || '-'}</TableCell>
                     <TableCell className="font-medium">{item.name || '-'}</TableCell>
-                    <TableCell>{item.passage_interval_days ? `${item.passage_interval_days} дн.` : '-'}</TableCell>
+                    <TableCell>{item.observe_interval_days ? `${item.observe_interval_days} дн.` : '-'}</TableCell>
+                    <TableCell>{item.feed_interval_days ? `${item.feed_interval_days} дн.` : '-'}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {links.length === 0 ? (
@@ -531,9 +553,9 @@ export default function ReferencesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tissueTypes.length === 0 ? (
+              {visibleTissueTypes.length === 0 ? (
                 <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Нет данных</TableCell></TableRow>
-              ) : tissueTypes.map(item => (
+              ) : visibleTissueTypes.map(item => (
                 <TableRow key={item.id} className={item.is_active === false ? 'opacity-50' : ''}>
                   <TableCell className="font-mono text-sm">{item.code || '-'}</TableCell>
                   <TableCell className="font-medium">{item.name || '-'}</TableCell>
@@ -590,7 +612,7 @@ export default function ReferencesPage() {
 
   // ==================== TAB: Расходные материалы ====================
 
-  const renderContainerTypesTable = () => (
+  const renderContainerTypesTable = (ctItems: any[] = visibleContainerTypes) => (
     <Table>
       <TableHeader>
         <TableRow>
@@ -604,9 +626,9 @@ export default function ReferencesPage() {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {containerTypes.length === 0 ? (
+        {ctItems.length === 0 ? (
           <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Нет данных</TableCell></TableRow>
-        ) : containerTypes.map(item => (
+        ) : ctItems.map(item => (
           <TableRow key={item.id} className={item.is_active === false ? 'opacity-50' : ''}>
             <TableCell className="font-mono text-sm">{item.code || '-'}</TableCell>
             <TableCell className="font-medium">{item.name || '-'}</TableCell>
@@ -635,14 +657,14 @@ export default function ReferencesPage() {
             </Button>
             <Button variant={consumablesSub === 'container_types' ? 'default' : 'outline'} size="sm" onClick={() => setConsumablesSub('container_types')}>
               <Layers className="mr-1 h-4 w-4" />Типы контейнеров
-              <Badge variant="secondary" className="ml-1 text-xs">{containerTypes.length}</Badge>
+              <Badge variant="secondary" className="ml-1 text-xs">{visibleContainerTypes.length}</Badge>
             </Button>
           </div>
           <Button size="sm" onClick={() => openCreateDialog(consumablesSub === 'container_types' ? 'container_type' : 'main')}>
             <Plus className="mr-2 h-4 w-4" />Добавить
           </Button>
         </div>
-        {consumablesSub === 'nomenclatures' ? renderNomTable(items, 'nomenclature', 'main') : renderContainerTypesTable()}
+        {consumablesSub === 'nomenclatures' ? renderNomTable(items, 'nomenclature', 'main') : renderContainerTypesTable(visibleContainerTypes)}
       </div>
     )
   }
@@ -719,9 +741,9 @@ export default function ReferencesPage() {
             </div>
             <div><Label>Описание</Label><Input value={form.description || ''} onChange={e => updateForm('description', e.target.value)} /></div>
             <div className="grid grid-cols-3 gap-4">
-              <div><Label>Скорость роста</Label><Input type="number" step="0.1" value={form.growth_rate ?? ''} onChange={e => updateForm('growth_rate', e.target.value)} /></div>
-              <div><Label>Конфлюэнтность (%)</Label><Input type="number" value={form.optimal_confluent ?? ''} onChange={e => updateForm('optimal_confluent', e.target.value)} /></div>
-              <div><Label>Интервал пассажа (дней)</Label><Input type="number" value={form.passage_interval_days ?? ''} onChange={e => updateForm('passage_interval_days', e.target.value)} /></div>
+              <div><Label>Конфлюэнтность (%)</Label><Input type="number" value={form.optimal_confluent ?? ''} onChange={e => updateForm('optimal_confluent', e.target.value)} placeholder="80" /></div>
+              <div><Label>Частота осмотра (дней)</Label><Input type="number" value={form.observe_interval_days ?? ''} onChange={e => updateForm('observe_interval_days', e.target.value)} placeholder="1" /></div>
+              <div><Label>Частота подкормки (дней)</Label><Input type="number" value={form.feed_interval_days ?? ''} onChange={e => updateForm('feed_interval_days', e.target.value)} placeholder="3" /></div>
             </div>
           </div>
         )
@@ -819,7 +841,14 @@ export default function ReferencesPage() {
       {/* Tab Content */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>{tabLabel}</CardTitle>
+          <div className="flex items-center gap-3">
+            <CardTitle>{tabLabel}</CardTitle>
+            <Button variant={showInactive ? 'secondary' : 'ghost'} size="sm" onClick={() => setShowInactive(!showInactive)} className="gap-1.5 text-xs h-7">
+              {showInactive ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              {showInactive ? 'Все записи' : 'Скрыты неактивные'}
+              {!showInactive && inactiveCount > 0 && <Badge variant="outline" className="ml-1 text-xs h-4 px-1">{inactiveCount}</Badge>}
+            </Button>
+          </div>
           {(activeTab === 'morphology_types' || activeTab === 'dispose_reasons') && (
             <Button size="sm" onClick={() => openCreateDialog('main')}>
               <Plus className="mr-2 h-4 w-4" />Добавить

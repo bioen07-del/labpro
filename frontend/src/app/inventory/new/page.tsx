@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Loader2, CheckCircle2, Package } from "lucide-react"
+import { ArrowLeft, Loader2, CheckCircle2, Package, FileText } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Separator } from "@/components/ui/separator"
 
 import { createBatch, getNomenclatures } from "@/lib/api"
 
@@ -42,9 +43,14 @@ export default function NewBatchPage() {
     nomenclature_id: "",
     batch_number: "",
     quantity: "",
+    volume_per_unit: "",
     unit: "шт",
     expiration_date: "",
+    manufacturer: "",
+    catalog_number: "",
     supplier: "",
+    invoice_number: "",
+    invoice_date: "",
     notes: "",
   })
 
@@ -81,9 +87,14 @@ export default function NewBatchPage() {
         nomenclature_id: formData.nomenclature_id,
         batch_number: formData.batch_number,
         quantity: Number(formData.quantity),
+        volume_per_unit: formData.volume_per_unit ? Number(formData.volume_per_unit) : null,
         unit: formData.unit,
         expiration_date: formData.expiration_date || null,
+        manufacturer: formData.manufacturer || null,
+        catalog_number: formData.catalog_number || null,
         supplier: formData.supplier || null,
+        invoice_number: formData.invoice_number || null,
+        invoice_date: formData.invoice_date || null,
         notes: formData.notes || null,
       })
 
@@ -119,6 +130,8 @@ export default function NewBatchPage() {
     )
   }
 
+  const update = (key: string, value: string) => setFormData(prev => ({ ...prev, [key]: value }))
+
   return (
     <div className="container py-6 space-y-6 max-w-2xl">
       {/* Header */}
@@ -131,26 +144,27 @@ export default function NewBatchPage() {
         <div>
           <h1 className="text-2xl font-bold">Новая партия</h1>
           <p className="text-muted-foreground">
-            Регистрация новой партии реагентов / расходных материалов
+            Приёмка товара на склад
           </p>
         </div>
       </div>
 
       {/* Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Данные партии
-          </CardTitle>
-          <CardDescription>Заполните информацию о новой партии</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Category filter + Nomenclature */}
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Section 1: Номенклатура */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Package className="h-4 w-4" />
+              Товар
+            </CardTitle>
+            <CardDescription>Выберите номенклатуру и укажите параметры партии</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Category filter */}
             <div className="space-y-2">
               <Label>Категория</Label>
-              <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setFormData({ ...formData, nomenclature_id: '' }) }}>
+              <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); update('nomenclature_id', '') }}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Все категории" />
                 </SelectTrigger>
@@ -166,20 +180,17 @@ export default function NewBatchPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Nomenclature */}
             <div className="space-y-2">
-              <Label htmlFor="nomenclature_id">Номенклатура *</Label>
+              <Label>Номенклатура *</Label>
               {nomenclaturesLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Загрузка номенклатуры...
                 </div>
               ) : (
-                <Select
-                  value={formData.nomenclature_id}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, nomenclature_id: value })
-                  }
-                >
+                <Select value={formData.nomenclature_id} onValueChange={(v) => update('nomenclature_id', v)}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Выберите номенклатуру" />
                   </SelectTrigger>
@@ -197,49 +208,49 @@ export default function NewBatchPage() {
               )}
             </div>
 
-            {/* Batch number + Quantity */}
-            <div className="grid grid-cols-2 gap-4">
+            <Separator />
+
+            {/* Batch number */}
+            <div className="space-y-2">
+              <Label>Номер партии (LOT) *</Label>
+              <Input
+                value={formData.batch_number}
+                onChange={(e) => update('batch_number', e.target.value)}
+                placeholder="LOT-2024-001"
+                required
+              />
+            </div>
+
+            {/* Quantity + Volume per unit + Unit */}
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="batch_number">Номер партии *</Label>
+                <Label>Количество *</Label>
                 <Input
-                  id="batch_number"
-                  value={formData.batch_number}
-                  onChange={(e) =>
-                    setFormData({ ...formData, batch_number: e.target.value })
-                  }
-                  placeholder="Например: LOT-2024-001"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Количество *</Label>
-                <Input
-                  id="quantity"
                   type="number"
                   min="0"
                   step="any"
                   value={formData.quantity}
-                  onChange={(e) =>
-                    setFormData({ ...formData, quantity: e.target.value })
-                  }
-                  placeholder="0"
+                  onChange={(e) => update('quantity', e.target.value)}
+                  placeholder="5"
                   required
                 />
               </div>
-            </div>
-
-            {/* Unit + Expiration date */}
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="unit">Единица измерения</Label>
-                <Select
-                  value={formData.unit}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, unit: value })
-                  }
-                >
+                <Label>Объём / масса на ед.</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={formData.volume_per_unit}
+                  onChange={(e) => update('volume_per_unit', e.target.value)}
+                  placeholder="500"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Ед. измерения</Label>
+                <Select value={formData.unit} onValueChange={(v) => update('unit', v)}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Выберите единицу" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     {unitOptions.map((u) => (
@@ -250,65 +261,118 @@ export default function NewBatchPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            {formData.quantity && formData.volume_per_unit && (
+              <p className="text-sm text-muted-foreground">
+                Итого: {Number(formData.quantity)} ед. × {Number(formData.volume_per_unit)} {formData.unit} = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(1)} {formData.unit}</strong>
+              </p>
+            )}
+
+            {/* Expiration date */}
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="expiration_date">Срок годности</Label>
+                <Label>Срок годности</Label>
                 <Input
-                  id="expiration_date"
                   type="date"
                   value={formData.expiration_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, expiration_date: e.target.value })
-                  }
+                  onChange={(e) => update('expiration_date', e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Section 2: Производитель и поставщик */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-4 w-4" />
+              Производитель и поставщик
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Manufacturer + Catalog number */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Производитель</Label>
+                <Input
+                  value={formData.manufacturer}
+                  onChange={(e) => update('manufacturer', e.target.value)}
+                  placeholder="Gibco, Sigma-Aldrich..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Каталожный номер</Label>
+                <Input
+                  value={formData.catalog_number}
+                  onChange={(e) => update('catalog_number', e.target.value)}
+                  placeholder="12571-063"
                 />
               </div>
             </div>
 
             {/* Supplier */}
             <div className="space-y-2">
-              <Label htmlFor="supplier">Поставщик</Label>
+              <Label>Поставщик</Label>
               <Input
-                id="supplier"
                 value={formData.supplier}
-                onChange={(e) =>
-                  setFormData({ ...formData, supplier: e.target.value })
-                }
-                placeholder="Название поставщика"
+                onChange={(e) => update('supplier', e.target.value)}
+                placeholder="Название поставщика / дистрибьютора"
               />
+            </div>
+
+            <Separator />
+
+            {/* Invoice */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Номер накладной</Label>
+                <Input
+                  value={formData.invoice_number}
+                  onChange={(e) => update('invoice_number', e.target.value)}
+                  placeholder="ТН-2026-0001"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Дата накладной</Label>
+                <Input
+                  type="date"
+                  value={formData.invoice_date}
+                  onChange={(e) => update('invoice_date', e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Notes */}
             <div className="space-y-2">
-              <Label htmlFor="notes">Примечания</Label>
+              <Label>Примечания</Label>
               <Textarea
-                id="notes"
                 value={formData.notes}
-                onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
-                }
+                onChange={(e) => update('notes', e.target.value)}
                 placeholder="Дополнительная информация о партии..."
                 rows={3}
               />
             </div>
+          </CardContent>
+        </Card>
 
-            {/* Actions */}
-            <div className="flex gap-4 pt-2">
-              <Button type="submit" disabled={submitting}>
-                {submitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Создание...
-                  </>
-                ) : (
-                  "Создать партию"
-                )}
-              </Button>
-              <Button type="button" variant="outline" asChild>
-                <Link href="/inventory">Отмена</Link>
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+        {/* Actions */}
+        <div className="flex gap-4">
+          <Button type="submit" disabled={submitting}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Создание...
+              </>
+            ) : (
+              "Создать партию"
+            )}
+          </Button>
+          <Button type="button" variant="outline" asChild>
+            <Link href="/inventory">Отмена</Link>
+          </Button>
+        </div>
+      </form>
     </div>
   )
 }
