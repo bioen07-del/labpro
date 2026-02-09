@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Loader2, Plus, Save, X, Pencil, ToggleLeft, ToggleRight, TestTubes, Package, FlaskConical, Microscope, Trash2, Layers } from 'lucide-react'
+import { Loader2, Plus, Save, X, Pencil, ToggleLeft, ToggleRight, TestTubes, Package, FlaskConical, Microscope, Trash2, Layers, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,12 +18,12 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import {
-  getAllNomenclatures, createNomenclature, updateNomenclature,
-  getContainerTypes, createContainerType, updateContainerType,
-  getCultureTypes, createCultureType, updateCultureType,
-  getTissueTypes, createTissueType, updateTissueType,
-  getMorphologyTypes, createMorphologyType, updateMorphologyType,
-  getDisposeReasons, createDisposeReason, updateDisposeReason,
+  getAllNomenclatures, createNomenclature, updateNomenclature, deleteNomenclature,
+  getContainerTypes, createContainerType, updateContainerType, deleteContainerType,
+  getCultureTypes, createCultureType, updateCultureType, deleteCultureType,
+  getTissueTypes, createTissueType, updateTissueType, deleteTissueType,
+  getMorphologyTypes, createMorphologyType, updateMorphologyType, deleteMorphologyType,
+  getDisposeReasons, createDisposeReason, updateDisposeReason, deleteDisposeReason,
   getReadyMedia,
 } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -75,6 +75,9 @@ export default function ReferencesPage() {
   const [form, setForm] = useState<Record<string, any>>({})
   const [saving, setSaving] = useState(false)
   const [containerTypes, setContainerTypes] = useState<any[]>([])
+  const [deleteItem, setDeleteItem] = useState<any | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const loadTab = useCallback(async (tab: TabKey) => {
     setLoading(prev => ({ ...prev, [tab]: true }))
@@ -138,42 +141,60 @@ export default function ReferencesPage() {
     }
   }
 
+  // Define allowed fields per table to avoid sending extra columns
+  const TABLE_FIELDS: Record<TabKey, string[]> = {
+    nomenclatures: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'is_active'],
+    container_types: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
+    culture_types: ['code', 'name', 'description', 'growth_rate', 'optimal_confluent', 'passage_interval_days', 'is_active'],
+    tissue_types: ['code', 'name', 'tissue_form', 'is_active'],
+    morphology_types: ['code', 'name', 'description'],
+    dispose_reasons: ['code', 'name', 'description'],
+    media: [],
+  }
+
+  const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'growth_rate', 'passage_interval_days'])
+
   const handleSave = async () => {
     setSaving(true)
     try {
-      const cleanedForm = { ...form }
-      // Convert empty strings to null for numeric fields
-      for (const key of ['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'growth_rate', 'passage_interval_days']) {
-        if (cleanedForm[key] === '' || cleanedForm[key] === undefined) {
-          cleanedForm[key] = null
-        } else if (cleanedForm[key] !== null) {
-          cleanedForm[key] = Number(cleanedForm[key])
+      // Extract only the fields that belong to this table
+      const allowedFields = TABLE_FIELDS[activeTab] || []
+      const cleanedForm: Record<string, any> = {}
+      for (const key of allowedFields) {
+        let val = form[key]
+        // Convert empty strings to null for numeric fields
+        if (NUMERIC_FIELDS.has(key)) {
+          if (val === '' || val === undefined) {
+            val = null
+          } else if (val !== null) {
+            val = Number(val)
+          }
         }
+        // Convert empty container_type_id to null
+        if (key === 'container_type_id' && val === '') {
+          val = null
+        }
+        cleanedForm[key] = val
       }
-      if (cleanedForm.container_type_id === '') cleanedForm.container_type_id = null
 
       if (editItem) {
-        // Update
-        const { id, created_at, container_type, ...updates } = cleanedForm
         switch (activeTab) {
-          case 'nomenclatures': await updateNomenclature(editItem.id, updates); break
-          case 'container_types': await updateContainerType(editItem.id, updates); break
-          case 'culture_types': await updateCultureType(editItem.id, updates); break
-          case 'tissue_types': await updateTissueType(editItem.id, updates); break
-          case 'morphology_types': await updateMorphologyType(editItem.id, updates); break
-          case 'dispose_reasons': await updateDisposeReason(editItem.id, updates); break
+          case 'nomenclatures': await updateNomenclature(editItem.id, cleanedForm); break
+          case 'container_types': await updateContainerType(editItem.id, cleanedForm); break
+          case 'culture_types': await updateCultureType(editItem.id, cleanedForm); break
+          case 'tissue_types': await updateTissueType(editItem.id, cleanedForm); break
+          case 'morphology_types': await updateMorphologyType(editItem.id, cleanedForm); break
+          case 'dispose_reasons': await updateDisposeReason(editItem.id, cleanedForm); break
         }
         toast.success('Запись обновлена')
       } else {
-        // Create
-        const { id, created_at, container_type, ...createData } = cleanedForm
         switch (activeTab) {
-          case 'nomenclatures': await createNomenclature(createData); break
-          case 'container_types': await createContainerType(createData); break
-          case 'culture_types': await createCultureType(createData); break
-          case 'tissue_types': await createTissueType(createData); break
-          case 'morphology_types': await createMorphologyType(createData); break
-          case 'dispose_reasons': await createDisposeReason(createData); break
+          case 'nomenclatures': await createNomenclature(cleanedForm); break
+          case 'container_types': await createContainerType(cleanedForm); break
+          case 'culture_types': await createCultureType(cleanedForm); break
+          case 'tissue_types': await createTissueType(cleanedForm); break
+          case 'morphology_types': await createMorphologyType(cleanedForm); break
+          case 'dispose_reasons': await createDisposeReason(cleanedForm); break
         }
         toast.success('Запись создана')
       }
@@ -184,6 +205,39 @@ export default function ReferencesPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleDelete = async () => {
+    if (!deleteItem) return
+    setDeleting(true)
+    try {
+      switch (activeTab) {
+        case 'nomenclatures': await deleteNomenclature(deleteItem.id); break
+        case 'container_types': await deleteContainerType(deleteItem.id); break
+        case 'culture_types': await deleteCultureType(deleteItem.id); break
+        case 'tissue_types': await deleteTissueType(deleteItem.id); break
+        case 'morphology_types': await deleteMorphologyType(deleteItem.id); break
+        case 'dispose_reasons': await deleteDisposeReason(deleteItem.id); break
+      }
+      toast.success('Запись удалена')
+      setDeleteConfirmOpen(false)
+      setDeleteItem(null)
+      loadTab(activeTab)
+    } catch (err: any) {
+      const msg = err.message || 'Ошибка удаления'
+      if (msg.includes('violates foreign key') || msg.includes('referenced')) {
+        toast.error('Невозможно удалить: запись используется в других данных. Деактивируйте вместо удаления.')
+      } else {
+        toast.error(msg)
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const openDeleteConfirm = (item: any) => {
+    setDeleteItem(item)
+    setDeleteConfirmOpen(true)
   }
 
   const handleDeactivate = async (item: any) => {
@@ -401,6 +455,15 @@ export default function ReferencesPage() {
                         {item.is_active !== false ? <ToggleRight className="h-4 w-4 text-green-600" /> : <ToggleLeft className="h-4 w-4 text-gray-400" />}
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                      onClick={() => openDeleteConfirm(item)}
+                      title="Удалить"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -516,6 +579,35 @@ export default function ReferencesPage() {
             <Button onClick={handleSave} disabled={saving || !form.code || !form.name}>
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Удаление записи
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Вы уверены, что хотите удалить запись <strong>{deleteItem?.name || deleteItem?.code}</strong>?
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Если запись используется в других данных (партии, движения, культуры), удаление будет невозможно.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>
+              Отмена
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Удалить
             </Button>
           </DialogFooter>
         </DialogContent>

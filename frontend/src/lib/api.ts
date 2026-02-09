@@ -3643,6 +3643,36 @@ export async function updateNomenclature(id: string, data: Record<string, unknow
   return result
 }
 
+export async function deleteNomenclature(id: string) {
+  const { error } = await supabase.from('nomenclatures').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteContainerType(id: string) {
+  const { error } = await supabase.from('container_types').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteCultureType(id: string) {
+  const { error } = await supabase.from('culture_types').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteTissueType(id: string) {
+  const { error } = await supabase.from('tissue_types').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteMorphologyType(id: string) {
+  const { error } = await supabase.from('morphology_types').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteDisposeReason(id: string) {
+  const { error } = await supabase.from('dispose_reasons').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function getAllNomenclatures() {
   const { data, error } = await supabase
     .from('nomenclatures')
