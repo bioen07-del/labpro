@@ -190,7 +190,7 @@ export default function BankDetailPage() {
               {bank.freezing_date ? formatDate(bank.freezing_date) : '-'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {bank.expiration_date ? `годен до ${formatDate(bank.expiration_date)}` : ''}
+              {bank.qc_date ? `QC: ${formatDate(bank.qc_date)}` : ''}
             </p>
           </CardContent>
         </Card>
@@ -282,8 +282,8 @@ export default function BankDetailPage() {
                     <p className="font-medium">{bank.freezing_date ? formatDate(bank.freezing_date) : '-'}</p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-muted-foreground">Срок годности</label>
-                    <p className="font-medium">{bank.expiration_date ? formatDate(bank.expiration_date) : '-'}</p>
+                    <label className="text-sm font-medium text-muted-foreground">Дата QC</label>
+                    <p className="font-medium">{bank.qc_date ? formatDate(bank.qc_date) : '-'}</p>
                   </div>
                 </div>
                 {bank.notes && (
