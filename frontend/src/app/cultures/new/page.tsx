@@ -351,6 +351,14 @@ function NewCultureForm() {
         consumable_batch_id: row.stockBatchId || undefined,
       }))
 
+      // Собрать дополнительные компоненты для списания
+      const validComponents = additionalComponents
+        .filter(c => c.mediumId && c.volumeMl && parseFloat(c.volumeMl) > 0)
+        .map(c => ({
+          ready_medium_id: c.mediumId,
+          volume_ml: parseFloat(c.volumeMl) * totalContainerCount,
+        }))
+
       const res = await createCultureFromDonation({
         donation_id: donationId,
         culture_type_id: cultureTypeId,
@@ -359,6 +367,7 @@ function NewCultureForm() {
         notes: notes || undefined,
         ready_medium_id: readyMediumId || undefined,
         medium_volume_ml: readyMediumId && totalMediumVolume > 0 ? totalMediumVolume : undefined,
+        additional_components: validComponents.length > 0 ? validComponents : undefined,
       })
 
       setResult(res as CreatedResult)

@@ -1,6 +1,6 @@
 # LabPro - Прогресс разработки
 
-## Текущий статус: Фаза 24 — UX-улучшения, багфиксы, статусы контейнеров
+## Текущий статус: Фаза 25 — Бизнес-логика, QR, графики, версионирование
 
 ### Завершённые фазы
 
@@ -289,15 +289,31 @@
   - Красный цвет если позиция заполнена (load >= capacity)
 - [x] TypeScript: 0 ошибок
 
+#### Фаза 25: Бизнес-логика, QR, графики, версионирование
+- [x] **SEED: списание компонентов** — additionalComponents (сыворотка, реагенты, добавки) передаются в API и списываются через writeOffBatchVolume
+- [x] **SEED: пофлаконный учёт** — основная среда списывается через writeOffBatchVolume (если привязана к batch)
+- [x] **Freeze: 3 типа сред** — UI расширен полями объёмов для заморозки/диссоциации/промывки, все передаются в API
+- [x] **Freeze: пофлаконный учёт** — все 3 среды списываются через writeOffBatchVolume + operation_media
+- [x] **Оборудование: badges ТО** — «Скоро ТО» (1 мес), «Срочно ТО» (1 нед), «ТО просрочено» на списке оборудования
+- [x] **Документы: очистка** — удалено 15 устаревших файлов, создан PROJECT_STATUS.md, примечания перенесены в ТЗ
+- [x] **Issue workflow** — API: reserveBankForOrder, issueOrderItems, cancelOrder; UI: кнопки на карточке заказа
+- [x] **Cell Forecast** — API: calculateAndUpdateCoefficient (авто после пассажа), forecastCells; UI: виджет прогноза на лоте
+- [x] **QR-этикетки** — компонент QRLabel (react-qr-code), печать этикеток на контейнерах и банках
+- [x] **Grafики в паспорте** — recharts: график конфлюэнтности (LineChart) на passport/page.tsx
+- [x] **Equipment alerts на дашборде** — getDashboardStats возвращает equipmentAlerts (overdue/urgent/soon), карточка на дашборде
+- [x] **Версионирование** — APP_VERSION (1.25.00), CHANGELOG с историей изменений, кликабельный футер на дашборде
+- [x] TypeScript: 0 ошибок
+
 ### Статистика
 
 | Метрика | Значение |
 |---------|----------|
 | Страницы | 38 маршрутов |
-| UI-компоненты | 20 (shadcn/ui) |
-| API (api.ts) | ~3850 строк |
+| UI-компоненты | 21 (shadcn/ui + QRLabel) |
+| API (api.ts) | ~4050 строк |
 | Типы (index.ts) | ~760 строк |
 | SQL миграции | 13 файлов |
+| npm-зависимости | +qrcode, react-qr-code, recharts |
 
 ### Стек: Next.js 16.1.6 + TypeScript 5.9.3 + React 19.2.3 + Tailwind 4 + Supabase + Vercel
 

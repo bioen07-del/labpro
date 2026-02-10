@@ -22,11 +22,20 @@ import {
   Snowflake,
   Info,
   BellRing,
+  Wrench,
+  ShieldCheck,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -42,6 +51,7 @@ import {
   markAllNotificationsRead,
   getOperations,
 } from "@/lib/api"
+import { APP_VERSION, CHANGELOG } from "@/lib/version"
 import { format, formatDistanceToNow } from "date-fns"
 import { ru } from "date-fns/locale"
 import { toast } from "sonner"
@@ -50,6 +60,15 @@ import { toast } from "sonner"
 // Types
 // ---------------------------------------------------------------------------
 
+interface EquipmentAlert {
+  id: string
+  name: string
+  code: string
+  type: 'maintenance' | 'validation'
+  urgency: 'overdue' | 'urgent' | 'soon'
+  date: string
+}
+
 interface DashboardStats {
   totalCultures: number
   activeCultures: number
@@ -57,6 +76,7 @@ interface DashboardStats {
   pendingOrders: number
   pendingTasks: number
   activeContainers: number
+  equipmentAlerts?: EquipmentAlert[]
 }
 
 interface TaskItem {
@@ -310,6 +330,68 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ========== 1.5 Equipment Alerts ========== */}
+      {stats.equipmentAlerts && stats.equipmentAlerts.length > 0 && (
+        <Card className="border-orange-300 bg-orange-50/50">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wrench className="h-4 w-4 text-orange-600" />
+              Обслуживание оборудования
+              <Badge variant="secondary" className="ml-auto">
+                {stats.equipmentAlerts.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {stats.equipmentAlerts.slice(0, 5).map((alert, idx) => (
+                <Link
+                  key={`${alert.id}-${alert.type}-${idx}`}
+                  href={`/equipment/${alert.id}`}
+                  className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
+                >
+                  {alert.type === 'maintenance' ? (
+                    <Wrench className="h-4 w-4 shrink-0 text-orange-600" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-blue-600" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{alert.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {alert.type === 'maintenance' ? 'ТО' : 'Валидация'} —{' '}
+                      {format(new Date(alert.date), 'dd.MM.yyyy', { locale: ru })}
+                    </p>
+                  </div>
+                  <Badge
+                    className={
+                      alert.urgency === 'overdue'
+                        ? 'bg-red-600 hover:bg-red-600 text-white'
+                        : alert.urgency === 'urgent'
+                          ? 'bg-orange-500 hover:bg-orange-500 text-white'
+                          : 'bg-yellow-500 hover:bg-yellow-500 text-white'
+                    }
+                  >
+                    {alert.urgency === 'overdue'
+                      ? 'Просрочено'
+                      : alert.urgency === 'urgent'
+                        ? 'Срочно'
+                        : 'Скоро'}
+                  </Badge>
+                </Link>
+              ))}
+              {stats.equipmentAlerts.length > 5 && (
+                <Link href="/equipment">
+                  <Button variant="ghost" size="sm" className="w-full">
+                    Все оборудование ({stats.equipmentAlerts.length} предупреждений)
+                    <ArrowRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ========== 2 + 3. Tasks & Notifications (two-column) ========== */}
       <div className="grid gap-6 lg:grid-cols-2">
@@ -610,6 +692,42 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ========== 6. Version Footer ========== */}
+      <div className="flex justify-center pb-4">
+        <Dialog>
+          <DialogTrigger asChild>
+            <button className="text-xs text-muted-foreground hover:text-primary transition-colors cursor-pointer">
+              LabPro v{APP_VERSION}
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Журнал изменений</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              {CHANGELOG.map((entry, idx) => (
+                <div key={idx} className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="font-mono text-xs">
+                      v{entry.version}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {entry.date}
+                    </span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-sm text-muted-foreground ml-1">
+                    {entry.changes.map((change, ci) => (
+                      <li key={ci}>{change}</li>
+                    ))}
+                  </ul>
+                  {idx < CHANGELOG.length - 1 && <Separator className="mt-3" />}
+                </div>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   )
 }

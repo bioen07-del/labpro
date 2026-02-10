@@ -33,6 +33,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { getBankById, getQCTests } from '@/lib/api'
+import { QRLabel } from '@/components/qr-label'
 import { formatDate } from '@/lib/utils'
 import type { Bank, QCTest } from '@/types'
 
@@ -145,6 +146,18 @@ export default function BankDetailPage() {
           )}
         </div>
       </div>
+
+      {/* QR Label */}
+      <QRLabel
+        code={`BK:${bank.code || bank.id}`}
+        title={`Банк ${bank.bank_type}`}
+        subtitle={bank.code || bank.id.slice(0, 12)}
+        metadata={{
+          'Статус': getBankStatusLabel(bank.status),
+          'QC': bank.qc_passed ? 'Пройден' : 'Ожидает',
+          'Криовиалов': String(bank.cryo_vials_count || bank.cryo_vials?.length || '?'),
+        }}
+      />
 
       {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-5">

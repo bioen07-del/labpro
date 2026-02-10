@@ -9,6 +9,9 @@ import {
   ClipboardList,
   Calendar,
   User,
+  Package,
+  XCircle,
+  CheckCircle2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -30,7 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getOrderById } from "@/lib/api"
+import { getOrderById, reserveBankForOrder, issueOrderItems, cancelOrder, getBanks } from "@/lib/api"
 import { formatDate } from "@/lib/utils"
 import type { Order, OrderItem } from "@/types"
 
@@ -171,6 +174,11 @@ export default function OrderDetailPage({
   const [loading, setLoading] = useState(true)
   const [order, setOrder] = useState<(Order & Record<string, any>) | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [availableBanks, setAvailableBanks] = useState<any[]>([])
+  const [selectedBankId, setSelectedBankId] = useState('')
+  const [vialCount, setVialCount] = useState(1)
+  const [showReserveForm, setShowReserveForm] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -182,12 +190,60 @@ export default function OrderDetailPage({
     try {
       const data = await getOrderById(id)
       setOrder(data as Order & Record<string, any>)
+      // Загрузить банки для резервирования
+      if (data && (data.status === 'PENDING' || data.status === 'APPROVED' || data.status === 'NEW')) {
+        const banks = await getBanks({ status: 'APPROVED' })
+        setAvailableBanks(banks)
+      }
     } catch (err: any) {
       const msg = err?.message || "Ошибка загрузки заказа"
       setError(msg)
       toast.error(msg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleReserve() {
+    if (!selectedBankId || vialCount < 1) return
+    setActionLoading(true)
+    try {
+      await reserveBankForOrder(id, selectedBankId, vialCount)
+      toast.success(`Зарезервировано ${vialCount} криовиалов`)
+      setShowReserveForm(false)
+      setSelectedBankId('')
+      setVialCount(1)
+      await loadData()
+    } catch (err: any) {
+      toast.error(err?.message || 'Ошибка резервирования')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleIssue() {
+    setActionLoading(true)
+    try {
+      const result = await issueOrderItems(id)
+      toast.success(`Выдано ${result.issuedCount} криовиалов. Заявка завершена.`)
+      await loadData()
+    } catch (err: any) {
+      toast.error(err?.message || 'Ошибка выдачи')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleCancel() {
+    setActionLoading(true)
+    try {
+      await cancelOrder(id)
+      toast.success('Заявка отменена, резервы освобождены')
+      await loadData()
+    } catch (err: any) {
+      toast.error(err?.message || 'Ошибка отмены')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -249,13 +305,70 @@ export default function OrderDetailPage({
           </div>
         </div>
 
-        <Button variant="outline" asChild>
-          <Link href="/orders">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            К списку заказов
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {(order.status === 'NEW' || order.status === 'PENDING' || order.status === 'APPROVED') && (
+            <Button size="sm" onClick={() => setShowReserveForm(!showReserveForm)} disabled={actionLoading}>
+              <Package className="mr-2 h-4 w-4" />
+              Резервировать
+            </Button>
+          )}
+          {order.status === 'IN_PROGRESS' && (
+            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleIssue} disabled={actionLoading}>
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+              {actionLoading ? 'Выдача...' : 'Выдать'}
+            </Button>
+          )}
+          {!['COMPLETED', 'CANCELLED'].includes(order.status) && (
+            <Button size="sm" variant="destructive" onClick={handleCancel} disabled={actionLoading}>
+              <XCircle className="mr-2 h-4 w-4" />
+              Отменить
+            </Button>
+          )}
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/orders">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Назад
+            </Link>
+          </Button>
+        </div>
       </div>
+
+      {/* Reserve form */}
+      {showReserveForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Резервирование банка
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Банк (APPROVED)</label>
+                <select className="w-full rounded-md border px-3 py-2 text-sm" value={selectedBankId} onChange={(e) => setSelectedBankId(e.target.value)}>
+                  <option value="">Выберите банк...</option>
+                  {availableBanks.map((b: any) => (
+                    <option key={b.id} value={b.id}>
+                      {b.code || b.id.slice(0, 8)} — {b.bank_type} ({b.cryo_vials_count || '?'} виалов)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Кол-во криовиалов</label>
+                <input type="number" min={1} className="w-full rounded-md border px-3 py-2 text-sm" value={vialCount} onChange={(e) => setVialCount(Number(e.target.value))} />
+              </div>
+              <div className="flex items-end">
+                <Button onClick={handleReserve} disabled={!selectedBankId || vialCount < 1 || actionLoading}>
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Подтвердить
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ================================================================= */}
       {/* ORDER INFO                                                        */}

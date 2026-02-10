@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { QRLabel } from "@/components/qr-label"
 import { Separator } from "@/components/ui/separator"
 import { getContainerById } from "@/lib/api"
 import { formatDate } from "@/lib/utils"
@@ -189,6 +190,17 @@ export default function ContainerDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {/* QR Label */}
+      <QRLabel
+        code={`CNT:${container.code}`}
+        title={container.code}
+        subtitle={container.container_type?.name}
+        metadata={{
+          'Пассаж': `P${container.passage_number ?? 0}`,
+          'Статус': statusCfg.label,
+        }}
+      />
 
       {/* ================================================================
           OWNERSHIP (Culture + Lot links)

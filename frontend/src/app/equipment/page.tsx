@@ -183,6 +183,23 @@ export default function EquipmentPage() {
     return new Date(item.next_validation).getTime() < Date.now()
   }
 
+  const isMaintenanceOverdue = (item: any) => {
+    if (!item.next_maintenance) return false
+    return new Date(item.next_maintenance).getTime() < Date.now()
+  }
+
+  const isMaintenanceUrgent = (item: any) => {
+    if (!item.next_maintenance) return false
+    const diff = new Date(item.next_maintenance).getTime() - Date.now()
+    return diff > 0 && diff < 7 * 24 * 60 * 60 * 1000 // 7 days
+  }
+
+  const isMaintenanceSoon = (item: any) => {
+    if (!item.next_maintenance) return false
+    const diff = new Date(item.next_maintenance).getTime() - Date.now()
+    return diff > 0 && diff < 30 * 24 * 60 * 60 * 1000 // 30 days
+  }
+
   const filteredEquipment = equipment.filter(item => {
     if (!showInactive && item.is_active === false) return false
     const matchesStatus = filter === "all" || item.status === filter
@@ -359,6 +376,15 @@ export default function EquipmentPage() {
                         )}
                         {isValidationSoon(item) && !isValidationOverdue(item) && (
                           <Badge variant="outline" className="text-yellow-600 border-yellow-400">Скоро валидация</Badge>
+                        )}
+                        {isMaintenanceOverdue(item) && (
+                          <Badge variant="destructive">ТО просрочено</Badge>
+                        )}
+                        {isMaintenanceUrgent(item) && !isMaintenanceOverdue(item) && (
+                          <Badge variant="outline" className="text-red-600 border-red-400">Срочно ТО</Badge>
+                        )}
+                        {isMaintenanceSoon(item) && !isMaintenanceUrgent(item) && !isMaintenanceOverdue(item) && (
+                          <Badge variant="outline" className="text-orange-600 border-orange-400">Скоро ТО</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">

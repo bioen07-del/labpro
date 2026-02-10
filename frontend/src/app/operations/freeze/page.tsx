@@ -112,8 +112,11 @@ function FreezePageInner() {
 
   // --- Step 3: Media & Metrics ---
   const [freezingMediumId, setFreezingMediumId] = useState('')
+  const [freezingMediumVolume, setFreezingMediumVolume] = useState('')
   const [dissociationMediumId, setDissociationMediumId] = useState('')
+  const [dissociationVolume, setDissociationVolume] = useState('')
   const [washMediumId, setWashMediumId] = useState('')
+  const [washVolume, setWashVolume] = useState('')
   const [concentration, setConcentration] = useState('')
   const [totalVolume, setTotalVolume] = useState('')
   const [viability, setViability] = useState('')
@@ -327,6 +330,11 @@ function FreezePageInner() {
         cells_per_vial: cellsPerVial,
         total_cells: totalCells,
         freezing_medium: freezingMediumId,
+        freezing_medium_volume_ml: freezingMediumVolume ? Number(freezingMediumVolume) : undefined,
+        dissociation_medium_id: dissociationMediumId || undefined,
+        dissociation_volume_ml: dissociationVolume ? Number(dissociationVolume) : undefined,
+        wash_medium_id: washMediumId || undefined,
+        wash_volume_ml: washVolume ? Number(washVolume) : undefined,
         viability_percent: Number(viability),
         concentration: Number(concentration),
         notes: notes || undefined,
@@ -662,23 +670,33 @@ function FreezePageInner() {
                 <Label htmlFor="freezingMedium">
                   Среда для заморозки <span className="text-red-500">*</span>
                 </Label>
-                <Select
-                  value={freezingMediumId}
-                  onValueChange={setFreezingMediumId}
-                >
-                  <SelectTrigger id="freezingMedium">
-                    <SelectValue placeholder="Выберите..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {media.map((m: any) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code || m.name}
-                        {m.expiration_date &&
-                          ` | до ${formatDate(m.expiration_date)}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid gap-2 grid-cols-[1fr_100px]">
+                  <Select
+                    value={freezingMediumId}
+                    onValueChange={setFreezingMediumId}
+                  >
+                    <SelectTrigger id="freezingMedium">
+                      <SelectValue placeholder="Выберите..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {media.map((m: any) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.code || m.name}
+                          {m.expiration_date &&
+                            ` | до ${formatDate(m.expiration_date)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    placeholder="мл"
+                    value={freezingMediumVolume}
+                    onChange={(e) => setFreezingMediumVolume(e.target.value)}
+                  />
+                </div>
               </div>
 
               {/* Dissociation medium (optional) */}
@@ -686,38 +704,60 @@ function FreezePageInner() {
                 <Label htmlFor="dissociationMedium">
                   Среда диссоциации
                 </Label>
-                <Select
-                  value={dissociationMediumId}
-                  onValueChange={setDissociationMediumId}
-                >
-                  <SelectTrigger id="dissociationMedium">
-                    <SelectValue placeholder="(необязательно)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {media.map((m: any) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code || m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid gap-2 grid-cols-[1fr_100px]">
+                  <Select
+                    value={dissociationMediumId}
+                    onValueChange={setDissociationMediumId}
+                  >
+                    <SelectTrigger id="dissociationMedium">
+                      <SelectValue placeholder="(необязательно)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {media.map((m: any) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.code || m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    placeholder="мл"
+                    value={dissociationVolume}
+                    onChange={(e) => setDissociationVolume(e.target.value)}
+                    disabled={!dissociationMediumId}
+                  />
+                </div>
               </div>
 
               {/* Wash medium (optional) */}
               <div className="space-y-2">
                 <Label htmlFor="washMedium">Среда для промывки</Label>
-                <Select value={washMediumId} onValueChange={setWashMediumId}>
-                  <SelectTrigger id="washMedium">
-                    <SelectValue placeholder="(необязательно)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {media.map((m: any) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code || m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid gap-2 grid-cols-[1fr_100px]">
+                  <Select value={washMediumId} onValueChange={setWashMediumId}>
+                    <SelectTrigger id="washMedium">
+                      <SelectValue placeholder="(необязательно)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {media.map((m: any) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.code || m.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    placeholder="мл"
+                    value={washVolume}
+                    onChange={(e) => setWashVolume(e.target.value)}
+                    disabled={!washMediumId}
+                  />
+                </div>
               </div>
             </div>
 

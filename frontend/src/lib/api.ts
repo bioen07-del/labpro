@@ -160,6 +160,95 @@ export async function createCulture(culture: Record<string, unknown>) {
   return data
 }
 
+// Расчёт коэффициента выхода клеток на основе истории пассажей
+// Формула: Coefficient = (Concentration × Volume) / (Area × Confluent% / 100)
+export async function calculateAndUpdateCoefficient(cultureId: string): Promise<{
+  coefficient: number | null
+  passageCount: number
+  confidence: 'high' | 'medium' | 'none'
+}> {
+  // Получить все PASSAGE операции для этой культуры
+  const { data: operations } = await supabase
+    .from('operations')
+    .select(`
+      id,
+      type,
+      lot:lots!inner(culture_id),
+      metrics:operation_metrics(*),
+      containers:operation_containers(
+        container_id,
+        role,
+        confluent_percent,
+        container:containers(container_type_id, container_type:container_types(surface_area))
+      )
+    `)
+    .eq('type', 'PASSAGE')
+    .eq('lots.culture_id', cultureId)
+    .order('created_at', { ascending: false })
+
+  if (!operations || operations.length === 0) {
+    return { coefficient: null, passageCount: 0, confidence: 'none' }
+  }
+
+  // Рассчитать коэффициент для каждого пассажа
+  const coefficients: number[] = []
+  for (const op of operations) {
+    const metrics = (op.metrics as any[])?.[0]
+    if (!metrics?.concentration || !metrics?.volume_ml) continue
+
+    // Найти SOURCE контейнеры (с площадью и конфлюэнтностью)
+    const sourceContainers = ((op.containers as any[]) || []).filter(
+      (c: any) => c.role === 'SOURCE' && c.confluent_percent > 0
+    )
+    if (sourceContainers.length === 0) continue
+
+    let totalArea = 0
+    let weightedConfluent = 0
+    for (const sc of sourceContainers) {
+      const area = sc.container?.container_type?.surface_area || 0
+      if (area > 0) {
+        totalArea += area
+        weightedConfluent += area * (sc.confluent_percent / 100)
+      }
+    }
+    if (totalArea <= 0 || weightedConfluent <= 0) continue
+
+    const avgConfluent = weightedConfluent / totalArea
+    const coeff = (metrics.concentration * metrics.volume_ml) / (totalArea * avgConfluent)
+    if (isFinite(coeff) && coeff > 0) {
+      coefficients.push(coeff)
+    }
+  }
+
+  if (coefficients.length === 0) {
+    return { coefficient: null, passageCount: operations.length, confidence: 'none' }
+  }
+
+  // Среднее значение коэффициента
+  const avgCoefficient = coefficients.reduce((a, b) => a + b, 0) / coefficients.length
+  const confidence = coefficients.length >= 3 ? 'high' : coefficients.length >= 1 ? 'medium' : 'none'
+
+  // Обновить в БД
+  await supabase
+    .from('cultures')
+    .update({
+      coefficient: Math.round(avgCoefficient * 100) / 100,
+      coefficient_updated_at: new Date().toISOString(),
+    })
+    .eq('id', cultureId)
+
+  return { coefficient: avgCoefficient, passageCount: coefficients.length, confidence }
+}
+
+// Прогноз выхода клеток для контейнера
+export function forecastCells(
+  coefficient: number,
+  surfaceArea: number,
+  targetConfluent: number = 0.9
+): number {
+  return coefficient * surfaceArea * targetConfluent
+}
+
 // Создание культуры из донации с автоматическим P0 лотом и контейнерами
 export async function createCultureFromDonation(data: {
   donation_id: string
@@ -179,6 +268,11 @@ export async function createCultureFromDonation(data: {
   // Списание среды
   ready_medium_id?: string
   medium_volume_ml?: number
+  // Дополнительные компоненты (сыворотка, реагенты, добавки)
+  additional_components?: Array<{
+    ready_medium_id: string
+    volume_ml: number
+  }>
   // Списание контейнеров со склада (deprecated — used with single container_type_id)
   consumable_batch_id?: string
 }) {
@@ -301,36 +395,63 @@ export async function createCultureFromDonation(data: {
   }))
   await supabase.from('operation_containers').insert(opContainers)
 
-  // 7b. Списание среды (если указана)
+  // 7b. Хелпер для списания готовой среды (пофлаконный учёт)
+  async function writeOffReadyMediumSeed(rmId: string, volumeMl: number, purpose: string) {
+    try {
+      const { data: rm } = await supabase
+        .from('ready_media')
+        .select('current_volume_ml, volume_ml, batch_id')
+        .eq('id', rmId)
+        .single()
+      if (rm) {
+        const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
+        const newVol = Math.max(0, currentVol - volumeMl)
+        await supabase
+          .from('ready_media')
+          .update({ current_volume_ml: newVol, ...(newVol <= 0 ? { status: 'USED' } : {}) })
+          .eq('id', rmId)
+        // Если среда привязана к batch — пофлаконный учёт
+        if (rm.batch_id) {
+          await writeOffBatchVolume(rm.batch_id, volumeMl, seedOp.id, `Среда для посева ${cultureCode} (${purpose}, ${volumeMl} мл)`)
+        } else {
+          await createInventoryMovement({
+            batch_id: rmId,
+            movement_type: 'CONSUME',
+            quantity: -volumeMl,
+            reference_type: 'OPERATION',
+            reference_id: seedOp.id,
+            notes: `Среда для посева ${cultureCode} (${purpose}, ${volumeMl} мл)`,
+          })
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to write off ready medium (${purpose}):`, err)
+    }
+  }
+
+  // Списание основной среды
   if (data.ready_medium_id && data.medium_volume_ml && data.medium_volume_ml > 0) {
-    // Записать operation_media
     await supabase.from('operation_media').insert({
       operation_id: seedOp.id,
       ready_medium_id: data.ready_medium_id,
       quantity_ml: data.medium_volume_ml,
       purpose: 'SEED',
     })
+    await writeOffReadyMediumSeed(data.ready_medium_id, data.medium_volume_ml, 'посев')
+  }
 
-    // Уменьшить current_volume_ml
-    const medium = await getReadyMediumById(data.ready_medium_id)
-    if (medium) {
-      const currentVol = medium.current_volume_ml ?? medium.volume_ml ?? 0
-      const newVol = Math.max(0, currentVol - data.medium_volume_ml)
-
-      await supabase
-        .from('ready_media')
-        .update({ current_volume_ml: newVol })
-        .eq('id', data.ready_medium_id)
-
-      // inventory_movement
-      await createInventoryMovement({
-        batch_id: medium.batch_id || null,
-        movement_type: 'CONSUME',
-        quantity: -data.medium_volume_ml,
-        reference_type: 'OPERATION',
-        reference_id: seedOp.id,
-        notes: `Среда для посева ${cultureCode}`,
-      })
+  // 7b2. Списание дополнительных компонентов (сыворотка, реагенты, добавки)
+  if (data.additional_components && data.additional_components.length > 0) {
+    for (const comp of data.additional_components) {
+      if (comp.ready_medium_id && comp.volume_ml > 0) {
+        await supabase.from('operation_media').insert({
+          operation_id: seedOp.id,
+          ready_medium_id: comp.ready_medium_id,
+          quantity_ml: comp.volume_ml,
+          purpose: 'COMPONENT',
+        })
+        await writeOffReadyMediumSeed(comp.ready_medium_id, comp.volume_ml, 'компонент')
+      }
     }
   }
 
@@ -871,6 +992,143 @@ export async function updateOrderStatus(id: string, status: Order['status']) {
   return data
 }
 
+// ==================== ORDER WORKFLOW ====================
+
+// Резервирование банка для заявки
+export async function reserveBankForOrder(orderId: string, bankId: string, vialCount: number) {
+  // 1. Обновить статус банка → RESERVED
+  const { error: bankErr } = await supabase
+    .from('banks')
+    .update({ status: 'RESERVED' })
+    .eq('id', bankId)
+    .in('status', ['APPROVED']) // только из APPROVED
+
+  if (bankErr) throw bankErr
+
+  // 2. Получить криовиалы из банка (AVAILABLE)
+  const { data: vials, error: vialsErr } = await supabase
+    .from('cryo_vials')
+    .select('id')
+    .eq('bank_id', bankId)
+    .eq('status', 'AVAILABLE')
+    .limit(vialCount)
+
+  if (vialsErr) throw vialsErr
+  if (!vials || vials.length === 0) throw new Error('Нет доступных криовиалов в банке')
+
+  // 3. Создать order_items для каждого криовиала
+  const items = vials.map(v => ({
+    order_id: orderId,
+    bank_id: bankId,
+    cryo_vial_id: v.id,
+    quantity: 1,
+    status: 'RESERVED',
+  }))
+  await supabase.from('order_items').insert(items)
+
+  // 4. Обновить статус криовиалов → RESERVED
+  const vialIds = vials.map(v => v.id)
+  await supabase
+    .from('cryo_vials')
+    .update({ status: 'RESERVED' })
+    .in('id', vialIds)
+
+  // 5. Заявка → IN_PROGRESS
+  await supabase
+    .from('orders')
+    .update({ status: 'IN_PROGRESS' })
+    .eq('id', orderId)
+
+  return { reservedCount: vials.length }
+}
+
+// Выдача криовиалов по заявке
+export async function issueOrderItems(orderId: string) {
+  // 1. Получить order_items со статусом RESERVED
+  const { data: items, error: itemsErr } = await supabase
+    .from('order_items')
+    .select('id, cryo_vial_id, bank_id')
+    .eq('order_id', orderId)
+    .eq('status', 'RESERVED')
+
+  if (itemsErr) throw itemsErr
+  if (!items || items.length === 0) throw new Error('Нет зарезервированных позиций для выдачи')
+
+  // 2. Обновить статус order_items → ISSUED
+  await supabase
+    .from('order_items')
+    .update({ status: 'ISSUED' })
+    .eq('order_id', orderId)
+    .eq('status', 'RESERVED')
+
+  // 3. Обновить статус криовиалов → ISSUED
+  const vialIds = items.map(i => i.cryo_vial_id).filter(Boolean)
+  if (vialIds.length > 0) {
+    await supabase
+      .from('cryo_vials')
+      .update({ status: 'ISSUED' })
+      .in('id', vialIds)
+  }
+
+  // 4. Проверить банки — если все криовиалы выданы, банк → ISSUED
+  const bankIds = [...new Set(items.map(i => i.bank_id).filter(Boolean))]
+  for (const bankId of bankIds) {
+    const { data: remaining } = await supabase
+      .from('cryo_vials')
+      .select('id')
+      .eq('bank_id', bankId)
+      .in('status', ['AVAILABLE', 'RESERVED'])
+
+    if (!remaining || remaining.length === 0) {
+      await supabase.from('banks').update({ status: 'ISSUED' }).eq('id', bankId)
+    } else {
+      // Есть ещё криовиалы — вернуть банк в APPROVED
+      await supabase.from('banks').update({ status: 'APPROVED' }).eq('id', bankId)
+    }
+  }
+
+  // 5. Заявка → COMPLETED
+  await supabase
+    .from('orders')
+    .update({ status: 'COMPLETED', issued_at: new Date().toISOString() })
+    .eq('id', orderId)
+
+  return { issuedCount: items.length }
+}
+
+// Отмена заявки — освобождение резервов
+export async function cancelOrder(orderId: string) {
+  // 1. Получить order_items со статусом RESERVED
+  const { data: items } = await supabase
+    .from('order_items')
+    .select('id, cryo_vial_id, bank_id')
+    .eq('order_id', orderId)
+    .eq('status', 'RESERVED')
+
+  if (items && items.length > 0) {
+    // 2. Вернуть криовиалы → AVAILABLE
+    const vialIds = items.map(i => i.cryo_vial_id).filter(Boolean)
+    if (vialIds.length > 0) {
+      await supabase.from('cryo_vials').update({ status: 'AVAILABLE' }).in('id', vialIds)
+    }
+
+    // 3. Вернуть банки → APPROVED
+    const bankIds = [...new Set(items.map(i => i.bank_id).filter(Boolean))]
+    for (const bankId of bankIds) {
+      await supabase.from('banks').update({ status: 'APPROVED' }).eq('id', bankId)
+    }
+
+    // 4. Удалить order_items
+    await supabase.from('order_items').delete().eq('order_id', orderId)
+  }
+
+  // 5. Заявка → CANCELLED
+  await supabase
+    .from('orders')
+    .update({ status: 'CANCELLED' })
+    .eq('id', orderId)
+}
+
 // ==================== INVENTORY ====================
 
 export async function getBatches(filters?: { status?: string; category?: string }) {
@@ -1118,6 +1376,7 @@ export async function getDashboardStats() {
     pendingOrdersResult,
     pendingTasksResult,
     activeContainersResult,
+    equipmentResult,
   ] = await Promise.all([
     supabase.from('cultures').select('*', { count: 'exact', head: true }),
     supabase.from('cultures').select('*', { count: 'exact', head: true }).eq('status', 'ACTIVE'),
@@ -1125,7 +1384,33 @@ export async function getDashboardStats() {
     supabase.from('orders').select('*', { count: 'exact', head: true }).in('status', ['PENDING', 'IN_PROGRESS']),
     supabase.from('tasks').select('*', { count: 'exact', head: true }).eq('status', 'PENDING'),
     supabase.from('containers').select('*', { count: 'exact', head: true }).eq('container_status', 'IN_CULTURE'),
+    supabase.from('equipment').select('id, name, code, next_maintenance, next_validation, status').neq('is_active', false),
   ])
+
+  // Equipment alerts: overdue or upcoming within 7 days
+  const equipmentAlerts: Array<{ id: string; name: string; code: string; type: 'maintenance' | 'validation'; urgency: 'overdue' | 'urgent' | 'soon'; date: string }> = []
+  const now = new Date()
+  const in7days = new Date(now.getTime() + 7 * 86400000)
+  const in30days = new Date(now.getTime() + 30 * 86400000)
+
+  for (const eq of equipmentResult.data || []) {
+    for (const field of ['next_maintenance', 'next_validation'] as const) {
+      if (!eq[field]) continue
+      const d = new Date(eq[field])
+      const alertType = field === 'next_maintenance' ? 'maintenance' as const : 'validation' as const
+      if (d < now) {
+        equipmentAlerts.push({ id: eq.id, name: eq.name, code: eq.code, type: alertType, urgency: 'overdue', date: eq[field] })
+      } else if (d < in7days) {
+        equipmentAlerts.push({ id: eq.id, name: eq.name, code: eq.code, type: alertType, urgency: 'urgent', date: eq[field] })
+      } else if (d < in30days) {
+        equipmentAlerts.push({ id: eq.id, name: eq.name, code: eq.code, type: alertType, urgency: 'soon', date: eq[field] })
+      }
+    }
+  }
+
+  // Sort: overdue first, then urgent, then soon
+  const urgencyOrder = { overdue: 0, urgent: 1, soon: 2 }
+  equipmentAlerts.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency])
 
   return {
     totalCultures: culturesResult.count || 0,
@@ -1134,6 +1419,7 @@ export async function getDashboardStats() {
     pendingOrders: pendingOrdersResult.count || 0,
     pendingTasks: pendingTasksResult.count || 0,
     activeContainers: activeContainersResult.count || 0,
+    equipmentAlerts,
   }
 }
 
@@ -2772,6 +3058,13 @@ export async function createOperationPassage(data: {
     })
   }
   
+  // 12. Автообновление коэффициента выхода клеток
+  try {
+    await calculateAndUpdateCoefficient(sourceLot.culture_id)
+  } catch (err) {
+    console.error('Failed to update coefficient after passage:', err)
+  }
+
   return {
     operation,
     newLot,
@@ -3103,6 +3396,12 @@ export interface FreezeData {
   freezing_medium: string
   freezing_medium_rm_id?: string     // ID готовой среды для заморозки
   freezing_medium_volume_ml?: number // Объём среды для заморозки
+  // Среда диссоциации (фермент для снятия клеток)
+  dissociation_medium_id?: string
+  dissociation_volume_ml?: number
+  // Среда промывки (буфер)
+  wash_medium_id?: string
+  wash_volume_ml?: number
   cryo_batch_id?: string             // Партия криовиалов со склада
   viability_percent: number
   concentration: number
@@ -3252,33 +3551,61 @@ export async function createOperationFreeze(data: FreezeData) {
     await createQCTask(bankId)
   }
   
-  // 10. Списание среды для заморозки
-  if (data.freezing_medium_rm_id && data.freezing_medium_volume_ml && data.freezing_medium_volume_ml > 0) {
+  // 10. Списание сред (пофлаконный учёт)
+  // Хелпер для списания готовой среды при заморозке
+  async function writeOffFreezeRM(rmId: string, volumeMl: number, purpose: string) {
     try {
       const { data: rm } = await supabase
         .from('ready_media')
-        .select('current_volume_ml, volume_ml')
-        .eq('id', data.freezing_medium_rm_id)
+        .select('current_volume_ml, volume_ml, batch_id')
+        .eq('id', rmId)
         .single()
       if (rm) {
         const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
-        const newVol = Math.max(0, currentVol - data.freezing_medium_volume_ml)
+        const newVol = Math.max(0, currentVol - volumeMl)
         await supabase
           .from('ready_media')
-          .update({ current_volume_ml: newVol })
-          .eq('id', data.freezing_medium_rm_id)
-        await createInventoryMovement({
-          batch_id: data.freezing_medium_rm_id,
-          movement_type: 'CONSUME',
-          quantity: -data.freezing_medium_volume_ml,
-          reference_type: 'OPERATION',
-          reference_id: operation.id,
-          notes: `Среда для заморозки (${data.freezing_medium_volume_ml} мл)`,
+          .update({ current_volume_ml: newVol, ...(newVol <= 0 ? { status: 'USED' } : {}) })
+          .eq('id', rmId)
+        if (rm.batch_id) {
+          await writeOffBatchVolume(rm.batch_id, volumeMl, operation.id, `Среда для заморозки (${purpose}, ${volumeMl} мл)`)
+        } else {
+          await createInventoryMovement({
+            batch_id: rmId,
+            movement_type: 'CONSUME',
+            quantity: -volumeMl,
+            reference_type: 'OPERATION',
+            reference_id: operation.id,
+            notes: `Среда для заморозки (${purpose}, ${volumeMl} мл)`,
+          })
+        }
+        await supabase.from('operation_media').insert({
+          operation_id: operation.id,
+          ready_medium_id: rmId,
+          quantity_ml: volumeMl,
+          purpose: purpose.toUpperCase(),
         })
       }
     } catch (err) {
-      console.error('Failed to write off freezing medium:', err)
+      console.error(`Failed to write off freeze medium (${purpose}):`, err)
     }
+  }
+
+  // 10a. Среда заморозки (freezing_medium — может быть rm_id или просто id)
+  const freezeRmId = data.freezing_medium_rm_id || data.freezing_medium
+  const freezeVolume = data.freezing_medium_volume_ml
+  if (freezeRmId && freezeVolume && freezeVolume > 0) {
+    await writeOffFreezeRM(freezeRmId, freezeVolume, 'заморозка')
+  }
+
+  // 10b. Среда диссоциации
+  if (data.dissociation_medium_id && data.dissociation_volume_ml && data.dissociation_volume_ml > 0) {
+    await writeOffFreezeRM(data.dissociation_medium_id, data.dissociation_volume_ml, 'диссоциация')
+  }
+
+  // 10c. Среда промывки
+  if (data.wash_medium_id && data.wash_volume_ml && data.wash_volume_ml > 0) {
+    await writeOffFreezeRM(data.wash_medium_id, data.wash_volume_ml, 'промывка')
   }
 
   // 11. Списание криовиалов со склада

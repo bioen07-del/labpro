@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getLotById, getContainersByLot, getOperations } from "@/lib/api"
+import { getLotById, getContainersByLot, getOperations, forecastCells } from "@/lib/api"
 
 // ==================== CONSTANTS ====================
 
@@ -400,6 +400,43 @@ export default function LotDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      {/* ==================== CELL FORECAST ==================== */}
+      {culture?.coefficient != null && culture.coefficient > 0 && activeContainers.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Прогноз выхода клеток</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const coeff = culture.coefficient
+              const totalForecast = activeContainers.reduce((sum: number, c: any) => {
+                const area = c.container_type?.surface_area || 0
+                return sum + forecastCells(coeff, area, 0.9)
+              }, 0)
+              const firstContainer = activeContainers[0]
+              const firstArea = firstContainer?.container_type?.surface_area || 0
+              const singleForecast = forecastCells(coeff, firstArea, 0.9)
+              return (
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Коэффициент</p>
+                    <p className="font-medium">{coeff.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">С контейнера ({firstContainer?.container_type?.name || 'N/A'}, 90%)</p>
+                    <p className="font-medium">{(singleForecast / 1e6).toFixed(2)} млн клеток</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">С лота ({activeContainers.length} конт.)</p>
+                    <p className="font-medium text-lg">{(totalForecast / 1e6).toFixed(2)} млн клеток</p>
+                  </div>
+                </div>
+              )
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ==================== CONTAINERS SECTION ==================== */}
       <Card>

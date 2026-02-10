@@ -17,6 +17,16 @@ import {
   Loader2,
   ShieldCheck,
 } from 'lucide-react'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -745,6 +755,47 @@ function CulturePassportContent() {
               </section>
 
               <Separator />
+
+              {/* ====================== 7b. CONFLUENCY CHART ====================== */}
+              {(() => {
+                // Собрать данные конфлюэнтности из OBSERVE операций
+                const observeOps = operations.filter((op: any) => op.type === 'OBSERVE' || op.type === 'PASSAGE')
+                const chartData: { date: string; confluency: number }[] = []
+                for (const op of observeOps) {
+                  const containers = op.containers || op.operation_containers || []
+                  for (const c of containers) {
+                    if (c.confluent_percent != null && c.confluent_percent > 0) {
+                      chartData.push({
+                        date: new Date(op.started_at || op.created_at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
+                        confluency: c.confluent_percent,
+                      })
+                    }
+                  }
+                }
+                if (chartData.length === 0) return null
+                return (
+                  <>
+                    <section>
+                      <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                        <BarChart3 className="h-5 w-5" />
+                        График конфлюэнтности
+                      </h3>
+                      <div className="border rounded-lg p-4" style={{ height: 250 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                            <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                            <Tooltip formatter={(v: number) => `${v}%`} />
+                            <Line type="monotone" dataKey="confluency" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} name="Конфлюэнтность" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </section>
+                    <Separator />
+                  </>
+                )
+              })()}
 
               {/* ====================== 8. OPERATIONS TIMELINE ====================== */}
               <section>
