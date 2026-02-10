@@ -786,7 +786,7 @@ function CulturePassportContent() {
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                             <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
-                            <Tooltip formatter={(v: number) => `${v}%`} />
+                            <Tooltip formatter={(v) => `${v}%`} />
                             <Line type="monotone" dataKey="confluency" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} name="Конфлюэнтность" />
                           </LineChart>
                         </ResponsiveContainer>

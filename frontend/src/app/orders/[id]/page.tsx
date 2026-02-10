@@ -306,7 +306,7 @@ export default function OrderDetailPage({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {(order.status === 'NEW' || order.status === 'PENDING' || order.status === 'APPROVED') && (
+          {(order.status === 'PENDING' || order.status === 'APPROVED') && (
             <Button size="sm" onClick={() => setShowReserveForm(!showReserveForm)} disabled={actionLoading}>
               <Package className="mr-2 h-4 w-4" />
               Резервировать

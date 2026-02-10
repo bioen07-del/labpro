@@ -1017,7 +1017,7 @@ export async function reserveBankForOrder(orderId: string, bankId: string, vialC
   if (!vials || vials.length === 0) throw new Error('Нет доступных криовиалов в банке')
 
   // 3. Создать order_items для каждого криовиала
-  const items = vials.map(v => ({
+  const items = vials.map((v: any) => ({
     order_id: orderId,
     bank_id: bankId,
     cryo_vial_id: v.id,
@@ -1027,7 +1027,7 @@ export async function reserveBankForOrder(orderId: string, bankId: string, vialC
   await supabase.from('order_items').insert(items)
 
   // 4. Обновить статус криовиалов → RESERVED
-  const vialIds = vials.map(v => v.id)
+  const vialIds = vials.map((v: any) => v.id)
   await supabase
     .from('cryo_vials')
     .update({ status: 'RESERVED' })
@@ -1062,7 +1062,7 @@ export async function issueOrderItems(orderId: string) {
     .eq('status', 'RESERVED')
 
   // 3. Обновить статус криовиалов → ISSUED
-  const vialIds = items.map(i => i.cryo_vial_id).filter(Boolean)
+  const vialIds = items.map((i: any) => i.cryo_vial_id).filter(Boolean)
   if (vialIds.length > 0) {
     await supabase
       .from('cryo_vials')
@@ -1071,7 +1071,7 @@ export async function issueOrderItems(orderId: string) {
   }
 
   // 4. Проверить банки — если все криовиалы выданы, банк → ISSUED
-  const bankIds = [...new Set(items.map(i => i.bank_id).filter(Boolean))]
+  const bankIds = [...new Set(items.map((i: any) => i.bank_id).filter(Boolean))]
   for (const bankId of bankIds) {
     const { data: remaining } = await supabase
       .from('cryo_vials')
@@ -1107,13 +1107,13 @@ export async function cancelOrder(orderId: string) {
 
   if (items && items.length > 0) {
     // 2. Вернуть криовиалы → AVAILABLE
-    const vialIds = items.map(i => i.cryo_vial_id).filter(Boolean)
+    const vialIds = items.map((i: any) => i.cryo_vial_id).filter(Boolean)
     if (vialIds.length > 0) {
       await supabase.from('cryo_vials').update({ status: 'AVAILABLE' }).in('id', vialIds)
     }
 
     // 3. Вернуть банки → APPROVED
-    const bankIds = [...new Set(items.map(i => i.bank_id).filter(Boolean))]
+    const bankIds = [...new Set(items.map((i: any) => i.bank_id).filter(Boolean))]
     for (const bankId of bankIds) {
       await supabase.from('banks').update({ status: 'APPROVED' }).eq('id', bankId)
     }
