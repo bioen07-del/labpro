@@ -2465,15 +2465,23 @@ export async function createOperationPassage(data: {
   
   if (opError) throw opError
   
-  // 3. Генерация lot_number
+  // 3. Генерация lot_number с префиксом культуры
+  const { data: cultureForLot } = await supabase
+    .from('cultures')
+    .select('name')
+    .eq('id', sourceLot.culture_id)
+    .single()
+  const culturePrefix = cultureForLot?.name || sourceLot.culture_id.substring(0, 8)
+
   const { count: lotCount } = await supabase
     .from('lots')
     .select('*', { count: 'exact', head: true })
     .eq('culture_id', sourceLot.culture_id)
 
-  const lotNumber = `L${(lotCount || 0) + 1}`
+  const lotNumber = `${culturePrefix}-L${(lotCount || 0) + 1}`
 
   // 4. Создать новый лот для результатов
+  const totalCells = data.metrics.concentration * data.metrics.volume_ml
   const { data: newLot, error: newLotError } = await supabase
     .from('lots')
     .insert({
@@ -2482,7 +2490,9 @@ export async function createOperationPassage(data: {
       passage_number: newPassageNumber,
       parent_lot_id: data.split_mode === 'partial' ? data.source_lot_id : null,
       status: 'ACTIVE',
-      seeded_at: new Date().toISOString()
+      seeded_at: new Date().toISOString(),
+      initial_cells: totalCells,
+      viability: data.metrics.viability_percent,
     })
     .select()
     .single()
@@ -2504,13 +2514,7 @@ export async function createOperationPassage(data: {
   if (ocError) throw ocError
   
   // 5. Создать новые контейнеры-результаты (по группам типов)
-  // Получаем culture name/code для читаемого кода контейнера
-  const { data: cultureForCode } = await supabase
-    .from('cultures')
-    .select('name')
-    .eq('id', sourceLot.culture_id)
-    .single()
-  const cultureName = cultureForCode?.name || sourceLot.culture_id.substring(0, 8)
+  const cultureName = culturePrefix
 
   // Считаем существующие контейнеры в этом лоте для уникальной нумерации
   const { count: existingInLot } = await supabase
@@ -2523,7 +2527,8 @@ export async function createOperationPassage(data: {
   for (const group of data.result.container_groups) {
     for (let i = 0; i < group.target_count; i++) {
       globalIdx++
-      let containerCode = `${cultureName}-${lotNumber}-P${newPassageNumber}-${String(globalIdx).padStart(3, '0')}`
+      // lotNumber уже содержит префикс культуры (CT-0001-L2), используем напрямую
+      let containerCode = `${lotNumber}-P${newPassageNumber}-${String(globalIdx).padStart(3, '0')}`
 
       // Проверяем уникальность кода, при коллизии добавляем суффикс
       const { count: codeExists } = await supabase
@@ -3187,7 +3192,7 @@ export async function createOperationFreeze(data: FreezeData) {
   
   for (let i = 0; i < data.cryo_vial_count; i++) {
     const vialNum = (baseVialCount || 0) + i + 1
-    const cultureCode = lot.culture?.name?.substring(0, 4).toUpperCase() || 'UNK'
+    const cultureCode = lot.culture?.name || 'UNK'
     const vialCode = `CV-${cultureCode}-${bankType}-V${String(vialNum).padStart(3, '0')}`
     
     const { data: vial, error: vialError } = await supabase
@@ -3367,13 +3372,20 @@ export async function createOperationThaw(data: ThawData) {
   
   const newPassageNumber = (parentLot?.passage_number || 0) + 1
   
-  // 3. Генерация lot_number для нового лота
+  // 3. Генерация lot_number для нового лота (с префиксом культуры)
+  const { data: cultureForThaw } = await supabase
+    .from('cultures')
+    .select('name')
+    .eq('id', parentLot.culture_id)
+    .single()
+  const thawCultureName = cultureForThaw?.name || parentLot.culture_id?.substring(0, 8) || 'UNK'
+
   const { count: thawLotCount } = await supabase
     .from('lots')
     .select('*', { count: 'exact', head: true })
     .eq('culture_id', parentLot.culture_id)
 
-  const thawLotNumber = `L${(thawLotCount || 0) + 1}`
+  const thawLotNumber = `${thawCultureName}-L${(thawLotCount || 0) + 1}`
 
   // 4. Создать новый лот
   const { data: newLot, error: newLotError } = await supabase
@@ -3389,17 +3401,12 @@ export async function createOperationThaw(data: ThawData) {
     })
     .select()
     .single()
-  
+
   if (newLotError) throw newLotError
-  
-  // 4. Создать Container для размороженной культуры
-  const { data: cultureForThaw } = await supabase
-    .from('cultures')
-    .select('name')
-    .eq('id', parentLot.culture_id)
-    .single()
-  const thawCultureName = cultureForThaw?.name || parentLot.culture_id?.substring(0, 8) || 'UNK'
-  const containerCode = `${thawCultureName}-${thawLotNumber}-P${newPassageNumber}-001`
+
+  // 5. Создать Container для размороженной культуры
+  // lot_number уже содержит префикс культуры (CT-0001-L3), поэтому используем его напрямую
+  const containerCode = `${thawLotNumber}-P${newPassageNumber}-001`
 
   const { data: newContainer, error: containerError } = await supabase
     .from('containers')
