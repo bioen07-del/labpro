@@ -129,8 +129,12 @@ export default function InventoryPage() {
   })
 
   // Filtered ready media
+  // Ready media uses ACTIVE instead of AVAILABLE
   const filteredReadyMedia = readyMedia.filter(media => {
-    if (selectedStatus !== 'all' && media.status !== selectedStatus) return false
+    if (selectedStatus !== 'all') {
+      const mediaStatus = selectedStatus === 'AVAILABLE' ? 'ACTIVE' : selectedStatus
+      if (media.status !== mediaStatus) return false
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       return media.code?.toLowerCase().includes(q) ||

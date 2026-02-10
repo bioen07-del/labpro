@@ -124,16 +124,19 @@
 ## Заметки для разработки (AI-контекст)
 
 ### Окружение
-- **Worktree**: `C:\Users\volchkov.se\.claude-worktrees\LabPro\silly-tu` (branch `silly-tu`)
-- **Master worktree**: `C:\AICoding\Cline\LabPro` (branch `master` — для Vercel deploy)
-- **Merge в master**: `cd /c/AICoding/Cline/LabPro && git merge silly-tu && git push origin master`
+- **Работа — Worktree**: `C:\Users\volchkov.se\.claude-worktrees\LabPro\silly-tu` (branch `silly-tu`)
+- **Работа — Master worktree**: `C:\AICoding\Cline\LabPro` (branch `master` — для Vercel deploy)
+- **Работа — Merge в master**: `cd /c/AICoding/Cline/LabPro && git merge silly-tu && git push origin master`
+- **Дом — Репозиторий**: `C:\VSCline\LabPro` (branch `master`)
+- **Git remote**: `https://github.com/bioen07-del/labpro.git`
 - **Supabase ref**: `cyyqzuuozuzlhdlzvohh`
 - **Supabase Management API Token**: `sbp_d03bd67e20f574ed677837f3308abf96d6d51b0d`
 
 ### Windows: особенности среды
 - PowerShell: `npx` требует `Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process; $LASTEXITCODE = 0;` перед вызовом
 - PowerShell: `git`, `node`, `cmd` часто не в PATH — использовать Git Bash через Bash tool
-- Git Bash пути: `/c/Users/volchkov.se/.claude-worktrees/LabPro/silly-tu`
+- Git Bash пути (работа): `/c/Users/volchkov.se/.claude-worktrees/LabPro/silly-tu`
+- Git Bash пути (дом): `/c/VSCline/LabPro`
 - Кириллические имена файлов: использовать Glob tool, не PowerShell/cmd
 
 ### Ключевые паттерны кода

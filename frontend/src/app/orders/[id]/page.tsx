@@ -191,7 +191,7 @@ export default function OrderDetailPage({
       const data = await getOrderById(id)
       setOrder(data as Order & Record<string, any>)
       // Загрузить банки для резервирования
-      if (data && (data.status === 'PENDING' || data.status === 'APPROVED' || data.status === 'NEW')) {
+      if (data && (data.status === 'PENDING' || data.status === 'APPROVED')) {
         const banks = await getBanks({ status: 'APPROVED' })
         setAvailableBanks(banks)
       }

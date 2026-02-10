@@ -240,7 +240,7 @@ export default function OrdersPage() {
                             <FileText className="mr-2 h-4 w-4" />
                             Создать спецификацию
                           </DropdownMenuItem>
-                          {order.status === 'NEW' && (
+                          {order.status === 'PENDING' && (
                             <DropdownMenuItem>
                               <Edit className="mr-2 h-4 w-4" />
                               В работу
