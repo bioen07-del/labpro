@@ -12,7 +12,7 @@
 | Файл | Назначение |
 |------|------------|
 | `ТЗ_LabPro.md` | Техническое задание (source of truth) |
-| `PROGRESS.md` | История разработки (24 фазы) |
+| `PROGRESS.md` | История разработки (25 фаз) |
 | `PROJECT_STATUS.md` | Текущий статус, нерешённые позиции, бэклог (этот файл) |
 | `rules.md` | Правила разработки |
 
@@ -118,6 +118,38 @@
 | SQL миграции | 13 файлов |
 | Фаз разработки | 25 |
 | npm-зависимости | +qrcode, react-qr-code, recharts |
+
+---
+
+## Заметки для разработки (AI-контекст)
+
+### Окружение
+- **Worktree**: `C:\Users\volchkov.se\.claude-worktrees\LabPro\silly-tu` (branch `silly-tu`)
+- **Master worktree**: `C:\AICoding\Cline\LabPro` (branch `master` — для Vercel deploy)
+- **Merge в master**: `cd /c/AICoding/Cline/LabPro && git merge silly-tu && git push origin master`
+- **Supabase ref**: `cyyqzuuozuzlhdlzvohh`
+- **Supabase Management API Token**: `sbp_d03bd67e20f574ed677837f3308abf96d6d51b0d`
+
+### Windows: особенности среды
+- PowerShell: `npx` требует `Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process; $LASTEXITCODE = 0;` перед вызовом
+- PowerShell: `git`, `node`, `cmd` часто не в PATH — использовать Git Bash через Bash tool
+- Git Bash пути: `/c/Users/volchkov.se/.claude-worktrees/LabPro/silly-tu`
+- Кириллические имена файлов: использовать Glob tool, не PowerShell/cmd
+
+### Ключевые паттерны кода
+- **Пофлаконный учёт**: `writeOffBatchVolume()` в api.ts — списывает из текущего флакона, авто-открытие следующего
+- **Списание сред**: SEED, Passage, Freeze — все через writeOffBatchVolume для ready_media с привязкой к batch
+- **Alerts оборудования**: `getDashboardStats()` возвращает `equipmentAlerts[]` (overdue/urgent/soon по next_maintenance/next_validation)
+- **Кодогенерация**: `{CultureCode}-L{N}` для лотов, `{LotNumber}-P{passage}-NNN` для контейнеров
+- **Версионирование**: `frontend/src/lib/version.ts` — APP_VERSION + CHANGELOG. Обновлять после каждого изменения!
+
+### Ключевые файлы
+| Файл | Строк | Назначение |
+|------|-------|------------|
+| `frontend/src/lib/api.ts` | ~4050 | Все API-функции (Supabase) |
+| `frontend/src/types/index.ts` | ~760 | TypeScript-типы |
+| `frontend/src/app/page.tsx` | ~650 | Дашборд |
+| `frontend/src/lib/version.ts` | ~74 | Версия + changelog |
 
 ---
 
