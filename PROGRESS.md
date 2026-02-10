@@ -252,6 +252,9 @@
 - [x] **Список оборудования** — toggle «Показать неактивные», фильтр по is_active
 - [x] API: deactivateEquipment(), activateEquipment(), deleteEquipment(), getEquipment(includeInactive)
 - [x] schema.sql: parent_id + composite index в positions, is_active в equipment
+- [x] **Багфикс: Пассаж 400** — триггер `check_lot_closure` обращался к несуществующей колонке `lots.end_date`
+  - Добавлена колонка `end_date DATE` в таблицу lots (живая БД + schema.sql)
+  - Почищены осиротевшие данные от неудачных попыток пассажа (L3 + контейнеры + операция)
 - [x] TypeScript: 0 ошибок
 
 ### Статистика

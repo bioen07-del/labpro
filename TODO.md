@@ -125,6 +125,8 @@
 - [x] Список оборудования: toggle «Показать неактивные», badge «Деактивировано»
 - [x] API: deactivateEquipment, activateEquipment, deleteEquipment
 - [x] schema.sql: parent_id в positions, is_active в equipment, composite index
+- [x] Багфикс: пассаж 400 — отсутствовала колонка end_date в lots (триггер check_lot_closure)
+- [x] Чистка осиротевших данных от неудачных пассажей
 
 ## В процессе
 
