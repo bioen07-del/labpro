@@ -132,6 +132,7 @@ export function Header() {
             <NavLink href="/operations" pathname={pathname}>Операции</NavLink>
             <NavLink href="/qc" pathname={pathname}>QC</NavLink>
             <NavLink href="/inventory" pathname={pathname}>Склад</NavLink>
+            <NavLink href="/equipment" pathname={pathname}>Оборудование</NavLink>
             <NavLink href="/references" pathname={pathname}>Справочники</NavLink>
             <NavLink href="/orders" pathname={pathname}>Заявки</NavLink>
             <NavLink href="/tasks" pathname={pathname}>Задачи</NavLink>
@@ -271,6 +272,7 @@ export function Header() {
             <MobileNavLink href="/operations" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Операции</MobileNavLink>
             <MobileNavLink href="/qc" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>QC</MobileNavLink>
             <MobileNavLink href="/inventory" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Склад</MobileNavLink>
+            <MobileNavLink href="/equipment" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Оборудование</MobileNavLink>
             <MobileNavLink href="/references" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Справочники</MobileNavLink>
             <MobileNavLink href="/orders" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Заявки</MobileNavLink>
             <MobileNavLink href="/tasks" pathname={pathname} onClick={() => setMobileMenuOpen(false)}>Задачи</MobileNavLink>
@@ -287,12 +289,15 @@ export function Header() {
 
 function NavLink({ href, pathname, children }: { href: string; pathname: string; children: React.ReactNode }) {
   const invPaths = ['/inventory', '/ready-media']
-  const refPaths = ['/references', '/equipment']
+  const refPaths = ['/references']
+  const eqPaths = ['/equipment']
   const isActive = href === '/inventory'
     ? invPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
     : href === '/references'
       ? refPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
-      : pathname === href || pathname.startsWith(href + '/')
+      : href === '/equipment'
+        ? eqPaths.some(p => pathname === p || pathname.startsWith(p + '/'))
+        : pathname === href || pathname.startsWith(href + '/')
   
   return (
     <Link
