@@ -1308,12 +1308,12 @@ export async function updateDonation(id: string, updates: Record<string, unknown
 
 // ==================== TISSUE TYPES ====================
 
-export async function getTissueTypes() {
-  const { data, error } = await supabase
+export async function getTissueTypes(includeInactive = false) {
+  let query = supabase
     .from('tissue_types')
     .select('*')
-    .eq('is_active', true)
-    .order('name')
+  if (!includeInactive) query = query.eq('is_active', true)
+  const { data, error } = await query.order('name')
 
   if (error) throw error
   return data
@@ -1349,13 +1349,13 @@ export async function createTissue(tissue: Record<string, unknown>) {
 
 // ==================== CONTAINER TYPES ====================
 
-export async function getContainerTypes() {
-  const { data, error } = await supabase
+export async function getContainerTypes(includeInactive = false) {
+  let query = supabase
     .from('container_types')
     .select('*')
-    .eq('is_active', true)
-    .order('name')
-  
+  if (!includeInactive) query = query.eq('is_active', true)
+  const { data, error } = await query.order('name')
+
   if (error) throw error
   return data
 }
@@ -1405,13 +1405,13 @@ export async function getDisposeReasons() {
 
 // ==================== CULTURE TYPES ====================
 
-export async function getCultureTypes() {
-  const { data, error } = await supabase
+export async function getCultureTypes(includeInactive = false) {
+  let query = supabase
     .from('culture_types')
     .select('*')
-    .eq('is_active', true)
-    .order('name')
-  
+  if (!includeInactive) query = query.eq('is_active', true)
+  const { data, error } = await query.order('name')
+
   if (error) throw error
   return data
 }

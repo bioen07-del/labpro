@@ -103,15 +103,15 @@ export default function ReferencesPage() {
 
   // ---- Load data ----
 
-  const loadTab = useCallback(async (tab: TabKey) => {
+  const loadTab = useCallback(async (tab: TabKey, withInactive = true) => {
     setLoading(prev => ({ ...prev, [tab]: true }))
     try {
       let result: any[] = []
       switch (tab) {
         case 'culture_types': {
           const [ct, tt, links] = await Promise.all([
-            getCultureTypes(),
-            getTissueTypes(),
+            getCultureTypes(withInactive),
+            getTissueTypes(withInactive),
             getAllCultureTypeTissueLinks(),
           ])
           result = ct || []
@@ -125,7 +125,7 @@ export default function ReferencesPage() {
           break
         }
         case 'consumables': {
-          const cts = await getContainerTypes()
+          const cts = await getContainerTypes(withInactive)
           setContainerTypes(cts || [])
           result = [] // tab shows only container_types, not nomenclatures
           break
@@ -146,7 +146,7 @@ export default function ReferencesPage() {
 
   // Also load container_types for nomenclature forms (for container_type_id dropdown)
   useEffect(() => {
-    getContainerTypes().then(ct => setContainerTypes(ct || [])).catch(() => {})
+    getContainerTypes(true).then(ct => setContainerTypes(ct || [])).catch(() => {})
   }, [])
 
   // ---- Helpers: tissue links for a culture type ----
