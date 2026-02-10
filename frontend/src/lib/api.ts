@@ -2012,10 +2012,10 @@ export async function updateContainerPosition(id: string, positionId: string) {
 export async function getContainersByLot(lotId: string) {
   const { data, error } = await supabase
     .from('containers')
-    .select('*, position:positions(*)')
+    .select('*, position:positions(*), container_type:container_types(id, name, code, surface_area_cm2, volume_ml)')
     .eq('lot_id', lotId)
     .order('code')
-  
+
   if (error) throw error
   return data
 }
@@ -2609,14 +2609,14 @@ export async function createOperationPassage(data: {
 
   if (resultOcError) throw resultOcError
 
-  // 7. Обновить SOURCE контейнеры -> DISPOSE
+  // 7. Обновить SOURCE контейнеры -> USED (пассаж, не утилизация)
   for (const sourceContainer of data.source_containers) {
-    const { error: disposeError } = await supabase
+    const { error: usedError } = await supabase
       .from('containers')
-      .update({ container_status: 'DISPOSE' })
+      .update({ container_status: 'USED' })
       .eq('id', sourceContainer.container_id)
-    
-    if (disposeError) throw disposeError
+
+    if (usedError) throw usedError
   }
   
   // 8. Создать Operation_Metrics

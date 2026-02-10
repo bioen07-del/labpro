@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Loader2, CheckCircle2, Package, FileText } from "lucide-react"
 import { toast } from "sonner"
@@ -29,18 +29,23 @@ const unitOptions = [
   { value: "л", label: "л" },
 ]
 
-export default function NewBatchPage() {
+function NewBatchPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [nomenclatures, setNomenclatures] = useState<any[]>([])
   const [nomenclaturesLoading, setNomenclaturesLoading] = useState(true)
 
-  const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  // Prefill from query params
+  const prefillNomenclatureId = searchParams.get('nomenclature_id') || ''
+  const prefillCategory = searchParams.get('category') || ''
+
+  const [categoryFilter, setCategoryFilter] = useState<string>(prefillCategory || 'all')
 
   const [formData, setFormData] = useState({
-    nomenclature_id: "",
+    nomenclature_id: prefillNomenclatureId,
     batch_number: "",
     quantity: "",
     volume_per_unit: "",
@@ -376,6 +381,14 @@ export default function NewBatchPage() {
         </div>
       </form>
     </div>
+  )
+}
+
+export default function NewBatchPage() {
+  return (
+    <Suspense fallback={<div className="container py-6 text-center text-muted-foreground">Загрузка...</div>}>
+      <NewBatchPageInner />
+    </Suspense>
   )
 }
 

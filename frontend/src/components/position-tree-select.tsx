@@ -20,6 +20,8 @@ interface PositionBase {
   parent_id?: string | null
   is_active?: boolean
   equipment_id?: string | null
+  capacity?: number | null
+  current_load?: number | null
   equipment?: {
     id?: string
     name?: string
@@ -166,6 +168,19 @@ export function PositionTreeSelect({
     return !hasChildren
   }
 
+  // Render occupancy badge for a position
+  const renderOccupancy = (pos: Position) => {
+    if (pos.capacity == null && pos.current_load == null) return null
+    const load = pos.current_load || 0
+    const cap = pos.capacity || 0
+    const isFull = cap > 0 && load >= cap
+    return (
+      <span className={`ml-1.5 text-[10px] tabular-nums ${isFull ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+        ({load}{cap > 0 ? `/${cap}` : ''})
+      </span>
+    )
+  }
+
   return (
     <Select value={value} onValueChange={onValueChange}>
       <SelectTrigger className={triggerClassName} size={size}>
@@ -187,10 +202,12 @@ export function PositionTreeSelect({
                   {isSelectable(item.position, hasChildren) ? (
                     <SelectItem value={item.position.id} className="pl-4">
                       {item.position.path}
+                      {renderOccupancy(item.position)}
                     </SelectItem>
                   ) : (
                     <div className="px-4 py-1 text-xs text-muted-foreground">
                       {item.position.path}
+                      {renderOccupancy(item.position)}
                     </div>
                   )}
                   {/* Children */}
@@ -198,6 +215,7 @@ export function PositionTreeSelect({
                     <SelectItem key={child.id} value={child.id} className="pl-8">
                       <span className="text-muted-foreground mr-1">└</span>
                       {child.path}
+                      {renderOccupancy(child)}
                     </SelectItem>
                   ))}
                 </div>
@@ -221,16 +239,19 @@ export function PositionTreeSelect({
                     {isSelectable(item.position, hasChildren) ? (
                       <SelectItem value={item.position.id} className="pl-4">
                         {item.position.path}
+                        {renderOccupancy(item.position)}
                       </SelectItem>
                     ) : (
                       <div className="px-4 py-1 text-xs text-muted-foreground">
                         {item.position.path}
+                        {renderOccupancy(item.position)}
                       </div>
                     )}
                     {item.children.map((child) => (
                       <SelectItem key={child.id} value={child.id} className="pl-8">
                         <span className="text-muted-foreground mr-1">└</span>
                         {child.path}
+                        {renderOccupancy(child)}
                       </SelectItem>
                     ))}
                   </div>

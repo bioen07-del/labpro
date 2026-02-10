@@ -71,7 +71,7 @@ interface ContainerItem {
   confluent_percent?: number
   passage_number?: number
   position?: { id: string; path: string } | null
-  container_type?: { name: string; surface_area_cm2?: number } | null
+  container_type?: { id: string; name: string; code?: string; surface_area_cm2?: number; volume_ml?: number } | null
 }
 
 interface ContainerTypeItem {
@@ -690,11 +690,22 @@ function PassagePageInner() {
                               {c.container_status || c.status}
                             </Badge>
                           </div>
-                          {c.confluent_percent !== undefined && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Конфлюэнтность: {c.confluent_percent}%
-                            </p>
-                          )}
+                          <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                            {c.container_type?.name && (
+                              <span>{c.container_type.name}</span>
+                            )}
+                            {c.container_type?.surface_area_cm2 && (
+                              <span>{c.container_type.surface_area_cm2} см²</span>
+                            )}
+                            {c.confluent_percent !== undefined && (
+                              <span className={
+                                c.confluent_percent >= 90 ? 'text-green-600 font-medium' :
+                                c.confluent_percent >= 70 ? 'text-orange-600 font-medium' : ''
+                              }>
+                                Конфл.: {c.confluent_percent}%
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}

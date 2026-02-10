@@ -59,6 +59,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 // Note: Tabs still used for status filter
 import { getBatches, updateBatch, createInventoryMovement, getReadyMedia } from '@/lib/api'
+// Note: updateBatch and createInventoryMovement still used by Dispose handler
 import { formatDate, formatNumber, daysUntilExpiration, getExpirationWarningLevel } from '@/lib/utils'
 
 type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'ready_media'
@@ -67,18 +68,11 @@ const MEDIA_CATEGORIES = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'EN
 
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedStatus, setSelectedStatus] = useState<string>('all')
+  const [selectedStatus, setSelectedStatus] = useState<string>('AVAILABLE')
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('all')
   const [batches, setBatches] = useState<any[]>([])
   const [readyMedia, setReadyMedia] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-
-  // Receive dialog
-  const [receiveOpen, setReceiveOpen] = useState(false)
-  const [receiveTarget, setReceiveTarget] = useState<any>(null)
-  const [receiveQty, setReceiveQty] = useState('')
-  const [receiveNotes, setReceiveNotes] = useState('')
-  const [receiveSaving, setReceiveSaving] = useState(false)
 
   // Dispose dialog
   const [disposeOpen, setDisposeOpen] = useState(false)
@@ -170,34 +164,6 @@ export default function InventoryPage() {
     consumable: batches.filter(b => b.nomenclature?.category === 'CONSUMABLE').length,
     media: batches.filter(b => MEDIA_CATEGORIES.has(b.nomenclature?.category)).length,
     readyMedia: readyMedia.length,
-  }
-
-  // ==================== Receive handler ====================
-  const handleReceive = async () => {
-    if (!receiveTarget || !receiveQty || Number(receiveQty) <= 0) {
-      toast.error('Укажите корректное количество')
-      return
-    }
-    setReceiveSaving(true)
-    try {
-      const newQty = (receiveTarget.quantity || 0) + Number(receiveQty)
-      await updateBatch(receiveTarget.id, { quantity: newQty, status: 'AVAILABLE' })
-      await createInventoryMovement({
-        batch_id: receiveTarget.id,
-        movement_type: 'RECEIVE',
-        quantity: Number(receiveQty),
-        notes: receiveNotes || null,
-      })
-      toast.success(`Принято ${receiveQty} ${receiveTarget.unit || 'шт'}`)
-      setReceiveOpen(false)
-      setReceiveQty('')
-      setReceiveNotes('')
-      loadBatches()
-    } catch (err: any) {
-      toast.error(err?.message || 'Ошибка при приёмке')
-    } finally {
-      setReceiveSaving(false)
-    }
   }
 
   // ==================== Dispose handler ====================
@@ -499,14 +465,11 @@ export default function InventoryPage() {
                               </Link>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => {
-                              setReceiveTarget(batch)
-                              setReceiveQty('')
-                              setReceiveNotes('')
-                              setReceiveOpen(true)
-                            }}>
-                              <ArrowDownToLine className="mr-2 h-4 w-4" />
-                              Приёмка
+                            <DropdownMenuItem asChild>
+                              <Link href={`/inventory/new?nomenclature_id=${batch.nomenclature_id}&category=${batch.nomenclature?.category || ''}`}>
+                                <ArrowDownToLine className="mr-2 h-4 w-4" />
+                                Приёмка
+                              </Link>
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => {
@@ -540,67 +503,6 @@ export default function InventoryPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* ==================== Receive Dialog ==================== */}
-      <Dialog open={receiveOpen} onOpenChange={setReceiveOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ArrowDownToLine className="h-5 w-5 text-green-600" />
-              Приёмка на склад
-            </DialogTitle>
-            <DialogDescription>
-              {receiveTarget?.nomenclature?.name} — партия {receiveTarget?.batch_number || receiveTarget?.id?.slice(0, 8)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="flex items-center justify-between text-sm p-3 rounded-lg bg-muted">
-              <span>Текущий остаток:</span>
-              <span className="font-semibold">{receiveTarget?.quantity || 0} {receiveTarget?.unit || 'шт'}</span>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Количество к приёмке *</Label>
-              <Input
-                type="number"
-                min="1"
-                step="any"
-                value={receiveQty}
-                onChange={(e) => setReceiveQty(e.target.value)}
-                placeholder="0"
-                autoFocus
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Примечание</Label>
-              <Textarea
-                value={receiveNotes}
-                onChange={(e) => setReceiveNotes(e.target.value)}
-                placeholder="Номер накладной, поставщик..."
-                rows={2}
-              />
-            </div>
-
-            {receiveQty && Number(receiveQty) > 0 && (
-              <div className="text-sm p-3 rounded-lg bg-green-50 text-green-700">
-                Новый остаток: <strong>{(receiveTarget?.quantity || 0) + Number(receiveQty)} {receiveTarget?.unit || 'шт'}</strong>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setReceiveOpen(false)}>
-              Отмена
-            </Button>
-            <Button onClick={handleReceive} disabled={receiveSaving || !receiveQty || Number(receiveQty) <= 0}>
-              {receiveSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowDownToLine className="mr-2 h-4 w-4" />}
-              Принять
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* ==================== Dispose Dialog ==================== */}
       <Dialog open={disposeOpen} onOpenChange={setDisposeOpen}>

@@ -74,7 +74,12 @@ function ObservePageInner() {
         if (paramLotId) {
           setSelectedLotId(paramLotId)
           const containersData = await getContainersByLot(paramLotId)
-          setContainers(containersData || [])
+          // Filter out DISPOSE/USED containers
+          const activeContainers = (containersData || []).filter((c: any) => {
+            const st = c.container_status || c.status
+            return st !== 'DISPOSE' && st !== 'USED'
+          })
+          setContainers(activeContainers)
           // If a specific container_id was passed, auto-select it
           if (paramContainerId && containersData?.some((c: any) => c.id === paramContainerId)) {
             setSelectedIds([paramContainerId])
@@ -100,7 +105,12 @@ function ObservePageInner() {
   const loadContainers = useCallback(async (lotId: string) => {
     try {
       const data = await getContainersByLot(lotId)
-      setContainers(data || [])
+      // Filter out DISPOSE/USED containers — no further operations possible
+      const active = (data || []).filter((c: any) => {
+        const st = c.container_status || c.status
+        return st !== 'DISPOSE' && st !== 'USED'
+      })
+      setContainers(active)
       setSelectedIds([])
       setObservations({})
     } catch (err) {

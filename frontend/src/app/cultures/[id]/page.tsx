@@ -120,6 +120,7 @@ function getContainerStatusColor(status: string): string {
     IN_CULTURE: 'bg-green-100 text-green-800',
     IN_BANK: 'bg-purple-100 text-purple-800',
     ISSUED: 'bg-blue-100 text-blue-800',
+    USED: 'bg-gray-100 text-gray-600',
     DISPOSE: 'bg-red-100 text-red-800',
     QUARANTINE: 'bg-yellow-100 text-yellow-800',
   }
@@ -131,6 +132,7 @@ function getContainerStatusLabel(status: string): string {
     IN_CULTURE: 'В работе',
     IN_BANK: 'В банке',
     ISSUED: 'Выдан',
+    USED: 'Использован',
     DISPOSE: 'Утилизирован',
     QUARANTINE: 'Карантин',
   }
@@ -167,6 +169,7 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
   const [operations, setOperations] = useState<Operation[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set())
+  const [showInactiveContainers, setShowInactiveContainers] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadData()
@@ -597,47 +600,79 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                           </div>
 
                           {/* Containers grid */}
-                          {containers.length > 0 && (
-                            <div>
-                              <h4 className="text-sm font-medium mb-2 text-muted-foreground">
-                                Контейнеры ({containers.length})
-                              </h4>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                {containers.map((container: Container) => (
-                                  <div
-                                    key={container.id}
-                                    className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors"
-                                    onClick={() => router.push(`/containers/${container.id}`)}
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-                                      <div className="min-w-0">
-                                        <p className="font-medium text-sm truncate">{container.code}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                          {container.container_type?.name || 'Тип N/A'}
-                                        </p>
+                          {containers.length > 0 && (() => {
+                            const activeConts2 = containers.filter((c: Container) =>
+                              c.container_status !== 'DISPOSE' && c.container_status !== 'USED'
+                            )
+                            const inactiveConts = containers.filter((c: Container) =>
+                              c.container_status === 'DISPOSE' || c.container_status === 'USED'
+                            )
+                            const showInactive = showInactiveContainers.has(lot.id)
+                            const displayedContainers = showInactive ? containers : activeConts2
+
+                            return (
+                              <div>
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="text-sm font-medium text-muted-foreground">
+                                    Контейнеры ({activeConts2.length} активных{inactiveConts.length > 0 ? `, ${inactiveConts.length} завершённых` : ''})
+                                  </h4>
+                                  {inactiveConts.length > 0 && (
+                                    <button
+                                      type="button"
+                                      className="text-xs text-primary hover:underline"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setShowInactiveContainers(prev => {
+                                          const next = new Set(prev)
+                                          if (next.has(lot.id)) next.delete(lot.id)
+                                          else next.add(lot.id)
+                                          return next
+                                        })
+                                      }}
+                                    >
+                                      {showInactive ? 'Скрыть завершённые' : `Показать завершённые (${inactiveConts.length})`}
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                  {displayedContainers.map((container: Container) => (
+                                    <div
+                                      key={container.id}
+                                      className={`flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors ${
+                                        container.container_status === 'DISPOSE' || container.container_status === 'USED' ? 'opacity-60' : ''
+                                      }`}
+                                      onClick={() => router.push(`/containers/${container.id}`)}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                                        <div className="min-w-0">
+                                          <p className="font-medium text-sm truncate">{container.code}</p>
+                                          <p className="text-xs text-muted-foreground">
+                                            {container.container_type?.name || 'Тип N/A'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        {container.confluent_percent != null && (
+                                          <span className="text-xs font-medium text-muted-foreground">
+                                            {container.confluent_percent}%
+                                          </span>
+                                        )}
+                                        {(container as any).contaminated && (
+                                          <Badge variant="destructive" className="text-xs">
+                                            Контаминация
+                                          </Badge>
+                                        )}
+                                        <Badge className={`text-xs ${getContainerStatusColor(container.container_status)}`}>
+                                          {getContainerStatusLabel(container.container_status)}
+                                        </Badge>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      {container.confluent_percent != null && (
-                                        <span className="text-xs font-medium text-muted-foreground">
-                                          {container.confluent_percent}%
-                                        </span>
-                                      )}
-                                      {(container as any).contaminated && (
-                                        <Badge variant="destructive" className="text-xs">
-                                          Контаминация
-                                        </Badge>
-                                      )}
-                                      <Badge className={`text-xs ${getContainerStatusColor(container.container_status)}`}>
-                                        {getContainerStatusLabel(container.container_status)}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                ))}
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )
+                          })()}
 
                           {containers.length === 0 && (
                             <p className="text-sm text-muted-foreground text-center py-2">

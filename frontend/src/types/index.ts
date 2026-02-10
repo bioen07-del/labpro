@@ -162,7 +162,7 @@ export interface Lot {
 }
 
 // Container
-export type ContainerStatus = 'IN_CULTURE' | 'IN_BANK' | 'ISSUED' | 'DISPOSE' | 'QUARANTINE'
+export type ContainerStatus = 'IN_CULTURE' | 'IN_BANK' | 'ISSUED' | 'USED' | 'DISPOSE' | 'QUARANTINE'
 
 export interface Container {
   id: string
