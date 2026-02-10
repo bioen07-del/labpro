@@ -11,14 +11,20 @@ import {
   CheckCircle2,
   XCircle,
   Zap,
-  ClipboardList
+  ClipboardList,
+  Trash2,
+  Power,
+  PowerOff,
+  Eye,
+  EyeOff,
 } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getEquipment, createEquipmentLog, getMonitoringParams } from "@/lib/api"
+import { getEquipment, createEquipmentLog, getMonitoringParams, deactivateEquipment, activateEquipment, deleteEquipment } from "@/lib/api"
 import { format } from "date-fns"
 import { ru } from "date-fns/locale"
 
@@ -77,6 +83,8 @@ export default function EquipmentPage() {
   const [monitoringNotes, setMonitoringNotes] = useState("")
   const [monitoringParams, setMonitoringParams] = useState<MonitoringParam[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showInactive, setShowInactive] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<any>(null)
 
   useEffect(() => {
     loadEquipment()
@@ -84,12 +92,45 @@ export default function EquipmentPage() {
 
   const loadEquipment = async () => {
     try {
-      const data = await getEquipment()
+      const data = await getEquipment({ includeInactive: true })
       setEquipment(data || [])
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeactivate = async (item: any) => {
+    try {
+      if (item.is_active === false) {
+        await activateEquipment(item.id)
+        toast.success(`${item.name} активировано`)
+      } else {
+        await deactivateEquipment(item.id)
+        toast.success(`${item.name} деактивировано`)
+      }
+      loadEquipment()
+    } catch (err) {
+      console.error(err)
+      toast.error("Ошибка при изменении статуса")
+    }
+  }
+
+  const handleDelete = async (item: any) => {
+    try {
+      await deleteEquipment(item.id)
+      toast.success(`${item.name} удалено`)
+      setConfirmDelete(null)
+      loadEquipment()
+    } catch (err: any) {
+      console.error(err)
+      if (err?.message?.includes("foreign key") || err?.code === "23503") {
+        toast.error("Нельзя удалить — есть связанные записи. Деактивируйте вместо удаления.")
+      } else {
+        toast.error("Ошибка при удалении")
+      }
+      setConfirmDelete(null)
     }
   }
 
@@ -143,6 +184,7 @@ export default function EquipmentPage() {
   }
 
   const filteredEquipment = equipment.filter(item => {
+    if (!showInactive && item.is_active === false) return false
     const matchesStatus = filter === "all" || item.status === filter
     const matchesType = typeFilter === "all" || item.type === typeFilter
     const matchesSearch = !search ||
@@ -152,6 +194,7 @@ export default function EquipmentPage() {
       item.inventory_number?.toLowerCase().includes(search.toLowerCase())
     return matchesStatus && matchesType && matchesSearch
   })
+  const inactiveCount = equipment.filter(e => e.is_active === false).length
 
   const activeEquipment = filteredEquipment.filter(e => e.status === "ACTIVE")
   const maintenanceEquipment = filteredEquipment.filter(e => e.status === "MAINTENANCE")
@@ -268,6 +311,17 @@ export default function EquipmentPage() {
             <TabsTrigger value="FRIDGE">Холодильники</TabsTrigger>
           </TabsList>
         </Tabs>
+        {inactiveCount > 0 && (
+          <Button
+            variant={showInactive ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowInactive(!showInactive)}
+            className="gap-1.5"
+          >
+            {showInactive ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            {showInactive ? `Скрыть неактивные (${inactiveCount})` : `Показать неактивные (${inactiveCount})`}
+          </Button>
+        )}
       </div>
 
       {/* Equipment List */}
@@ -280,7 +334,7 @@ export default function EquipmentPage() {
           </Card>
         ) : (
           filteredEquipment.map(item => (
-            <Card key={item.id} className="hover:bg-muted/50 transition-colors">
+            <Card key={item.id} className={`hover:bg-muted/50 transition-colors ${item.is_active === false ? 'opacity-60' : ''}`}>
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -297,6 +351,9 @@ export default function EquipmentPage() {
                         <Badge className={STATUS_COLORS[item.status]}>
                           {STATUS_LABELS[item.status]}
                         </Badge>
+                        {item.is_active === false && (
+                          <Badge variant="outline" className="text-gray-500 border-gray-400">Деактивировано</Badge>
+                        )}
                         {isValidationOverdue(item) && (
                           <Badge variant="destructive">Валидация просрочена</Badge>
                         )}
@@ -330,8 +387,8 @@ export default function EquipmentPage() {
                         ТО: {format(new Date(item.next_maintenance), "dd.MM.yyyy", { locale: ru })}
                       </p>
                     )}
-                    <div className="flex gap-2 mt-3">
-                      {(
+                    <div className="flex gap-2 mt-3 flex-wrap justify-end">
+                      {item.is_active !== false && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -349,6 +406,25 @@ export default function EquipmentPage() {
                         <Settings className="mr-2 h-4 w-4" />
                         Детали
                       </Button>
+                      <Button
+                        size="sm"
+                        variant={item.is_active === false ? "default" : "outline"}
+                        onClick={() => handleDeactivate(item)}
+                      >
+                        {item.is_active === false ? (
+                          <><Power className="mr-2 h-4 w-4" />Активировать</>
+                        ) : (
+                          <><PowerOff className="mr-2 h-4 w-4" />Деактивировать</>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setConfirmDelete(item)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Удалить
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -357,6 +433,34 @@ export default function EquipmentPage() {
           ))
         )}
       </div>
+
+      {/* Delete Confirmation */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-sm mx-4">
+            <CardHeader>
+              <CardTitle className="text-destructive">Удалить оборудование?</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm">
+                Вы уверены, что хотите удалить <strong>{confirmDelete.name}</strong>?
+                Это действие нельзя отменить. Все позиции этого оборудования также будут удалены.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Если есть связанные контейнеры или логи, удаление будет невозможно. Используйте деактивацию.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setConfirmDelete(null)}>
+                  Отмена
+                </Button>
+                <Button variant="destructive" onClick={() => handleDelete(confirmDelete)}>
+                  Удалить
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Monitoring Modal */}
       {showMonitoringModal && selectedEquip && (

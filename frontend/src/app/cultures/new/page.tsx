@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical, TestTubes, Package, AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { PositionTreeSelect } from '@/components/position-tree-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -638,18 +639,15 @@ function NewCultureForm() {
                     {positions.length > 0 && (
                       <div className="space-y-1.5 pt-1 border-t">
                         <Label className="text-xs">Позиция размещения</Label>
-                        <Select value={row.positionId} onValueChange={(val) => updateContainerRow(row.id, { positionId: val })}>
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue placeholder="Не выбрано" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {positions.map((pos) => (
-                              <SelectItem key={pos.id} value={pos.id}>
-                                {pos.path}{pos.equipment?.name ? ` (${pos.equipment.name})` : ''}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <PositionTreeSelect
+                          positions={positions}
+                          value={row.positionId}
+                          onValueChange={(val) => updateContainerRow(row.id, { positionId: val })}
+                          placeholder="Не выбрано"
+                          equipmentTypeFilter="INCUBATOR"
+                          triggerClassName="h-8 text-xs"
+                          size="sm"
+                        />
                       </div>
                     )}
                   </div>

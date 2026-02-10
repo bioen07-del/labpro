@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS equipment (
     serial_number TEXT,
     location TEXT,
     status TEXT DEFAULT 'ACTIVE',
+    is_active BOOLEAN DEFAULT true,    -- Soft delete
     last_maintenance DATE,
     next_maintenance DATE,
     validation_date DATE,              -- Дата последней валидации
@@ -182,17 +183,22 @@ CREATE TABLE IF NOT EXISTS equipment (
     inventory_number TEXT
 );
 
--- Positions
+-- Positions (hierarchical: equipment → shelf → zone → slot)
 CREATE TABLE IF NOT EXISTS positions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    equipment_id UUID REFERENCES equipment(id),
-    path TEXT NOT NULL UNIQUE,
+    equipment_id UUID REFERENCES equipment(id) ON DELETE SET NULL,
+    parent_id UUID REFERENCES positions(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
     qr_code TEXT UNIQUE,
     is_active BOOLEAN DEFAULT true,
     capacity INTEGER,
     current_load INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Unique constraint: same name allowed at different levels, unique within (equipment, parent, name)
+CREATE UNIQUE INDEX IF NOT EXISTS positions_equipment_parent_path_key
+  ON positions (equipment_id, COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid), path);
 
 -- ============================================
 -- SAMPLE & STORAGE TABLES

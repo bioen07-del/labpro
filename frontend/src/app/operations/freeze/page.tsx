@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { PositionTreeSelect } from '@/components/position-tree-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -820,20 +821,12 @@ function FreezePageInner() {
               <Label htmlFor="position">
                 Позиция <span className="text-red-500">*</span>
               </Label>
-              <Select value={positionId} onValueChange={setPositionId}>
-                <SelectTrigger id="position">
-                  <SelectValue placeholder="Выберите позицию..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {positions.map((pos: any) => (
-                    <SelectItem key={pos.id} value={pos.id}>
-                      {pos.equipment?.name ? `${pos.equipment.name} / ` : ''}
-                      {pos.path || pos.name || pos.id}
-                      {pos.capacity != null && ` [${pos.capacity} мест]`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PositionTreeSelect
+                positions={positions}
+                value={positionId}
+                onValueChange={setPositionId}
+                placeholder="Выберите позицию..."
+              />
             </div>
 
             {/* Position details */}

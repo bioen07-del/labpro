@@ -1561,19 +1561,22 @@ export async function disposeReadyMedium(id: string) {
 
 // ==================== EQUIPMENT ====================
 
-export async function getEquipment(filters?: { type?: string; status?: string }) {
+export async function getEquipment(filters?: { type?: string; status?: string; includeInactive?: boolean }) {
   let query = supabase
     .from('equipment')
     .select('*')
     .order('name')
-  
+
   if (filters?.type) {
     query = query.eq('type', filters.type)
   }
   if (filters?.status) {
     query = query.eq('status', filters.status)
   }
-  
+  if (!filters?.includeInactive) {
+    query = query.neq('is_active', false)
+  }
+
   const { data, error } = await query
   if (error) throw error
   return data
@@ -1610,6 +1613,30 @@ export async function updateEquipment(id: string, updates: Record<string, unknow
 
   if (error) throw error
   return data?.[0] ?? null
+}
+
+export async function deactivateEquipment(id: string) {
+  const { error } = await supabase
+    .from('equipment')
+    .update({ is_active: false })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function activateEquipment(id: string) {
+  const { error } = await supabase
+    .from('equipment')
+    .update({ is_active: true })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteEquipment(id: string) {
+  const { error } = await supabase
+    .from('equipment')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
 }
 
 export async function createEquipmentLog(equipmentId: string, log: { temperature?: number; humidity?: number; co2_level?: number; o2_level?: number; notes?: string }) {

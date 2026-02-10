@@ -1,6 +1,6 @@
 # LabPro - Прогресс разработки
 
-## Текущий статус: Фаза 22 — Оборудование в навигации, багфиксы справочников и мониторинга
+## Текущий статус: Фаза 23 — Иерархия позиций, оборудование delete/deactivate
 
 ### Завершённые фазы
 
@@ -233,6 +233,25 @@
   - Мигрированы 13 записей (type-based → per-equipment)
 - [x] Удаление записей в справочниках: API delete-функции для всех 6 таблиц
 - [x] Диалог подтверждения удаления с защитой от FK-конфликтов
+- [x] TypeScript: 0 ошибок
+
+#### Фаза 23: Иерархия позиций, оборудование delete/deactivate
+- [x] **БД: positions.parent_id** — иерархические позиции (оборудование → полка → зона → место)
+  - Самореференсный FK: `parent_id UUID REFERENCES positions(id) ON DELETE CASCADE`
+  - Уникальность: composite index `(equipment_id, COALESCE(parent_id, nil_uuid), path)` вместо глобального UNIQUE path
+  - Одинаковые имена допустимы на разных уровнях иерархии
+- [x] **БД: equipment.is_active** — soft delete для оборудования
+- [x] **Компонент PositionTreeSelect** — универсальный древовидный выбор позиций
+  - Группировка по оборудованию (SelectGroup + SelectLabel)
+  - Иерархия: родитель → └ дочерние (с отступом)
+  - Фильтр по типу оборудования (equipmentTypeFilter)
+  - Используется в 5 формах: пассаж, создание культуры, заморозка, разморозка, операции
+- [x] **Карточка оборудования** — иерархическое отображение позиций (дерево с вложенностью)
+- [x] **Оборудование: деактивация/активация** — toggle is_active, badge «Деактивировано»
+- [x] **Оборудование: удаление** — с подтверждением, FK-защитой и уведомлениями
+- [x] **Список оборудования** — toggle «Показать неактивные», фильтр по is_active
+- [x] API: deactivateEquipment(), activateEquipment(), deleteEquipment(), getEquipment(includeInactive)
+- [x] schema.sql: parent_id + composite index в positions, is_active в equipment
 - [x] TypeScript: 0 ошибок
 
 ### Статистика

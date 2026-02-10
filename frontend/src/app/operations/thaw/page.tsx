@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { PositionTreeSelect } from '@/components/position-tree-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -610,19 +611,13 @@ function ThawPageInner() {
             {/* Position (optional) */}
             <div className="space-y-2">
               <Label htmlFor="position">Позиция размещения</Label>
-              <Select value={positionId} onValueChange={setPositionId}>
-                <SelectTrigger id="position">
-                  <SelectValue placeholder="Авторазмещение (необязательно)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {positions.map((pos) => (
-                    <SelectItem key={pos.id} value={pos.id}>
-                      {pos.path}
-                      {pos.equipment?.name && ` (${pos.equipment.name})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PositionTreeSelect
+                positions={positions}
+                value={positionId}
+                onValueChange={setPositionId}
+                placeholder="Авторазмещение (необязательно)"
+                equipmentTypeFilter="INCUBATOR"
+              />
             </div>
 
             {/* Viability (optional) */}

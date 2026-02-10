@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react'
+import { PositionTreeSelect } from '@/components/position-tree-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -343,26 +344,17 @@ function NewOperationContent({ initialType }: { initialType: OperationType }) {
                       <div key={index} className="flex gap-4 items-end">
                         <div className="flex-1 space-y-2">
                           <Label>Позиция</Label>
-                          <Select 
-                            value={tp.position?.id || ''} 
+                          <PositionTreeSelect
+                            positions={positions}
+                            value={tp.position?.id || ''}
                             onValueChange={(v) => {
                               const pos = positions.find(p => p.id === v)
                               const updated = [...targetPositions]
                               updated[index].position = pos
                               setTargetPositions(updated)
                             }}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Выберите позицию..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {positions.filter(p => p.is_active).map(pos => (
-                                <SelectItem key={pos.id} value={pos.id}>
-                                  {pos.path}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            placeholder="Выберите позицию..."
+                          />
                         </div>
                         <div className="w-48 space-y-2">
                           <Label>Тип</Label>

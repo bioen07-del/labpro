@@ -1,7 +1,7 @@
 # LabPro TODO
 
 **Дата обновления:** 10.02.2026
-**Статус:** Фаза 22 — Оборудование в навигации, багфиксы справочников и мониторинга
+**Статус:** Фаза 23 — Иерархия позиций, оборудование delete/deactivate
 
 ---
 
@@ -111,6 +111,20 @@
 - [x] Багфикс: equipment_monitoring_params.equipment_id — миграция не была применена к БД
   - Применена вручную: ADD COLUMN, UNIQUE constraint, RLS, миграция 13 записей
 - [x] Удаление записей справочников: API delete + UI кнопка + подтверждение + FK-защита
+
+## Фаза 23: Иерархия позиций, оборудование delete/deactivate ✅
+
+- [x] БД: positions.parent_id — иерархические позиции (полка → зона → место)
+- [x] БД: UNIQUE constraint → composite (equipment_id, parent_id, path) вместо глобального path
+- [x] БД: equipment.is_active — soft delete для оборудования
+- [x] Компонент PositionTreeSelect — древовидный выбор позиций (Оборудование → Полка → Место)
+- [x] Все формы обновлены: пассаж, создание культуры, заморозка, разморозка, операции
+- [x] Карточка оборудования: иерархическое отображение позиций (дерево)
+- [x] Оборудование: деактивация/активация (toggle is_active)
+- [x] Оборудование: удаление с подтверждением и FK-защитой
+- [x] Список оборудования: toggle «Показать неактивные», badge «Деактивировано»
+- [x] API: deactivateEquipment, activateEquipment, deleteEquipment
+- [x] schema.sql: parent_id в positions, is_active в equipment, composite index
 
 ## В процессе
 

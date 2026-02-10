@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { PositionTreeSelect } from '@/components/position-tree-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -401,16 +402,6 @@ function PassagePageInner() {
     return options
   }, [readyMedia, reagentBatches])
 
-  // Filter incubator positions — include all positions linked to INCUBATOR equipment
-  // Also include positions without equipment (legacy data)
-  const incubatorPositions = useMemo(
-    () => positions.filter((p) => {
-      if (p.is_active === false) return false
-      // Show positions in incubator equipment, or positions without equipment link
-      return !p.equipment || p.equipment.type === 'INCUBATOR'
-    }),
-    [positions],
-  )
 
   // =========================================================================
   // Step validation
@@ -1072,18 +1063,13 @@ function PassagePageInner() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Select value={positionId} onValueChange={setPositionId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите позицию..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {incubatorPositions.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.path}{p.equipment?.name ? ` (${p.equipment.name})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PositionTreeSelect
+                positions={positions}
+                value={positionId}
+                onValueChange={setPositionId}
+                equipmentTypeFilter="INCUBATOR"
+                placeholder="Выберите позицию..."
+              />
             </CardContent>
           </Card>
 

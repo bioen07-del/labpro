@@ -15,6 +15,9 @@ import {
   Building2,
   FileText,
   Pencil,
+  PowerOff,
+  Power,
+  Trash2,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -41,7 +44,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 
-import { getEquipmentById, updateEquipment, getMonitoringParams, getEquipmentLogs, createEquipmentLog } from "@/lib/api"
+import { getEquipmentById, updateEquipment, getMonitoringParams, getEquipmentLogs, createEquipmentLog, deactivateEquipment, activateEquipment, deleteEquipment } from "@/lib/api"
 import { formatDate } from "@/lib/utils"
 import type { EquipmentMonitoringParam, EquipmentLog } from "@/types"
 
@@ -113,6 +116,7 @@ export default function EquipmentDetailPage({
   const [logValues, setLogValues] = useState<Record<string, string>>({})
   const [logNotes, setLogNotes] = useState('')
   const [savingLog, setSavingLog] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -139,6 +143,38 @@ export default function EquipmentDetailPage({
       toast.error(msg)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleDeactivate() {
+    try {
+      if (equipment.is_active === false) {
+        await activateEquipment(id)
+        toast.success('Оборудование активировано')
+      } else {
+        await deactivateEquipment(id)
+        toast.success('Оборудование деактивировано')
+      }
+      loadData()
+    } catch (err) {
+      console.error(err)
+      toast.error('Ошибка при изменении статуса')
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await deleteEquipment(id)
+      toast.success('Оборудование удалено')
+      router.push('/equipment')
+    } catch (err: any) {
+      console.error(err)
+      if (err?.message?.includes('foreign key') || err?.code === '23503') {
+        toast.error('Нельзя удалить — есть связанные записи. Деактивируйте вместо удаления.')
+      } else {
+        toast.error('Ошибка при удалении')
+      }
+      setConfirmDelete(false)
     }
   }
 
@@ -203,6 +239,8 @@ export default function EquipmentDetailPage({
 
   // ---- Derived data --------------------------------------------------------
   const positions: any[] = equipment.positions ?? []
+  const topLevelPositions = positions.filter((p: any) => !p.parent_id)
+  const getChildren = (parentId: string) => positions.filter((p: any) => p.parent_id === parentId)
 
   // =========================================================================
   // RENDER
@@ -225,6 +263,9 @@ export default function EquipmentDetailPage({
                 {equipment.name}
               </h1>
               {statusBadge(equipment.status)}
+              {equipment.is_active === false && (
+                <Badge variant="outline" className="text-gray-500 border-gray-400">Деактивировано</Badge>
+              )}
             </div>
             {equipment.code && (
               <p className="text-sm text-muted-foreground font-mono">
@@ -240,6 +281,20 @@ export default function EquipmentDetailPage({
               <Pencil className="mr-2 h-4 w-4" />
               Редактировать
             </Link>
+          </Button>
+          <Button
+            variant={equipment.is_active === false ? "default" : "outline"}
+            onClick={handleDeactivate}
+          >
+            {equipment.is_active === false ? (
+              <><Power className="mr-2 h-4 w-4" />Активировать</>
+            ) : (
+              <><PowerOff className="mr-2 h-4 w-4" />Деактивировать</>
+            )}
+          </Button>
+          <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            Удалить
           </Button>
         </div>
       </div>
@@ -426,41 +481,71 @@ export default function EquipmentDetailPage({
               Нет привязанных позиций
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Путь</TableHead>
-                    <TableHead>QR-код</TableHead>
-                    <TableHead>Статус</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {positions.map((pos: any) => (
-                    <TableRow key={pos.id}>
-                      <TableCell className="font-mono text-sm">
-                        {pos.path || "---"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {pos.qr_code || "---"}
-                      </TableCell>
-                      <TableCell>
-                        {pos.is_active === false ? (
-                          <Badge variant="secondary">Неактивна</Badge>
-                        ) : (
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                            Активна
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+            <div className="space-y-2">
+              {topLevelPositions.map((pos: any) => {
+                const children = getChildren(pos.id)
+                return (
+                  <div key={pos.id}>
+                    <div className={`flex items-center gap-3 px-3 py-2 rounded-lg border ${pos.is_active === false ? 'opacity-50 bg-muted/50' : 'bg-background'}`}>
+                      <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="font-mono text-sm font-medium flex-1">{pos.path || '---'}</span>
+                      {children.length > 0 && (
+                        <span className="text-xs text-muted-foreground">{children.filter((c: any) => c.is_active !== false).length} мест</span>
+                      )}
+                      {pos.qr_code && <span className="text-xs text-muted-foreground">QR: {pos.qr_code}</span>}
+                      {pos.is_active === false ? (
+                        <Badge variant="secondary" className="text-xs">Неактивна</Badge>
+                      ) : (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs">Активна</Badge>
+                      )}
+                    </div>
+                    {children.length > 0 && (
+                      <div className="ml-8 mt-1 space-y-1">
+                        {children.map((child: any) => (
+                          <div key={child.id} className={`flex items-center gap-3 px-3 py-1.5 rounded-md border border-dashed ${child.is_active === false ? 'opacity-50 bg-muted/50' : 'bg-muted/30'}`}>
+                            <div className="w-3 h-3 border-l-2 border-b-2 border-muted-foreground/30 shrink-0" />
+                            <span className="font-mono text-sm flex-1">{child.path || '---'}</span>
+                            {child.qr_code && <span className="text-xs text-muted-foreground">QR: {child.qr_code}</span>}
+                            {child.is_active === false ? (
+                              <Badge variant="secondary" className="text-xs">Неактивна</Badge>
+                            ) : (
+                              <Badge className="bg-green-100 text-green-700 hover:bg-green-100 text-xs">Активна</Badge>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </CardContent>
       </Card>
+      {/* Delete Confirmation */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-sm mx-4">
+            <CardHeader>
+              <CardTitle className="text-destructive">Удалить оборудование?</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm">
+                Вы уверены, что хотите удалить <strong>{equipment.name}</strong>?
+                Все позиции будут удалены. Действие необратимо.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+                  Отмена
+                </Button>
+                <Button variant="destructive" onClick={handleDelete}>
+                  Удалить
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
