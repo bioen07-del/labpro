@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS lots (
     final_cells NUMERIC,
     viability NUMERIC,
     status TEXT DEFAULT 'ACTIVE',
+    end_date DATE,                     -- Auto-set by trigger when all containers disposed
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
