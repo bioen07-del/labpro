@@ -1,8 +1,8 @@
 # LabPro — Статус проекта
 
-**Дата обновления:** 11.02.2026
-**Версия:** 1.25.10
-**Реализовано:** ~95% от ТЗ (25 фаз)
+**Дата обновления:** 12.02.2026
+**Версия:** 1.25.12
+**Реализовано:** ~96% от ТЗ (25 фаз + 12 итераций)
 **Стек:** Next.js 16 + TypeScript 5.9 + React 19 + Tailwind 4 + Supabase + Vercel
 
 ---
@@ -12,8 +12,10 @@
 | Файл | Назначение |
 |------|------------|
 | `ТЗ_LabPro.md` | Техническое задание (source of truth) |
-| `PROGRESS.md` | История разработки (25 фаз) |
+| `PROGRESS.md` | История разработки (25 фаз + итерации) |
 | `PROJECT_STATUS.md` | Текущий статус, нерешённые позиции, бэклог (этот файл) |
+| `CULTURE_METRICS.md` | Формулы метрик культур (8 вариантов) |
+| `CLAUDE_MEMORY.md` | AI-контекст для межсессионной работы |
 | `rules.md` | Правила разработки |
 
 ---
@@ -24,69 +26,91 @@
 
 | # | Позиция | Раздел ТЗ | Статус | Детали |
 |---|---------|-----------|--------|--------|
-| 1 | Списание сред при SEED + Freeze | 7.1, 7.5, 8.3 | ЗАКРЫТО ✅ | Компоненты передаются в API и списываются. Пофлаконный учёт через writeOffBatchVolume. Freeze: 3 среды (заморозка/диссоциация/промывка) с объёмами |
-| 2 | Выдача — бизнес-логика (Issue workflow) | 9.2 | ЗАКРЫТО ✅ | API: reserveBankForOrder, issueOrderItems, cancelOrder. UI: кнопки Резервировать/Выдать/Отменить на карточке заказа |
-| ~~3~~ | ~~Процедура ISOLATION~~ | ~~7.10~~ | ЗАКРЫТО | Реализовано как extraction_method в SEED (не отдельная операция) |
-| 4 | Прогноз клеток (Cell Forecast) | 17 | ЗАКРЫТО ✅ | API: calculateAndUpdateCoefficient (авто после пассажа), forecastCells. UI: виджет прогноза на лоте |
+| 1 | Списание сред при SEED + Freeze | 7.1, 7.5, 8.3 | ЗАКРЫТО ✅ | writeOffBatchVolume, 3 среды при заморозке |
+| 2 | Выдача — бизнес-логика | 9.2 | ЗАКРЫТО ✅ | reserveBankForOrder, issueOrderItems, cancelOrder |
+| 3 | Прогноз клеток (Cell Forecast) | 17 | ЗАКРЫТО ✅ | calculateAndUpdateCoefficient, forecastCells, forecastGrowth |
+| 4 | Метрики культуры (Td, PD, CPD) | 17 | ЗАКРЫТО ✅ | calculateCultureMetrics(), CULTURE_METRICS.md |
 
 ### Приоритет: Средний
 
 | # | Позиция | Раздел ТЗ | Статус | Детали |
 |---|---------|-----------|--------|--------|
-| 5 | QR-генерация и печать этикеток | 12, 22.4 | ЗАКРЫТО ✅ | QRLabel компонент (react-qr-code), печать этикеток на контейнерах и банках |
-| 6 | Графики в Culture Passport | 11.4, 15.6 | ЗАКРЫТО ✅ | recharts: график конфлюэнтности (LineChart) на passport/page.tsx |
-| 7 | Уведомления срочности обслуживания | 5.13 | ЗАКРЫТО ✅ | Badges ТО на списке оборудования + Equipment alerts карточка на дашборде (overdue/urgent/soon) |
+| 5 | QR-генерация и печать | 12, 22.4 | ЗАКРЫТО ✅ | QRLabel, позиции оборудования, контейнеры, банки |
+| 6 | Графики в паспортах | 11.4, 15.6 | ЗАКРЫТО ✅ | recharts: конфлюэнтность, Td/PD по пассажам |
+| 7 | Уведомления ТО | 5.13 | ЗАКРЫТО ✅ | Badges + dashboard alerts |
+| 8 | Usage tags для сред | 8.3 | ЗАКРЫТО ✅ | FEED/DISSOCIATION/WASH/SEED/FREEZING/THAW |
 
 ### Приоритет: Низкий (инфраструктура)
 
 | # | Позиция | Раздел ТЗ | Статус | Детали |
 |---|---------|-----------|--------|--------|
-| 8 | RBAC — RLS по ролям | 18 | ЧАСТИЧНО | Фундамент: 5 ролей в типах, users.role в БД, RLS включён на 24+ таблицах, audit UI. Нет: permission matrix enforcement, role-based route protection, updateUserRole(), все RLS = `USING(true)` |
-| ~~9~~ | ~~E2E-тесты~~ | — | ОТЛОЖЕНО | Нет тестового фреймворка. Низкий приоритет до стабилизации бизнес-логики |
-| ~~10~~ | ~~PWA / офлайн-режим~~ | — | ОТЛОЖЕНО | Нет manifest/SW. Низкий приоритет |
-| ~~11~~ | ~~Real-time подписки~~ | — | ЗАКРЫТО | Реализовано: 5 подписок (orders, operations, containers, banks, qc_tests) через Supabase Realtime |
+| 9 | RBAC — RLS по ролям | 18 | ЧАСТИЧНО | 5 ролей в типах, users.role, RLS включён на 24+ таблицах. Нет: permission matrix, role-based routes, все RLS = `USING(true)` |
+| ~~10~~ | ~~E2E-тесты~~ | — | ОТЛОЖЕНО | Низкий приоритет |
+| ~~11~~ | ~~PWA / офлайн~~ | — | ОТЛОЖЕНО | Низкий приоритет |
+| ~~12~~ | ~~Real-time~~ | — | ЗАКРЫТО | 5 подписок Supabase Realtime |
 
 ---
 
-## План реализации (Фаза 25)
+## Аудит метрик операций (12.02.2026)
 
-### Этап 25.1: Списание сред SEED + Freeze ✅
-- [x] SEED: передать additionalComponents в API createCultureFromDonation
-- [x] SEED: добавить backend списание компонентов через writeOffBatchVolume
-- [x] SEED: перевести списание среды на writeOffBatchVolume (пофлаконный)
-- [x] Freeze: передать dissociationMediumId + washMediumId (+ volumes) в API
-- [x] Freeze: добавить backend списание диссоциации и промывки через writeOffBatchVolume
-- [x] Freeze: перевести freezing_medium на writeOffBatchVolume
+### Текущее состояние сохранения метрик
 
-### Этап 25.2: Выдача — бизнес-логика ✅
-- [x] API: reserveBankForOrder() — банк → RESERVED, криовиалы → RESERVED
-- [x] API: issueOrderItems() — криовиалы → ISSUED, заявка → COMPLETED
-- [x] API: cancelOrder() — освободить резервы → APPROVED
-- [x] UI: кнопки на карточке заявки (Резервировать, Выдать, Отменить)
+| Операция | operation_metrics | Лот обновляется | Контейнеры | Примечание |
+|----------|:-:|:-:|:-:|----------|
+| OBSERVE | ❌ | ❌ | ✅ confluent_percent, morphology | Конфлюэнтность только в контейнерах |
+| PASSAGE | ✅ | ✅ initial_cells (новый), containers | ✅ USED (старые), IN_CULTURE (новые) | Полный цикл |
+| FEED | ❌ | ❌ | ❌ | Только списание сред |
+| FREEZE | ✅ | ✅ final_cells, viability, harvest_at | ✅ IN_BANK | v1.25.11: фикс лота |
+| THAW | ✅ | ✅ initial_cells из vial.cells_count | ✅ IN_CULTURE (новый) | v1.25.12: фикс |
+| DISPOSE | ❌ | ✅ статус (если все утилизированы) | ✅ DISPOSE | Только статусы |
 
-### Этап 25.3: Прогноз клеток ✅
-- [x] API: calculateAndUpdateCoefficient() — расчёт из истории пассажей
-- [x] API: автообновление cultures.coefficient после пассажа
-- [x] UI: виджет прогноза на карточке лота
+### Ключевые принципы метрик
+- **кл/мл (concentration)** — технический показатель, только в operation_metrics для расчётов, НЕ отображается на UI карточек лота/культуры
+- **operation_metrics** — история «в момент операции» (concentration, viability, total_cells, volume_ml)
+- **lot record** — lifecycle state (initial_cells, final_cells, viability, seeded_at, harvest_at)
+- **calculateCultureMetrics()** — использует lot.initial_cells, lot.final_cells, lot.harvest_at для PD/Td
 
-### Этап 25.4: QR-генерация ✅
-- [x] npm install qrcode react-qr-code
-- [x] Компонент QRLabel (QR + метаданные + печать)
-- [x] QR-этикетки на контейнерах и банках
+### TODO: Метрики (для будущих итераций)
+- [ ] OBSERVE: сохранять среднюю конфлюэнтность в operation_metrics (для истории)
+- [ ] FEED: опционально принимать viability/notes
+- [ ] Стандартизировать: что в operation_metrics vs что в lot record
 
-### Этап 25.5: Графики в паспорте ✅
-- [x] npm install recharts
-- [x] График конфлюэнтности (LineChart, X=дата, Y=%)
-- [x] Интеграция в passport/page.tsx
+---
 
-### Этап 25.6: Уведомления ТО ✅
-- [x] isMaintenanceSoon() + isMaintenanceOverdue() + isMaintenanceUrgent() хелперы
-- [x] Badges «Скоро ТО» / «Срочно ТО» / «ТО просрочено» на списке оборудования
-- [x] Equipment alerts карточка на дашборде (overdue/urgent/soon)
+## Сессия 12.02.2026 (дом, awesome-bohr)
 
-### Этап 25.7: Версионирование ✅
-- [x] APP_VERSION + CHANGELOG в lib/version.ts
-- [x] Кликабельный футер на дашборде (версия → журнал изменений в Dialog)
+### v1.25.11
+- [x] Заморозка: метрики (final_cells, viability, harvest_at) сохраняются в лот
+- [x] Заморозка: криовиалы фильтруются по тегу FREEZING (usage_tags)
+- [x] Заморозка: рабочий объём — единый или индивидуальный по пробиркам
+- [x] API: getBatches поддерживает фильтрацию по usage_tag
+
+### v1.25.12
+- [x] Убрана «Концентрация кл/мл» с карточек лота и культуры (технический показатель)
+- [x] Разморозка: initial_cells = cryo_vial.cells_count + operation_metrics
+- [x] Заморозка: volume_ml = реальный объём суспензии (не кол-во виалов)
+- [x] Лот: бейдж «Банк» (MCB/WCB) с кодом и статусом QC
+- [x] API: getBanks поддерживает lot_id
+
+---
+
+## TODO на следующую сессию (работа, 13.02.2026)
+
+### Приоритет: Высокий
+1. **Синхронизация**: `git fetch origin && git merge origin/awesome-bohr` в рабочую ветку (silly-tu или master) — забрать v1.25.11 и v1.25.12
+2. **Проверить заморозку**: Заморозить CT-0001-L4, убедиться что метрики появились на карточке лота, бейдж банка виден
+3. **Проверить фильтрацию криовиалов**: В справочнике номенклатуры пометить криовиалы тегом FREEZING → проверить что в форме заморозки показываются только они
+4. **Проверить разморозку**: Разморозить из банка, убедиться initial_cells перенеслись в новый лот
+
+### Приоритет: Средний
+5. **Рабочий объём проверить на UI**: Открыть форму заморозки, проверить toggle единый/индивидуальный, расчёты cellsPerMl
+6. **Бейдж банка на лоте**: Проверить что CT-0001-L4 показывает бейдж MCB/WCB с кодом
+7. **Метрики после заморозки**: Убедиться что PDL/Td считается корректно (final_cells, harvest_at заполнены)
+
+### Приоритет: Низкий (бэклог)
+8. OBSERVE: добавить запись средней конфлюэнтности в operation_metrics
+9. RBAC: реализовать permission matrix и role-based route protection
+10. Проверить ТЗ на оставшиеся нереализованные пункты
 
 ---
 
@@ -110,13 +134,13 @@
 
 | Метрика | Значение |
 |---------|----------|
-| Версия | 1.25.03 |
-| Страницы | 38 маршрутов |
+| Версия | 1.25.12 |
+| Страницы | 50 маршрутов |
 | UI-компоненты | 22 (shadcn/ui + QRLabel + Switch) |
-| API (api.ts) | ~4050 строк |
-| Типы (index.ts) | ~760 строк |
-| SQL миграции | 14 файлов |
-| Фаз разработки | 25 |
+| API (api.ts) | ~4625 строк |
+| Типы (index.ts) | ~786 строк |
+| SQL миграции | 15 файлов |
+| Фаз разработки | 25 + 12 итераций |
 | npm-зависимости | +qrcode, react-qr-code, recharts |
 
 ---
@@ -127,33 +151,28 @@
 - **Работа — Worktree**: `C:\Users\volchkov.se\.claude-worktrees\LabPro\silly-tu` (branch `silly-tu`)
 - **Работа — Master worktree**: `C:\AICoding\Cline\LabPro` (branch `master` — для Vercel deploy)
 - **Работа — Merge в master**: `cd /c/AICoding/Cline/LabPro && git merge silly-tu && git push origin master`
-- **Дом — Репозиторий**: `C:\VSCline\LabPro` (branch `master`)
+- **Дом — Master**: `C:\VSCline\LabPro` (branch `master`)
+- **Дом — Worktree**: `C:\Users\bioen\.claude-worktrees\LabPro\awesome-bohr` (branch `awesome-bohr`)
 - **Git remote**: `https://github.com/bioen07-del/labpro.git`
 - **Supabase ref**: `cyyqzuuozuzlhdlzvohh`
-- **Supabase Management API Token**: `sbp_d03bd67e20f574ed677837f3308abf96d6d51b0d`
-
-### Windows: особенности среды
-- PowerShell: `npx` требует `Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process; $LASTEXITCODE = 0;` перед вызовом
-- PowerShell: `git`, `node`, `cmd` часто не в PATH — использовать Git Bash через Bash tool
-- Git Bash пути (работа): `/c/Users/volchkov.se/.claude-worktrees/LabPro/silly-tu`
-- Git Bash пути (дом): `/c/VSCline/LabPro`
-- Кириллические имена файлов: использовать Glob tool, не PowerShell/cmd
 
 ### Ключевые паттерны кода
-- **Пофлаконный учёт**: `writeOffBatchVolume()` в api.ts — списывает из текущего флакона, авто-открытие следующего
-- **Списание сред**: SEED, Passage, Freeze — все через writeOffBatchVolume для ready_media с привязкой к batch
-- **Alerts оборудования**: `getDashboardStats()` возвращает `equipmentAlerts[]` (overdue/urgent/soon по next_maintenance/next_validation)
-- **Кодогенерация**: `{CultureCode}-L{N}` для лотов, `{LotNumber}-P{passage}-NNN` для контейнеров
-- **Версионирование**: `frontend/src/lib/version.ts` — APP_VERSION + CHANGELOG. Обновлять после каждого изменения!
+- **Пофлаконный учёт**: `writeOffBatchVolume()` — списывает из текущего флакона, авто-открытие следующего
+- **Списание сред**: SEED, Passage, Freeze — все через writeOffBatchVolume
+- **Кодогенерация**: `{CultureCode}-L{N}` для лотов, `BK-XXXX` для банков
+- **Usage tags**: FEED/DISSOCIATION/WASH/SEED/FREEZING/THAW — фильтрация сред по назначению
+- **Метрики**: concentration/volume — технические (только в operation_metrics), НЕ на UI
+- **Версионирование**: `frontend/src/lib/version.ts` — обновлять после каждого изменения!
 
 ### Ключевые файлы
 | Файл | Строк | Назначение |
 |------|-------|------------|
-| `frontend/src/lib/api.ts` | ~4050 | Все API-функции (Supabase) |
-| `frontend/src/types/index.ts` | ~760 | TypeScript-типы |
+| `frontend/src/lib/api.ts` | ~4625 | Все API-функции (Supabase) |
+| `frontend/src/types/index.ts` | ~786 | TypeScript-типы |
 | `frontend/src/app/page.tsx` | ~650 | Дашборд |
-| `frontend/src/lib/version.ts` | ~74 | Версия + changelog |
+| `frontend/src/lib/version.ts` | ~215 | Версия + changelog |
+| `CULTURE_METRICS.md` | Формулы | Td, PD, CPD, forecast |
 
 ---
 
-*Обновлено: 11.02.2026*
+*Обновлено: 12.02.2026*

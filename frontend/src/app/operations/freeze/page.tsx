@@ -398,6 +398,7 @@ function FreezePageInner() {
         cryo_batch_id: cryoBatchId || undefined,
         viability_percent: Number(viability),
         concentration: Number(concentration),
+        volume_ml: Number(totalVolume) || undefined,
         notes: notes || undefined,
       })
 
