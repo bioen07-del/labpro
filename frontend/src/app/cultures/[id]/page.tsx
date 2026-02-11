@@ -408,63 +408,155 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
       <Separator />
 
       {/* ==================== SUMMARY CARDS ==================== */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-50 p-2.5">
-                <Beaker className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Тип клеток</p>
-                <p className="font-semibold text-sm">{culture.culture_type?.name || '---'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {(() => {
+        // Gather latest metrics across all operations
+        let latestViability: number | null = null
+        let latestConcentration: number | null = null
+        let lastObserveDate: string | null = null
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-green-50 p-2.5">
-                <Boxes className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Активных лотов</p>
-                <p className="font-semibold text-lg">{activeLots.length} <span className="text-sm font-normal text-muted-foreground">/ {lots.length}</span></p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        for (const op of operations) {
+          const metrics = (op as any).operation_metrics?.[0]
+          if (metrics?.viability_percent != null && latestViability === null) latestViability = metrics.viability_percent
+          if (metrics?.concentration != null && latestConcentration === null) latestConcentration = metrics.concentration
+          if (!lastObserveDate && (op.type === 'OBSERVE' || op.type === 'PASSAGE')) {
+            lastObserveDate = op.started_at || op.created_at
+          }
+        }
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-purple-50 p-2.5">
-                <GitBranch className="h-5 w-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Макс. пассаж</p>
-                <p className="font-semibold text-lg">P{maxPassage}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        // Max confluency across all active containers in all lots
+        const allActiveConts = lots.flatMap(l => (l.containers || []).filter((c: Container) => c.container_status === 'IN_CULTURE'))
+        const maxConfluent = allActiveConts.reduce((max: number, c: Container) => Math.max(max, (c as any).confluent_percent ?? 0), 0)
 
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-amber-50 p-2.5">
-                <Package className="h-5 w-5 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Контейнеры</p>
-                <p className="font-semibold text-lg">{activeContainers} <span className="text-sm font-normal text-muted-foreground">/ {totalContainers}</span></p>
-              </div>
+        return (
+          <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-green-50 p-2.5">
+                    <Boxes className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Активных лотов</p>
+                    <p className="font-semibold text-lg">{activeLots.length} <span className="text-sm font-normal text-muted-foreground">/ {lots.length}</span></p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-purple-50 p-2.5">
+                    <GitBranch className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Макс. пассаж</p>
+                    <p className="font-semibold text-lg">P{maxPassage}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-amber-50 p-2.5">
+                    <Package className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Контейнеры</p>
+                    <p className="font-semibold text-lg">{activeContainers} <span className="text-sm font-normal text-muted-foreground">/ {totalContainers}</span></p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-blue-50 p-2.5">
+                    <Activity className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Конфлюэнтность</p>
+                    <p className={`font-semibold text-lg ${maxConfluent >= 80 ? 'text-green-600' : maxConfluent >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {maxConfluent > 0 ? `${maxConfluent}%` : '---'}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Bio metrics row */}
+          {(latestViability != null || latestConcentration != null || lastObserveDate) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {latestViability != null && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-emerald-50 p-2.5">
+                        <Activity className="h-5 w-5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Жизнеспособность</p>
+                        <p className="font-semibold text-lg">{latestViability}%</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {latestConcentration != null && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-indigo-50 p-2.5">
+                        <Beaker className="h-5 w-5 text-indigo-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Концентрация</p>
+                        <p className="font-semibold text-sm">{latestConcentration.toLocaleString('ru-RU')} кл/мл</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {culture.coefficient != null && culture.coefficient > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-rose-50 p-2.5">
+                        <Beaker className="h-5 w-5 text-rose-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Коэффициент роста</p>
+                        <p className="font-semibold text-lg">{culture.coefficient.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {lastObserveDate && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-sky-50 p-2.5">
+                        <Clock className="h-5 w-5 text-sky-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Последний осмотр</p>
+                        <p className="font-semibold text-sm">{formatDate(lastObserveDate)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          )}
+          </>
+        )
+      })()}
 
       {/* ==================== INFO CARD ==================== */}
       <Card>

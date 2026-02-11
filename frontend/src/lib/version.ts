@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.00"
+export const APP_VERSION = "1.25.02"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,25 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.02",
+    date: "11.02.2026",
+    changes: [
+      "Метрики операций (viability, concentration, yield) на карточке лота",
+      "Уровень доверия (confidence) в прогнозе клеточного выхода",
+      "Сводная статистика культуры: клетки, viability, последний осмотр",
+      "История расхода партий (inventory_movements) на карточке партии",
+    ],
+  },
+  {
+    version: "1.25.01",
+    date: "10.02.2026",
+    changes: [
+      "Исправлен фильтр готовых сред на складе",
+      "Исправлены ошибки TypeScript (Tooltip formatter, OrderStatus, implicit any)",
+      "Обновлены пути в техдокументации",
+    ],
+  },
   {
     version: "1.25.00",
     date: "10.02.2026",

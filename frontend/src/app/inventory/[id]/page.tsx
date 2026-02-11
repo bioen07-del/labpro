@@ -2,7 +2,7 @@
 
 import { use, useState, useEffect } from "react"
 import Link from "next/link"
-import { ArrowLeft, Loader2, AlertCircle, AlertTriangle, Package, Pencil, Save, X } from "lucide-react"
+import { ArrowLeft, Loader2, AlertCircle, AlertTriangle, Package, Pencil, Save, X, History } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -22,10 +22,12 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableHead,
+  TableHeader,
   TableRow,
 } from "@/components/ui/table"
 
-import { getBatchById, updateBatch } from "@/lib/api"
+import { getBatchById, updateBatch, getInventoryMovements } from "@/lib/api"
 import { formatDate, daysUntilExpiration, getExpirationWarningLevel } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -101,6 +103,7 @@ export default function BatchDetailPage({
 
   const [loading, setLoading] = useState(true)
   const [batch, setBatch] = useState<any>(null)
+  const [movements, setMovements] = useState<any[]>([])
   const [error, setError] = useState<string | null>(null)
 
   // Edit mode
@@ -129,8 +132,12 @@ export default function BatchDetailPage({
   async function loadBatch() {
     setLoading(true)
     try {
-      const data = await getBatchById(id)
+      const [data, movData] = await Promise.all([
+        getBatchById(id),
+        getInventoryMovements({ batch_id: id }).catch(() => []),
+      ])
       setBatch(data)
+      setMovements(movData || [])
     } catch (err: any) {
       const msg = err?.message || "Ошибка загрузки данных партии"
       setError(msg)
@@ -600,6 +607,51 @@ export default function BatchDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* Inventory Movements */}
+      {movements.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              История расхода ({movements.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Дата</TableHead>
+                  <TableHead>Тип</TableHead>
+                  <TableHead>Кол-во</TableHead>
+                  <TableHead>Примечание</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movements.map((mv: any) => (
+                  <TableRow key={mv.id}>
+                    <TableCell className="text-sm whitespace-nowrap">
+                      {mv.moved_at ? formatDate(mv.moved_at) : '---'}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={mv.movement_type === 'RECEIVE' ? 'default' : 'secondary'}
+                        className={mv.movement_type === 'CONSUME' ? 'bg-orange-100 text-orange-800' : mv.movement_type === 'RECEIVE' ? 'bg-green-100 text-green-800' : ''}>
+                        {mv.movement_type === 'CONSUME' ? 'Расход' : mv.movement_type === 'RECEIVE' ? 'Приход' : mv.movement_type === 'ADJUST' ? 'Корректировка' : mv.movement_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm font-mono">
+                      {mv.movement_type === 'CONSUME' ? '-' : '+'}{mv.quantity_change != null ? mv.quantity_change : mv.quantity || '---'} {batch.unit || ''}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
+                      {mv.notes || mv.reason || '---'}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Back button */}
       <div>

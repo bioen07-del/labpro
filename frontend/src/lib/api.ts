@@ -683,7 +683,8 @@ export async function getOperations(filters?: { lot_id?: string; type?: string; 
       operation_containers:operation_containers(
         *,
         container:containers(*)
-      )
+      ),
+      operation_metrics:operation_metrics(*)
     `)
     .order('started_at', { ascending: false })
   

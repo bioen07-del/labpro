@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getLotById, getContainersByLot, getOperations, forecastCells } from "@/lib/api"
+import { getLotById, getContainersByLot, getOperations, forecastCells, calculateAndUpdateCoefficient } from "@/lib/api"
 
 // ==================== CONSTANTS ====================
 
@@ -131,6 +131,7 @@ export default function LotDetailPage({
   const [operations, setOperations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [confidence, setConfidence] = useState<'high' | 'medium' | 'none'>('none')
 
   // Container selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -146,6 +147,14 @@ export default function LotDetailPage({
       setLot(lotData)
       setContainers(containersData || [])
       setOperations(opsData || [])
+
+      // Load confidence level for cell forecast
+      if (lotData?.culture?.id) {
+        try {
+          const coeffData = await calculateAndUpdateCoefficient(lotData.culture.id)
+          setConfidence(coeffData.confidence)
+        } catch { /* ignore */ }
+      }
     } catch (err: any) {
       const msg = err?.message || "Ошибка загрузки данных лота"
       setError(msg)
@@ -401,11 +410,106 @@ export default function LotDetailPage({
         </CardContent>
       </Card>
 
+      {/* ==================== LOT METRICS ==================== */}
+      {(() => {
+        // Extract metrics from operations (latest values)
+        const passageOps = operations.filter((op: any) => op.type === 'PASSAGE' || op.type === 'FREEZE')
+        const observeOps = operations.filter((op: any) => op.type === 'OBSERVE' || op.type === 'PASSAGE')
+
+        // Get latest metrics from any operation that has them
+        let latestConcentration: number | null = null
+        let latestViability: number | null = null
+        let latestTotalCells: number | null = null
+        let latestVolume: number | null = null
+
+        for (const op of operations) {
+          const metrics = (op.operation_metrics as any[])?.[0]
+          if (!metrics) continue
+          if (latestConcentration === null && metrics.concentration) latestConcentration = metrics.concentration
+          if (latestViability === null && metrics.viability_percent) latestViability = metrics.viability_percent
+          if (latestTotalCells === null && metrics.total_cells) latestTotalCells = metrics.total_cells
+          if (latestVolume === null && metrics.volume_ml) latestVolume = metrics.volume_ml
+        }
+
+        // Latest confluency from containers
+        const maxConfluent = activeContainers.reduce((max: number, c: any) => Math.max(max, c.confluent_percent ?? 0), 0)
+
+        // Last observation date
+        const lastObserve = observeOps[0]
+        const lastObserveDate = lastObserve?.started_at || lastObserve?.created_at
+
+        const hasMetrics = latestConcentration || latestViability || latestTotalCells || maxConfluent > 0
+
+        if (!hasMetrics) return null
+
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Метрики лота</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {maxConfluent > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Конфлюэнтность (макс.)</p>
+                    <p className={`font-semibold text-lg ${confluenceColor(maxConfluent)}`}>{maxConfluent}%</p>
+                  </div>
+                )}
+                {latestViability != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Жизнеспособность</p>
+                    <p className="font-semibold text-lg">{latestViability}%</p>
+                  </div>
+                )}
+                {latestConcentration != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Концентрация</p>
+                    <p className="font-medium">{latestConcentration.toLocaleString('ru-RU')} кл/мл</p>
+                  </div>
+                )}
+                {latestTotalCells != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Общее кол-во клеток</p>
+                    <p className="font-medium">{(latestTotalCells / 1e6).toFixed(2)} млн</p>
+                  </div>
+                )}
+                {latestVolume != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Объём суспензии</p>
+                    <p className="font-medium">{latestVolume} мл</p>
+                  </div>
+                )}
+                {lastObserveDate && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Последний осмотр</p>
+                    <p className="font-medium">{fmtDate(lastObserveDate)}</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
+
       {/* ==================== CELL FORECAST ==================== */}
       {culture?.coefficient != null && culture.coefficient > 0 && activeContainers.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Прогноз выхода клеток</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg">Прогноз выхода клеток</CardTitle>
+              <Badge
+                variant="outline"
+                className={
+                  confidence === 'high'
+                    ? 'bg-green-100 text-green-800 border-green-300'
+                    : confidence === 'medium'
+                      ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                      : 'bg-gray-100 text-gray-600 border-gray-300'
+                }
+              >
+                {confidence === 'high' ? 'Высокая точность' : confidence === 'medium' ? 'Средняя точность' : 'Нет данных'}
+              </Badge>
+            </div>
           </CardHeader>
           <CardContent>
             {(() => {
@@ -600,13 +704,17 @@ export default function LotDetailPage({
                 <TableRow>
                   <TableHead>Дата</TableHead>
                   <TableHead>Тип</TableHead>
+                  <TableHead>Viability</TableHead>
+                  <TableHead>Конц-ция</TableHead>
                   <TableHead>Примечания</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {operations.map((op) => (
+                {operations.map((op) => {
+                  const metrics = (op.operation_metrics as any[])?.[0]
+                  return (
                   <TableRow key={op.id}>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm whitespace-nowrap">
                       {fmtDateTime(op.started_at || op.created_at)}
                     </TableCell>
                     <TableCell>
@@ -620,11 +728,18 @@ export default function LotDetailPage({
                         {OP_TYPE_LABEL[op.type] || op.type}
                       </Badge>
                     </TableCell>
+                    <TableCell className="text-sm">
+                      {metrics?.viability_percent != null ? `${metrics.viability_percent}%` : "\u2014"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {metrics?.concentration != null ? `${metrics.concentration.toLocaleString('ru-RU')}` : "\u2014"}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
                       {op.notes || "\u2014"}
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           )}
