@@ -26,6 +26,8 @@ import {
   getDisposeReasons, createDisposeReason, updateDisposeReason, deleteDisposeReason,
   getAllCultureTypeTissueLinks, linkCultureTypeToTissueType, unlinkCultureTypeFromTissueType, updateCultureTypeTissueLink,
 } from '@/lib/api'
+import type { UsageTag } from '@/types'
+import { USAGE_TAG_LABELS } from '@/types'
 
 // ---- Tab configuration ----
 
@@ -191,7 +193,7 @@ export default function ReferencesPage() {
       case 'culture_types':
         return { code: '', name: '', description: '', optimal_confluent: '', observe_interval_days: '', feed_interval_days: '', is_active: true }
       case 'media_reagents':
-        return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', is_active: true }
+        return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', usage_tags: [], is_active: true }
       case 'consumables':
         return { code: '', name: '', category: 'CONSUMABLE', unit: 'шт', container_type_id: '', storage_requirements: '', is_active: true }
       case 'morphology_types':
@@ -206,7 +208,7 @@ export default function ReferencesPage() {
   const TABLE_FIELDS: Record<string, string[]> = {
     culture_types: ['code', 'name', 'description', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'is_active'],
     tissue_types: ['code', 'name', 'tissue_form', 'is_active'],
-    media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'is_active'],
+    media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'usage_tags', 'is_active'],
     consumables: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'is_active'],
     container_types: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
     morphology_types: ['code', 'name', 'description'],
@@ -578,6 +580,7 @@ export default function ReferencesPage() {
           <TableHead>Код</TableHead>
           <TableHead>Название</TableHead>
           <TableHead>Категория</TableHead>
+          <TableHead>Назначение</TableHead>
           <TableHead>Единица</TableHead>
           <TableHead>Статус</TableHead>
           <TableHead className="text-right">Действия</TableHead>
@@ -585,7 +588,7 @@ export default function ReferencesPage() {
       </TableHeader>
       <TableBody>
         {nomItems.length === 0 ? (
-          <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Нет данных</TableCell></TableRow>
+          <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Нет данных</TableCell></TableRow>
         ) : nomItems.map(item => (
           <TableRow key={item.id} className={item.is_active === false ? 'opacity-50' : ''}>
             <TableCell className="font-mono text-sm">{item.code || '-'}</TableCell>
@@ -594,6 +597,18 @@ export default function ReferencesPage() {
               <Badge variant="outline">
                 {CATEGORY_LABELS[item.category] || item.category}
               </Badge>
+            </TableCell>
+            <TableCell>
+              <div className="flex flex-wrap gap-1">
+                {(item.usage_tags || []).map((tag: UsageTag) => (
+                  <Badge key={tag} variant="secondary" className="text-xs">
+                    {USAGE_TAG_LABELS[tag] || tag}
+                  </Badge>
+                ))}
+                {(!item.usage_tags || item.usage_tags.length === 0) && (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </div>
             </TableCell>
             <TableCell>{item.unit || '-'}</TableCell>
             <TableCell>{renderStatusBadge(item)}</TableCell>
@@ -759,6 +774,31 @@ export default function ReferencesPage() {
               <div><Label>Единица измерения</Label><Input value={form.unit || ''} onChange={e => updateForm('unit', e.target.value)} placeholder="мл / г" /></div>
             </div>
             <div><Label>Условия хранения</Label><Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="+2..+8°C" /></div>
+            {/* Usage tags */}
+            <div className="space-y-2">
+              <Label>Назначение (этапы операций)</Label>
+              <div className="grid grid-cols-3 gap-3">
+                {(Object.entries(USAGE_TAG_LABELS) as [UsageTag, string][]).map(([tag, label]) => {
+                  const tags: UsageTag[] = form.usage_tags || []
+                  const checked = tags.includes(tag)
+                  return (
+                    <div key={tag} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`tag-${tag}`}
+                        checked={checked}
+                        onCheckedChange={(v) => {
+                          const next = v
+                            ? [...tags, tag]
+                            : tags.filter((t: UsageTag) => t !== tag)
+                          updateForm('usage_tags', next)
+                        }}
+                      />
+                      <Label htmlFor={`tag-${tag}`} className="cursor-pointer text-sm font-normal">{label}</Label>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )
 

@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS nomenclatures (
     manufacturer TEXT,
     unit TEXT,
     storage_requirements TEXT,
+    usage_tags TEXT[] DEFAULT '{}',
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
 );

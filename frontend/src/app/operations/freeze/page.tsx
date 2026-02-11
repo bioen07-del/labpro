@@ -30,7 +30,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   getLots,
   getContainersByLot,
-  getAvailableMediaForFeed,
+  getAvailableMediaByUsage,
+  buildMediaOptions,
+  parseMediumId,
   getPositions,
   getBanks,
   getBatches,
@@ -95,7 +97,9 @@ function FreezePageInner() {
   // --- reference data ---
   const [lots, setLots] = useState<any[]>([])
   const [containers, setContainers] = useState<any[]>([])
-  const [media, setMedia] = useState<any[]>([])
+  const [dissociationOptions, setDissociationOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
+  const [washOptions, setWashOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
+  const [freezingOptions, setFreezingOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [positions, setPositions] = useState<any[]>([])
 
   // --- loading flags ---
@@ -182,14 +186,18 @@ function FreezePageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [lotsData, mediaData, positionsData, cryoBatchesData] = await Promise.all([
+        const [lotsData, dissResult, washResult, freezeResult, positionsData, cryoBatchesData] = await Promise.all([
           getLots({ status: 'ACTIVE' }),
-          getAvailableMediaForFeed(),
+          getAvailableMediaByUsage('DISSOCIATION'),
+          getAvailableMediaByUsage('WASH'),
+          getAvailableMediaByUsage('FREEZING'),
           getPositions({ is_active: true }),
           getBatches({ status: 'AVAILABLE', category: 'CONSUMABLE' }),
         ])
         setLots(lotsData || [])
-        setMedia(mediaData || [])
+        setDissociationOptions(buildMediaOptions(dissResult.readyMedia, dissResult.reagentBatches))
+        setWashOptions(buildMediaOptions(washResult.readyMedia, washResult.reagentBatches))
+        setFreezingOptions(buildMediaOptions(freezeResult.readyMedia, freezeResult.reagentBatches))
         setPositions(positionsData || [])
         setCryoBatches(cryoBatchesData || [])
 
@@ -352,6 +360,11 @@ function FreezePageInner() {
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
+      // Parse combined medium IDs
+      const parsedFreezing = parseMediumId(freezingMediumId)
+      const parsedDissociation = dissociationMediumId ? parseMediumId(dissociationMediumId) : null
+      const parsedWash = washMediumId ? parseMediumId(washMediumId) : null
+
       const result = await createOperationFreeze({
         lot_id: selectedLotId,
         container_ids: selectedContainerIds,
@@ -359,11 +372,14 @@ function FreezePageInner() {
         freezer_position_id: positionId,
         cells_per_vial: cellsPerVial,
         total_cells: totalCells,
-        freezing_medium: freezingMediumId,
+        freezing_medium: parsedFreezing?.type === 'ready_medium' ? parsedFreezing.id : undefined,
+        freezing_medium_batch_id: parsedFreezing?.type === 'batch' ? parsedFreezing.id : undefined,
         freezing_medium_volume_ml: freezingMediumVolume ? Number(freezingMediumVolume) : undefined,
-        dissociation_medium_id: dissociationMediumId || undefined,
+        dissociation_medium_id: parsedDissociation?.type === 'ready_medium' ? parsedDissociation.id : undefined,
+        dissociation_batch_id: parsedDissociation?.type === 'batch' ? parsedDissociation.id : undefined,
         dissociation_volume_ml: dissociationVolume ? Number(dissociationVolume) : undefined,
-        wash_medium_id: washMediumId || undefined,
+        wash_medium_id: parsedWash?.type === 'ready_medium' ? parsedWash.id : undefined,
+        wash_batch_id: parsedWash?.type === 'batch' ? parsedWash.id : undefined,
         wash_volume_ml: washVolume ? Number(washVolume) : undefined,
         cryo_batch_id: cryoBatchId || undefined,
         viability_percent: Number(viability),
@@ -644,10 +660,9 @@ function FreezePageInner() {
                         <SelectValue placeholder="(необязательно)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {media.map((m: any) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.code || m.name}
-                            {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
+                        {dissociationOptions.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -673,9 +688,9 @@ function FreezePageInner() {
                         <SelectValue placeholder="(необязательно)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {media.map((m: any) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.code || m.name}
+                        {washOptions.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -925,10 +940,9 @@ function FreezePageInner() {
                     <SelectValue placeholder="Выберите среду..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {media.map((m: any) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code || m.name}
-                        {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
+                    {freezingOptions.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1059,8 +1073,7 @@ function FreezePageInner() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Среда диссоциации:</span>
                     <span className="font-medium">
-                      {media.find((m: any) => m.id === dissociationMediumId)?.code ||
-                        media.find((m: any) => m.id === dissociationMediumId)?.name || '---'}
+                      {dissociationOptions.find((o) => o.id === dissociationMediumId)?.label || '---'}
                       {dissociationVolume && ` (${dissociationVolume} мл)`}
                     </span>
                   </div>
@@ -1069,8 +1082,7 @@ function FreezePageInner() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Среда промывки:</span>
                     <span className="font-medium">
-                      {media.find((m: any) => m.id === washMediumId)?.code ||
-                        media.find((m: any) => m.id === washMediumId)?.name || '---'}
+                      {washOptions.find((o) => o.id === washMediumId)?.label || '---'}
                       {washVolume && ` (${washVolume} мл)`}
                     </span>
                   </div>
@@ -1139,8 +1151,7 @@ function FreezePageInner() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Среда заморозки:</span>
                   <span className="font-medium">
-                    {media.find((m: any) => m.id === freezingMediumId)?.code ||
-                      media.find((m: any) => m.id === freezingMediumId)?.name || '---'}
+                    {freezingOptions.find((o) => o.id === freezingMediumId)?.label || '---'}
                     {freezingMediumVolume && ` (${freezingMediumVolume} мл)`}
                   </span>
                 </div>

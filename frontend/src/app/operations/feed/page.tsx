@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { getLots, getContainersByLot, getAvailableMediaForFeed, createOperationFeed } from '@/lib/api'
+import { getLots, getContainersByLot, getAvailableMediaByUsage, buildMediaOptions, parseMediumId, createOperationFeed } from '@/lib/api'
 
 function generateRowId(): string {
   return Math.random().toString(36).substring(2, 9)
@@ -32,7 +32,7 @@ function FeedPageInner() {
   const [containersLoading, setContainersLoading] = useState(false)
   const [selectedContainers, setSelectedContainers] = useState<string[]>([])
 
-  const [media, setMedia] = useState<any[]>([])
+  const [mediaOptions, setMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [selectedMediumId, setSelectedMediumId] = useState<string>('')
 
   const [volumeMl, setVolumeMl] = useState<string>('')
@@ -52,20 +52,20 @@ function FeedPageInner() {
   const [initialLoading, setInitialLoading] = useState(true)
 
   // --- derived ---
-  const selectedMedium = media.find((m: any) => m.id === selectedMediumId)
-  const isFefo = selectedMediumId !== '' && media.length > 0 && media[0].id === selectedMediumId
-  const earliestMedium = media.length > 0 ? media[0] : null
+  const selectedMedium = mediaOptions.find((m) => m.id === selectedMediumId)
+  const isFefo = selectedMediumId !== '' && mediaOptions.length > 0 && mediaOptions[0].id === selectedMediumId
+  const earliestMedium = mediaOptions.length > 0 ? mediaOptions[0] : null
 
   // --- initial data load ---
   useEffect(() => {
     const load = async () => {
       try {
-        const [lotsData, mediaData] = await Promise.all([
+        const [lotsData, mediaResult] = await Promise.all([
           getLots({ status: 'ACTIVE' }),
-          getAvailableMediaForFeed(),
+          getAvailableMediaByUsage('FEED'),
         ])
         setLots(lotsData || [])
-        setMedia(mediaData || [])
+        setMediaOptions(buildMediaOptions(mediaResult.readyMedia, mediaResult.reagentBatches))
 
         // Auto-bind from URL params
         const paramLotId = searchParams.get('lot_id')
@@ -160,11 +160,16 @@ function FeedPageInner() {
 
     setSubmitting(true)
     try {
-      const containersPayload = selectedContainers.map(containerId => ({
-        container_id: containerId,
-        medium_id: individualMode ? perContainerMedia[containerId] : selectedMediumId,
-        volume_ml: individualMode ? Number(perContainerVolume[containerId]) : Number(volumeMl),
-      }))
+      const containersPayload = selectedContainers.map(containerId => {
+        const combinedId = individualMode ? perContainerMedia[containerId] : selectedMediumId
+        const parsed = parseMediumId(combinedId)
+        return {
+          container_id: containerId,
+          medium_id: parsed?.type === 'ready_medium' ? parsed.id : undefined,
+          batch_id: parsed?.type === 'batch' ? parsed.id : undefined,
+          volume_ml: individualMode ? Number(perContainerVolume[containerId]) : Number(volumeMl),
+        }
+      })
 
       await createOperationFeed({
         lot_id: selectedLotId,
@@ -343,26 +348,24 @@ function FeedPageInner() {
 
           {!individualMode ? (
             <>
-              {/* 3a. Shared medium selection */}
+              {/* 3a. Shared medium selection (ready_media + batches) */}
               <div className="space-y-2">
-                <Label htmlFor="medium">Готовая среда</Label>
+                <Label htmlFor="medium">Среда / реагент</Label>
                 <Select value={selectedMediumId} onValueChange={setSelectedMediumId}>
                   <SelectTrigger id="medium">
                     <SelectValue placeholder="Выберите среду..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {media.map((m: any, index: number) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.code || m.name}
-                        {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
-                        {m.current_volume_ml != null && ` | ${m.current_volume_ml} мл`}
+                    {mediaOptions.map((opt, index) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                         {index === 0 && ' (FEFO)'}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
 
-                {/* FEFO indicator / warning */}
+                {/* FEFO indicator */}
                 {selectedMediumId && (
                   <div className="flex items-center gap-2 mt-1">
                     {isFefo ? (
@@ -377,11 +380,7 @@ function FeedPageInner() {
 
                     {selectedMedium && (
                       <span className="text-sm text-muted-foreground">
-                        {selectedMedium.name || selectedMedium.code}
-                        {selectedMedium.expiration_date &&
-                          ` | Годен до: ${formatDate(selectedMedium.expiration_date)}`}
-                        {selectedMedium.current_volume_ml != null &&
-                          ` | Остаток: ${selectedMedium.current_volume_ml} мл`}
+                        {selectedMedium.label}
                       </span>
                     )}
                   </div>
@@ -391,9 +390,8 @@ function FeedPageInner() {
                   <Alert className="mt-2 border-yellow-300 bg-yellow-50">
                     <AlertCircle className="h-4 w-4 text-yellow-600" />
                     <AlertDescription className="text-yellow-800">
-                      Внимание: по принципу FEFO следует использовать среду{' '}
-                      <strong>{earliestMedium.code || earliestMedium.name}</strong> (годна до{' '}
-                      {formatDate(earliestMedium.expiration_date)}).
+                      Внимание: по принципу FEFO следует использовать{' '}
+                      <strong>{earliestMedium.label}</strong>.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -417,21 +415,7 @@ function FeedPageInner() {
                     {selectedContainers.length} контейнер(ов)
                   </p>
                 )}
-                {selectedMedium &&
-                  selectedContainers.length > 0 &&
-                  volumeMl !== '' &&
-                  Number(volumeMl) > 0 &&
-                  Number(volumeMl) * selectedContainers.length >
-                    (selectedMedium.current_volume_ml ?? 0) && (
-                    <Alert className="border-red-300 bg-red-50">
-                      <AlertCircle className="h-4 w-4 text-red-600" />
-                      <AlertDescription className="text-red-800">
-                        Недостаточно среды. Требуется{' '}
-                        {(Number(volumeMl) * selectedContainers.length).toFixed(1)} мл, доступно{' '}
-                        {selectedMedium.current_volume_ml ?? 0} мл.
-                      </AlertDescription>
-                    </Alert>
-                  )}
+                {/* Volume warning removed — combined options don't carry volume info */}
               </div>
             </>
           ) : (
@@ -461,10 +445,9 @@ function FeedPageInner() {
                             <SelectValue placeholder="Выберите среду..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {media.map((m: any, index: number) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.code || m.name}
-                                {m.current_volume_ml != null && ` (${m.current_volume_ml} мл)`}
+                            {mediaOptions.map((opt, index) => (
+                              <SelectItem key={opt.id} value={opt.id}>
+                                {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                                 {index === 0 && ' FEFO'}
                               </SelectItem>
                             ))}
@@ -528,10 +511,9 @@ function FeedPageInner() {
                       <SelectValue placeholder="Выберите компонент..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {media.map((m: any) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.code || m.name}
-                          {m.current_volume_ml != null && ` (${m.current_volume_ml} мл)`}
+                      {mediaOptions.map((opt) => (
+                        <SelectItem key={opt.id} value={opt.id}>
+                          {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

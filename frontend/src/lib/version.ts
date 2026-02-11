@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.05"
+export const APP_VERSION = "1.25.06"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.06",
+    date: "11.02.2026",
+    changes: [
+      "Номенклатура: теги назначения (usage_tags) — чекбоксы FEED/DISSOCIATION/WASH/SEED/FREEZING/THAW",
+      "Единый выбор сред: готовые среды + партии со склада в одном dropdown'е (Feed, Freeze, Thaw)",
+      "Фильтрация сред по назначению: каждый dropdown показывает только подходящие позиции",
+      "Fallback: если теги не настроены — все среды/партии доступны (обратная совместимость)",
+      "API: parseMediumId, buildMediaOptions, getAvailableMediaByUsage — shared-утилиты",
+    ],
+  },
   {
     version: "1.25.05",
     date: "11.02.2026",

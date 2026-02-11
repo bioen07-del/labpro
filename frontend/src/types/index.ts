@@ -259,12 +259,26 @@ export interface CryoVial {
 // Inventory
 export type NomenclatureCategory = 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'CONSUMABLE' | 'EQUIP'
 
+export type UsageTag = 'FEED' | 'DISSOCIATION' | 'WASH' | 'SEED' | 'FREEZING' | 'THAW'
+
+export const USAGE_TAG_LABELS: Record<UsageTag, string> = {
+  FEED: 'Подкормка',
+  DISSOCIATION: 'Диссоциация',
+  WASH: 'Промывка',
+  SEED: 'Посев',
+  FREEZING: 'Заморозка',
+  THAW: 'Разморозка',
+}
+
 export interface Nomenclature {
   id: string
+  code?: string
   name: string
   category: NomenclatureCategory
   unit: string
   storage_temp?: number
+  storage_requirements?: string
+  usage_tags?: UsageTag[]
   is_active: boolean
   created_at: string
   batches?: Batch[]

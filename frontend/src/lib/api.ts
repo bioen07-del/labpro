@@ -3156,7 +3156,8 @@ export async function createOperationPassage(data: {
 
 export interface FeedContainerData {
   container_id: string
-  medium_id: string
+  medium_id?: string   // ready_medium_id (when rm:id was selected)
+  batch_id?: string    // batch_id (when batch:id was selected)
   volume_ml: number
 }
 
@@ -3179,6 +3180,121 @@ export async function getAvailableMediaForFeed(batchId?: string) {
     const vol = m.current_volume_ml ?? m.volume_ml ?? 0
     return vol > 0
   })
+}
+
+// ---- Unified media selection by usage_tag ----
+
+/**
+ * Parse a combined medium ID like "rm:uuid" or "batch:uuid" into its components.
+ * Shared across all operation forms.
+ */
+export function parseMediumId(combined: string): { type: 'ready_medium' | 'batch'; id: string } | null {
+  if (!combined) return null
+  const [type, ...rest] = combined.split(':')
+  const id = rest.join(':')
+  if (type === 'rm') return { type: 'ready_medium', id }
+  if (type === 'batch') return { type: 'batch', id }
+  return null
+}
+
+/**
+ * Build combined media options list from ready_media + batches.
+ * Returns array with rm:/batch: prefixed IDs for unified selection.
+ */
+export function buildMediaOptions(
+  readyMedia: any[],
+  reagentBatches: any[]
+): { id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[] {
+  const options: { id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[] = []
+
+  for (const m of readyMedia) {
+    const vol = m.current_volume_ml ?? m.volume_ml ?? '?'
+    options.push({
+      id: `rm:${m.id}`,
+      label: `${m.name || m.code} (${vol} мл) — Готовая среда`,
+      type: 'ready_medium',
+      category: 'MEDIUM',
+    })
+  }
+
+  for (const b of reagentBatches) {
+    const nom = b.nomenclature
+    if (!nom) continue
+    let qtyLabel: string
+    if (b.volume_per_unit && b.volume_per_unit > 0) {
+      const curVol = b.current_unit_volume ?? b.volume_per_unit
+      qtyLabel = `${b.quantity} фл × ${b.volume_per_unit} мл, тек: ${curVol} мл`
+    } else {
+      qtyLabel = `${b.quantity} ${b.unit || 'шт.'}`
+    }
+    options.push({
+      id: `batch:${b.id}`,
+      label: `${nom.name || b.batch_number} (${qtyLabel})${b.expiration_date ? ` до ${new Date(b.expiration_date).toLocaleDateString('ru-RU')}` : ''} — Склад`,
+      type: 'batch',
+      category: nom.category || undefined,
+    })
+  }
+
+  return options
+}
+
+/**
+ * Get available media (ready_media + batches) filtered by usage_tag.
+ * Fallback: if no results found (tags not configured), returns ALL available media/batches.
+ */
+export async function getAvailableMediaByUsage(usageTag: string): Promise<{
+  readyMedia: any[]
+  reagentBatches: any[]
+}> {
+  // 1. Get ready_media with remaining volume, join to get nomenclature via batch
+  const { data: rmData, error: rmErr } = await supabase
+    .from('ready_media')
+    .select('*, batch:batches(*, nomenclature:nomenclatures(*))')
+    .in('status', ['ACTIVE', 'PREPARED'])
+    .order('expiration_date', { ascending: true })
+
+  if (rmErr) throw rmErr
+
+  // 2. Get reagent batches
+  const { data: batchData, error: batchErr } = await supabase
+    .from('batches')
+    .select('*, nomenclature:nomenclatures(*)')
+    .gt('quantity', 0)
+    .in('status', ['AVAILABLE', 'RESERVED'])
+    .order('expiration_date', { ascending: true })
+
+  if (batchErr) throw batchErr
+
+  // Filter by volume > 0
+  const allRM = (rmData || []).filter((m: any) => {
+    const vol = m.current_volume_ml ?? m.volume_ml ?? 0
+    return vol > 0
+  })
+
+  // Filter batches: exclude CONSUMABLE
+  const allBatches = (batchData ?? []).filter((b: any) => {
+    const nom = b.nomenclature
+    if (!nom) return false
+    return nom.category !== 'CONSUMABLE'
+  })
+
+  // Filter by usage_tag
+  const filteredRM = allRM.filter((m: any) => {
+    const tags: string[] = m.batch?.nomenclature?.usage_tags || []
+    return tags.includes(usageTag)
+  })
+
+  const filteredBatches = allBatches.filter((b: any) => {
+    const tags: string[] = b.nomenclature?.usage_tags || []
+    return tags.includes(usageTag)
+  })
+
+  // Fallback: if no tagged results, return ALL (backward compatibility)
+  if (filteredRM.length === 0 && filteredBatches.length === 0) {
+    return { readyMedia: allRM, reagentBatches: allBatches }
+  }
+
+  return { readyMedia: filteredRM, reagentBatches: filteredBatches }
 }
 
 // Get consumable batches matching a container type name (for write-off during culture creation)
@@ -3309,37 +3425,37 @@ export async function createOperationFeed(data: {
   
   // 3. Создать operation_media
   const operationMedia = data.containers
-    .filter(container => container.medium_id)
+    .filter(container => container.medium_id || container.batch_id)
     .map(container => ({
       operation_id: operation.id,
-      ready_medium_id: container.medium_id,
+      ready_medium_id: container.medium_id || null,
+      batch_id: container.batch_id || null,
       quantity_ml: container.volume_ml,
       purpose: 'FEED'
     }))
-  
+
   if (operationMedia.length > 0) {
     const { error: omError } = await supabase
       .from('operation_media')
       .insert(operationMedia)
-    
+
     if (omError) throw omError
   }
-  
-  // 4. Обновить current_volume_ml у ReadyMedia
+
+  // 4. Списание сред: ready_media или batch (пофлаконный учёт)
   for (const container of data.containers) {
     if (container.medium_id) {
+      // Ready medium: update current_volume_ml
       const medium = await getReadyMediumById(container.medium_id)
       if (medium) {
         const currentVolume = medium.current_volume_ml || medium.volume_ml || 0
         const newVolume = currentVolume - container.volume_ml
-        
-        // Обновить volume_ml в ReadyMedia
+
         await supabase
           .from('ready_media')
-          .update({ current_volume_ml: Math.max(0, newVolume) })
+          .update({ current_volume_ml: Math.max(0, newVolume), ...(newVolume <= 0 ? { status: 'USED' } : {}) })
           .eq('id', container.medium_id)
-        
-        // 5. Создать inventory_movement запись (расход)
+
         await createInventoryMovement({
           batch_id: medium.batch_id || null,
           movement_type: 'CONSUME',
@@ -3348,6 +3464,18 @@ export async function createOperationFeed(data: {
           reference_id: operation.id,
           notes: `Среда для подкормки (${container.volume_ml} мл)`,
         })
+      }
+    } else if (container.batch_id) {
+      // Batch: пофлаконный учёт через writeOffBatchVolume
+      try {
+        await writeOffBatchVolume(
+          container.batch_id,
+          container.volume_ml,
+          operation.id,
+          `Среда для подкормки (${container.volume_ml} мл)`
+        )
+      } catch (err) {
+        console.error('Failed to write off feed batch:', err)
       }
     }
   }
@@ -3473,14 +3601,17 @@ export interface FreezeData {
   freezer_position_id: string
   cells_per_vial: number
   total_cells: number
-  freezing_medium: string
+  freezing_medium?: string
   freezing_medium_rm_id?: string     // ID готовой среды для заморозки
+  freezing_medium_batch_id?: string  // ID партии для заморозки (со склада)
   freezing_medium_volume_ml?: number // Объём среды для заморозки
   // Среда диссоциации (фермент для снятия клеток)
-  dissociation_medium_id?: string
+  dissociation_medium_id?: string    // ready_medium_id
+  dissociation_batch_id?: string     // batch_id (со склада)
   dissociation_volume_ml?: number
   // Среда промывки (буфер)
-  wash_medium_id?: string
+  wash_medium_id?: string            // ready_medium_id
+  wash_batch_id?: string             // batch_id (со склада)
   wash_volume_ml?: number
   cryo_batch_id?: string             // Партия криовиалов со склада
   viability_percent: number
@@ -3671,21 +3802,42 @@ export async function createOperationFreeze(data: FreezeData) {
     }
   }
 
-  // 10a. Среда заморозки (freezing_medium — может быть rm_id или просто id)
+  // Хелпер для списания партии со склада при заморозке
+  async function writeOffFreezeBatch(batchId: string, volumeMl: number, purpose: string) {
+    try {
+      await writeOffBatchVolume(batchId, volumeMl, operation.id, `Реактив для заморозки (${purpose}, ${volumeMl} мл)`)
+      await supabase.from('operation_media').insert({
+        operation_id: operation.id,
+        batch_id: batchId,
+        quantity_ml: volumeMl,
+        purpose: purpose.toUpperCase(),
+      })
+    } catch (err) {
+      console.error(`Failed to write off freeze batch (${purpose}):`, err)
+    }
+  }
+
+  // 10a. Среда заморозки
   const freezeRmId = data.freezing_medium_rm_id || data.freezing_medium
   const freezeVolume = data.freezing_medium_volume_ml
   if (freezeRmId && freezeVolume && freezeVolume > 0) {
     await writeOffFreezeRM(freezeRmId, freezeVolume, 'заморозка')
+  } else if (data.freezing_medium_batch_id && freezeVolume && freezeVolume > 0) {
+    await writeOffFreezeBatch(data.freezing_medium_batch_id, freezeVolume, 'заморозка')
   }
 
   // 10b. Среда диссоциации
   if (data.dissociation_medium_id && data.dissociation_volume_ml && data.dissociation_volume_ml > 0) {
     await writeOffFreezeRM(data.dissociation_medium_id, data.dissociation_volume_ml, 'диссоциация')
+  } else if (data.dissociation_batch_id && data.dissociation_volume_ml && data.dissociation_volume_ml > 0) {
+    await writeOffFreezeBatch(data.dissociation_batch_id, data.dissociation_volume_ml, 'диссоциация')
   }
 
   // 10c. Среда промывки
   if (data.wash_medium_id && data.wash_volume_ml && data.wash_volume_ml > 0) {
     await writeOffFreezeRM(data.wash_medium_id, data.wash_volume_ml, 'промывка')
+  } else if (data.wash_batch_id && data.wash_volume_ml && data.wash_volume_ml > 0) {
+    await writeOffFreezeBatch(data.wash_batch_id, data.wash_volume_ml, 'промывка')
   }
 
   // 11. Списание криовиалов со склада
@@ -3743,7 +3895,8 @@ export interface ThawData {
   lot_name?: string // имя нового лота
   container_type_id: string
   position_id: string
-  thaw_medium_id: string
+  thaw_medium_id?: string           // Ready medium (rm:uuid → id)
+  thaw_batch_id?: string            // Batch from warehouse (batch:uuid → id)
   thaw_medium_volume_ml?: number    // Объём среды для разморозки
   consumable_batch_id?: string      // Партия контейнера со склада
   viability_percent?: number
@@ -3877,41 +4030,55 @@ export async function createOperationThaw(data: ThawData) {
     .eq('id', data.cryo_vial_id)
   
   // 9. Создать Operation_Media для среды разморозки
-  await supabase
-    .from('operation_media')
-    .insert({
-      operation_id: operation.id,
-      ready_medium_id: data.thaw_medium_id,
-      purpose: 'thaw',
-      quantity_ml: data.thaw_medium_volume_ml ?? null,
-    })
+  if (data.thaw_medium_id || data.thaw_batch_id) {
+    await supabase
+      .from('operation_media')
+      .insert({
+        operation_id: operation.id,
+        ready_medium_id: data.thaw_medium_id || null,
+        batch_id: data.thaw_batch_id || null,
+        purpose: 'thaw',
+        quantity_ml: data.thaw_medium_volume_ml ?? null,
+      })
+  }
 
-  // 9b. Списание среды для разморозки
-  if (data.thaw_medium_id && data.thaw_medium_volume_ml && data.thaw_medium_volume_ml > 0) {
+  // 9b. Списание среды для разморозки (ready_medium ИЛИ batch)
+  const thawVolume = data.thaw_medium_volume_ml ?? 0
+  if (data.thaw_medium_id && thawVolume > 0) {
     try {
       const { data: rm } = await supabase
         .from('ready_media')
-        .select('current_volume_ml, volume_ml')
+        .select('current_volume_ml, volume_ml, batch_id')
         .eq('id', data.thaw_medium_id)
         .single()
       if (rm) {
         const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
-        const newVol = Math.max(0, currentVol - data.thaw_medium_volume_ml)
+        const newVol = Math.max(0, currentVol - thawVolume)
         await supabase
           .from('ready_media')
-          .update({ current_volume_ml: newVol })
+          .update({ current_volume_ml: newVol, ...(newVol <= 0 ? { status: 'USED' } : {}) })
           .eq('id', data.thaw_medium_id)
-        await createInventoryMovement({
-          batch_id: data.thaw_medium_id,
-          movement_type: 'CONSUME',
-          quantity: -data.thaw_medium_volume_ml,
-          reference_type: 'OPERATION',
-          reference_id: operation.id,
-          notes: `Среда для разморозки (${data.thaw_medium_volume_ml} мл)`,
-        })
+        if (rm.batch_id) {
+          await writeOffBatchVolume(rm.batch_id, thawVolume, operation.id, `Среда для разморозки (${thawVolume} мл)`)
+        } else {
+          await createInventoryMovement({
+            batch_id: data.thaw_medium_id,
+            movement_type: 'CONSUME',
+            quantity: -thawVolume,
+            reference_type: 'OPERATION',
+            reference_id: operation.id,
+            notes: `Среда для разморозки (${thawVolume} мл)`,
+          })
+        }
       }
     } catch (err) {
-      console.error('Failed to write off thaw medium:', err)
+      console.error('Failed to write off thaw medium (ready_media):', err)
+    }
+  } else if (data.thaw_batch_id && thawVolume > 0) {
+    try {
+      await writeOffBatchVolume(data.thaw_batch_id, thawVolume, operation.id, `Среда для разморозки (${thawVolume} мл)`)
+    } catch (err) {
+      console.error('Failed to write off thaw medium (batch):', err)
     }
   }
 

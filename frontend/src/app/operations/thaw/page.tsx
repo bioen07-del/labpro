@@ -24,7 +24,9 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   getBanks,
   getCryoVials,
-  getAvailableMediaForFeed,
+  getAvailableMediaByUsage,
+  buildMediaOptions,
+  parseMediumId,
   getContainerTypes,
   getPositions,
   createOperationThaw,
@@ -60,15 +62,6 @@ interface VialItem {
   cells_count?: number
   status: string
   position?: { path?: string; [key: string]: unknown }
-  [key: string]: unknown
-}
-
-interface MediaItem {
-  id: string
-  code?: string
-  name?: string
-  expiration_date?: string
-  current_volume_ml?: number
   [key: string]: unknown
 }
 
@@ -118,7 +111,7 @@ function ThawPageInner() {
   // -- reference data --
   const [banks, setBanks] = useState<BankItem[]>([])
   const [vials, setVials] = useState<VialItem[]>([])
-  const [media, setMedia] = useState<MediaItem[]>([])
+  const [mediaOptions, setMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [containerTypes, setContainerTypes] = useState<ContainerTypeItem[]>([])
   const [positions, setPositions] = useState<PositionItem[]>([])
 
@@ -138,14 +131,14 @@ function ThawPageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [banksData, mediaData, ctData, posData] = await Promise.all([
+        const [banksData, mediaResult, ctData, posData] = await Promise.all([
           getBanks({ status: 'APPROVED' }),
-          getAvailableMediaForFeed(),
+          getAvailableMediaByUsage('THAW'),
           getContainerTypes(),
           getPositions({ is_active: true }),
         ])
         setBanks(banksData || [])
-        setMedia(mediaData || [])
+        setMediaOptions(buildMediaOptions(mediaResult.readyMedia, mediaResult.reagentBatches))
         // Filter out cryo container types
         const nonCryo = (ctData || []).filter(
           (ct: ContainerTypeItem) =>
@@ -263,12 +256,14 @@ function ThawPageInner() {
 
     setSubmitting(true)
     try {
+      const parsed = parseMediumId(thawMediumId)
       for (const vial of selectedVials) {
         await createOperationThaw({
           cryo_vial_id: vial.id,
           container_type_id: containerTypeId,
           position_id: positionId,
-          thaw_medium_id: thawMediumId,
+          thaw_medium_id: parsed?.type === 'ready_medium' ? parsed.id : undefined,
+          thaw_batch_id: parsed?.type === 'batch' ? parsed.id : undefined,
           viability_percent: viabilityPercent ? Number(viabilityPercent) : undefined,
           notes: notes || undefined,
         })
@@ -314,7 +309,7 @@ function ThawPageInner() {
     )
   }
 
-  const selectedMedium = media.find((m) => m.id === thawMediumId)
+  const selectedMedium = mediaOptions.find((m) => m.id === thawMediumId)
   const selectedContainerType = containerTypes.find((ct) => ct.id === containerTypeId)
   const selectedPosition = positions.find((p) => p.id === positionId)
 
@@ -567,20 +562,18 @@ function ThawPageInner() {
               </Label>
               <Select value={thawMediumId} onValueChange={setThawMediumId}>
                 <SelectTrigger id="thaw-medium">
-                  <SelectValue placeholder="Выберите готовую среду..." />
+                  <SelectValue placeholder="Выберите среду..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {media.map((m, index) => (
-                    <SelectItem key={m.id} value={m.id}>
-                      {m.code || m.name || m.id}
-                      {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
-                      {m.current_volume_ml != null && ` | ${m.current_volume_ml} мл`}
+                  {mediaOptions.map((opt, index) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       {index === 0 && ' (FEFO)'}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {media.length === 0 && (
+              {mediaOptions.length === 0 && (
                 <p className="text-sm text-destructive">
                   Нет доступных сред. Сначала подготовьте среду.
                 </p>
@@ -706,7 +699,7 @@ function ThawPageInner() {
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 <span className="text-muted-foreground">Среда:</span>
                 <span className="font-medium">
-                  {selectedMedium?.code || selectedMedium?.name || thawMediumId}
+                  {selectedMedium?.label || thawMediumId}
                 </span>
 
                 <span className="text-muted-foreground">Контейнер:</span>
