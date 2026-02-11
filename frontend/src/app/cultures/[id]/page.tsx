@@ -38,7 +38,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { getCultureById, getBanks, getOperations, getDonorById } from '@/lib/api'
+import { getCultureById, getBanks, getOperations, getDonorById, calculateCultureMetrics } from '@/lib/api'
+import type { CultureMetrics } from '@/lib/api'
 import { formatDate, formatDateTime, getStatusColor, getStatusLabel, getOperationTypeLabel, formatCellsCount } from '@/lib/utils'
 import type { Culture, Lot, Bank, Operation, Donor, Container } from '@/types'
 
@@ -169,6 +170,7 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
   const [donor, setDonor] = useState<Donor | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
   const [operations, setOperations] = useState<Operation[]>([])
+  const [metrics, setMetrics] = useState<CultureMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set())
   const [showInactiveContainers, setShowInactiveContainers] = useState<Set<string>>(new Set())
@@ -222,6 +224,13 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
         } catch {
           // operations may fail silently
         }
+      }
+      // 5. Load culture metrics (Td, CPD)
+      try {
+        const m = await calculateCultureMetrics(id)
+        setMetrics(m)
+      } catch {
+        // metrics calculation may fail if no passage data
       }
     } catch (error) {
       console.error('Error loading culture data:', error)
@@ -850,6 +859,94 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </CardContent>
       </Card>
+
+      {/* ==================== GROWTH KINETICS ==================== */}
+      {metrics && metrics.confidence !== 'none' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Кинетика роста
+              </CardTitle>
+              <Badge variant="outline" className={
+                metrics.confidence === 'high' ? 'border-green-500 text-green-700' : 'border-amber-500 text-amber-700'
+              }>
+                {metrics.confidence === 'high' ? 'Высокая точность' : 'Мало данных'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Td (текущее)</p>
+                <p className="text-lg font-semibold">
+                  {metrics.currentTd != null ? `${metrics.currentTd} ч` : '—'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Td (среднее)</p>
+                <p className="text-lg font-semibold">
+                  {metrics.averageTd != null ? `${metrics.averageTd} ч` : '—'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">CPD</p>
+                <p className="text-lg font-semibold">{metrics.cumulativePD}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Скорость (r)</p>
+                <p className="text-lg font-semibold">
+                  {metrics.growthRate != null ? `${metrics.growthRate} /ч` : '—'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Коэффициент</p>
+                <p className="text-lg font-semibold">
+                  {metrics.coefficient != null ? metrics.coefficient.toLocaleString('ru-RU') : '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Passage metrics table */}
+            {metrics.passages.length > 0 && (
+              <div className="mt-4 pt-4 border-t">
+                <p className="text-sm font-medium text-muted-foreground mb-2">Метрики по пассажам</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-muted-foreground">
+                        <th className="text-left py-1.5 pr-3 font-medium">P#</th>
+                        <th className="text-left py-1.5 pr-3 font-medium">Лот</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">N₀</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">Nf</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">V%</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">PD</th>
+                        <th className="text-right py-1.5 pr-3 font-medium">Td (ч)</th>
+                        <th className="text-right py-1.5 font-medium">Дл. (ч)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.passages.map((p, i) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="py-1.5 pr-3 font-mono">P{p.passageNumber}</td>
+                          <td className="py-1.5 pr-3">{p.lotNumber}</td>
+                          <td className="py-1.5 pr-3 text-right font-mono">{formatCellsCount(p.initialCells)}</td>
+                          <td className="py-1.5 pr-3 text-right font-mono">{formatCellsCount(p.finalCells)}</td>
+                          <td className="py-1.5 pr-3 text-right">{p.viability}%</td>
+                          <td className="py-1.5 pr-3 text-right font-semibold">{p.populationDoublings}</td>
+                          <td className="py-1.5 pr-3 text-right font-semibold">{p.doublingTime ?? '—'}</td>
+                          <td className="py-1.5 text-right text-muted-foreground">{p.durationHours ? Math.round(p.durationHours) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* ==================== LOTS SECTION (INLINE) ==================== */}
       <div>

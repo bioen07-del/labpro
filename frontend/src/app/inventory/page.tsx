@@ -17,6 +17,7 @@ import {
   Beaker,
   FlaskConical,
   TestTubes,
+  Clock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -144,6 +145,14 @@ export default function InventoryPage() {
         media.batch?.nomenclature?.name?.toLowerCase().includes(q)
     }
     return true
+  })
+  // FEFO sort: expiring soonest first
+  .sort((a, b) => {
+    const aExp = getMediaExpiresAt(a)
+    const bExp = getMediaExpiresAt(b)
+    if (!aExp) return 1
+    if (!bExp) return -1
+    return aExp.getTime() - bExp.getTime()
   })
 
   // Stats for current category
@@ -350,12 +359,15 @@ export default function InventoryPage() {
                   <TableHead>Состав</TableHead>
                   <TableHead className="text-center">Объём</TableHead>
                   <TableHead>Приготовлено</TableHead>
+                  <TableHead>Годность</TableHead>
                   <TableHead>Статус</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredReadyMedia.map((media) => (
+                {filteredReadyMedia.map((media) => {
+                  const expInfo = getMediaExpiration(media)
+                  return (
                   <TableRow key={media.id}>
                     <TableCell>
                       <span className="font-medium">
@@ -372,6 +384,15 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell>{media.created_at ? formatDate(media.created_at) : '—'}</TableCell>
                     <TableCell>
+                      <div className={`flex items-center gap-1 text-sm ${
+                        expInfo.level === 'expired' ? 'text-red-600 font-medium' :
+                        expInfo.level === 'warning' ? 'text-amber-600' : 'text-green-600'
+                      }`}>
+                        <Clock className="h-3 w-3" />
+                        {expInfo.label}
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <Badge className={getReadyMediaStatusColor(media.status)}>
                         {getReadyMediaStatusLabel(media.status)}
                       </Badge>
@@ -380,10 +401,11 @@ export default function InventoryPage() {
                       <span className="text-muted-foreground"><Eye className="h-4 w-4" /></span>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
                 {filteredReadyMedia.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       <Beaker className="h-10 w-10 mx-auto mb-3 opacity-40" />
                       <p>Готовые среды не найдены</p>
                       <p className="mt-2 text-sm">Нет приготовленных сред</p>
@@ -711,4 +733,21 @@ function getDisposeReasonLabel(reason: string): string {
     OTHER: 'Другое',
   }
   return labels[reason] || reason
+}
+
+function getMediaExpiresAt(media: any): Date | null {
+  if (!media.created_at || !media.expiration_hours) return null
+  const prepared = new Date(media.created_at)
+  return new Date(prepared.getTime() + media.expiration_hours * 60 * 60 * 1000)
+}
+
+function getMediaExpiration(media: any): { level: 'ok' | 'warning' | 'expired'; label: string } {
+  const expires = getMediaExpiresAt(media)
+  if (!expires) return { level: 'ok', label: '—' }
+  const now = new Date()
+  const hoursLeft = (expires.getTime() - now.getTime()) / (1000 * 60 * 60)
+  if (hoursLeft < 0) return { level: 'expired', label: 'Просрочена' }
+  if (hoursLeft < 6) return { level: 'warning', label: `${hoursLeft.toFixed(1)} ч` }
+  if (hoursLeft < 24) return { level: 'ok', label: `${hoursLeft.toFixed(0)} ч` }
+  return { level: 'ok', label: `${(hoursLeft / 24).toFixed(0)} дн` }
 }

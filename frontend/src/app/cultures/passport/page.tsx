@@ -51,7 +51,9 @@ import {
   getDonationById,
   getDonorById,
   getCryoVials,
+  calculateCultureMetrics,
 } from '@/lib/api'
+import type { CultureMetrics } from '@/lib/api'
 import { formatDate, formatDateTime, getStatusLabel, getStatusColor, getOperationTypeLabel } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -147,6 +149,7 @@ function CulturePassportContent() {
   const [containersByLot, setContainersByLot] = useState<Record<string, any[]>>({})
   const [banks, setBanks] = useState<any[]>([])
   const [operations, setOperations] = useState<any[]>([])
+  const [cultureMetrics, setCultureMetrics] = useState<CultureMetrics | null>(null)
   const [stats, setStats] = useState({
     totalLots: 0,
     totalContainers: 0,
@@ -300,7 +303,15 @@ function CulturePassportContent() {
         totalOperations: allOperations.length,
       })
 
-      // 10. Document metadata
+      // 10. Culture metrics (Td, CPD)
+      try {
+        const metricsData = await calculateCultureMetrics(cultureId)
+        setCultureMetrics(metricsData)
+      } catch {
+        setCultureMetrics(null)
+      }
+
+      // 11. Document metadata
       const timestamp = Date.now()
       const cultureCode = cultureData.name || cultureData.id.substring(0, 8)
       setDocumentNumber(`CP-${cultureCode}-${timestamp}`)
@@ -747,10 +758,26 @@ function CulturePassportContent() {
                     <p className="text-3xl font-bold">{stats.totalVials}</p>
                     <p className="text-xs text-muted-foreground mt-1">Ампул</p>
                   </div>
-                  <div className="border rounded-lg p-4 text-center col-span-2 md:col-span-4">
+                  <div className="border rounded-lg p-4 text-center">
                     <p className="text-3xl font-bold">{stats.totalOperations}</p>
                     <p className="text-xs text-muted-foreground mt-1">Всего операций</p>
                   </div>
+                  {cultureMetrics && cultureMetrics.confidence !== 'none' && (
+                    <>
+                      <div className="border rounded-lg p-4 text-center">
+                        <p className="text-3xl font-bold">{cultureMetrics.currentTd ?? '—'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Td текущее (ч)</p>
+                      </div>
+                      <div className="border rounded-lg p-4 text-center">
+                        <p className="text-3xl font-bold">{cultureMetrics.averageTd ?? '—'}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Td среднее (ч)</p>
+                      </div>
+                      <div className="border rounded-lg p-4 text-center">
+                        <p className="text-3xl font-bold">{cultureMetrics.cumulativePD}</p>
+                        <p className="text-xs text-muted-foreground mt-1">CPD</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </section>
 
@@ -788,6 +815,38 @@ function CulturePassportContent() {
                             <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
                             <Tooltip formatter={(v) => `${v}%`} />
                             <Line type="monotone" dataKey="confluency" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} name="Конфлюэнтность" />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </section>
+                    <Separator />
+                  </>
+                )
+              })()}
+
+              {/* ====================== 7c. DOUBLING TIME CHART ====================== */}
+              {cultureMetrics && cultureMetrics.passages.filter(p => p.doublingTime !== null).length >= 2 && (() => {
+                const tdData = cultureMetrics.passages
+                  .filter(p => p.doublingTime !== null)
+                  .map(p => ({ passage: `P${p.passageNumber}`, td: p.doublingTime!, pd: p.populationDoublings }))
+                return (
+                  <>
+                    <section>
+                      <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                        <BarChart3 className="h-5 w-5" />
+                        Кинетика роста (Td по пассажам)
+                      </h3>
+                      <div className="border rounded-lg p-4" style={{ height: 250 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={tdData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="passage" tick={{ fontSize: 11 }} />
+                            <YAxis yAxisId="td" tick={{ fontSize: 11 }} unit=" ч" />
+                            <YAxis yAxisId="pd" orientation="right" tick={{ fontSize: 11 }} />
+                            <Tooltip />
+                            <Legend />
+                            <Line yAxisId="td" type="monotone" dataKey="td" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} name="Td (ч)" />
+                            <Line yAxisId="pd" type="monotone" dataKey="pd" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} name="PD" />
                           </LineChart>
                         </ResponsiveContainer>
                       </div>

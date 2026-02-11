@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.08"
+export const APP_VERSION = "1.25.09"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,22 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.09",
+    date: "11.02.2026",
+    changes: [
+      "Синхронизация веток: портированы фичи с параллельной ветки awesome-bohr",
+      "Кинетика роста: calculateCultureMetrics() — Td (время удвоения), CPD (кумулятивные удвоения), PD по пассажам",
+      "Прогноз роста: forecastGrowth() — экспоненциальный прогноз по Td",
+      "Карточка «Кинетика роста» на странице культуры (5 метрик + таблица по пассажам)",
+      "Лот: PD/Td текущего пассажа + прогноз времени до 90% конфлюэнтности",
+      "Паспорт культуры: Td текущее/среднее, CPD в статистике + график Td по пассажам",
+      "Заморозка: генерация кода банка BK-XXXX (фикс NULL constraint)",
+      "Заявки: фильтр «Новые» исправлен (NEW→PENDING)",
+      "Пассаж: навигация «Назад» возвращает на карточку лота (если запущен оттуда)",
+      "Склад: FEFO-сортировка готовых сред + колонка «Годность» с индикацией",
+    ],
+  },
   {
     version: "1.25.08",
     date: "11.02.2026",

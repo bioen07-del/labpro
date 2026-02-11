@@ -249,6 +249,133 @@ export function forecastCells(
   return coefficient * surfaceArea * targetConfluent
 }
 
+// ==================== CULTURE METRICS (Td, CPD, PD) ====================
+
+export interface PassageMetric {
+  passageNumber: number
+  lotNumber: string
+  seedDate: string
+  harvestDate: string | null
+  initialCells: number
+  finalCells: number
+  viability: number
+  durationHours: number
+  populationDoublings: number
+  doublingTime: number | null
+  growthRate: number | null
+}
+
+export interface CultureMetrics {
+  passages: PassageMetric[]
+  currentTd: number | null
+  averageTd: number | null
+  cumulativePD: number
+  growthRate: number | null
+  coefficient: number | null
+  confidence: 'high' | 'medium' | 'none'
+}
+
+export async function calculateCultureMetrics(cultureId: string): Promise<CultureMetrics> {
+  // 1. Получить все лоты культуры с данными для расчёта
+  const { data: lots, error } = await supabase
+    .from('lots')
+    .select('lot_number, passage_number, initial_cells, final_cells, viability, seeded_at, harvest_at')
+    .eq('culture_id', cultureId)
+    .order('passage_number', { ascending: true })
+
+  if (error) throw error
+
+  // 2. Получить coefficient из культуры
+  const { data: culture } = await supabase
+    .from('cultures')
+    .select('coefficient')
+    .eq('id', cultureId)
+    .single()
+
+  const passages: PassageMetric[] = []
+  let cumulativePD = 0
+
+  for (const lot of (lots || [])) {
+    const N0 = lot.initial_cells
+    const Nf = lot.final_cells
+    const v = (lot.viability ?? 100) / 100 // viability как доля
+    if (!N0 || N0 <= 0 || !Nf || Nf <= 0) continue
+
+    // PD = log2(Nf × v / N0) — коррекция на жизнеспособность
+    const effectiveCells = Nf * v
+    if (effectiveCells <= N0) continue // нет роста
+    const pd = Math.log2(effectiveCells / N0)
+
+    // Duration в часах
+    let durationHours = 0
+    let td: number | null = null
+    let r: number | null = null
+
+    if (lot.seeded_at && lot.harvest_at) {
+      durationHours = (new Date(lot.harvest_at).getTime() - new Date(lot.seeded_at).getTime()) / (1000 * 60 * 60)
+      if (durationHours > 0 && pd > 0) {
+        td = durationHours / pd     // Td = duration / PD
+        r = Math.LN2 / td           // r = ln(2) / Td
+      }
+    }
+
+    cumulativePD += pd
+
+    passages.push({
+      passageNumber: lot.passage_number,
+      lotNumber: lot.lot_number,
+      seedDate: lot.seeded_at || '',
+      harvestDate: lot.harvest_at || null,
+      initialCells: N0,
+      finalCells: Nf,
+      viability: lot.viability ?? 100,
+      durationHours,
+      populationDoublings: Math.round(pd * 100) / 100,
+      doublingTime: td ? Math.round(td * 10) / 10 : null,
+      growthRate: r ? Math.round(r * 10000) / 10000 : null,
+    })
+  }
+
+  // 3. Среднее Td по последним 3 пассажам с данными
+  const withTd = passages.filter(p => p.doublingTime !== null)
+  const last3 = withTd.slice(-3)
+  const averageTd = last3.length > 0
+    ? Math.round(last3.reduce((s, p) => s + p.doublingTime!, 0) / last3.length * 10) / 10
+    : null
+
+  const currentTd = withTd.length > 0 ? withTd[withTd.length - 1].doublingTime : null
+  const currentR = currentTd ? Math.LN2 / currentTd : null
+
+  const confidence: 'high' | 'medium' | 'none' =
+    withTd.length >= 3 ? 'high' : withTd.length >= 1 ? 'medium' : 'none'
+
+  return {
+    passages,
+    currentTd,
+    averageTd,
+    cumulativePD: Math.round(cumulativePD * 100) / 100,
+    growthRate: currentR ? Math.round(currentR * 10000) / 10000 : null,
+    coefficient: culture?.coefficient ?? null,
+    confidence,
+  }
+}
+
+// Прогноз роста — экспоненциальный (по Td)
+export function forecastGrowth(
+  currentTd: number,
+  N0: number,
+  targetCells: number,
+): { hoursToTarget: number; daysToTarget: number } {
+  if (currentTd <= 0 || N0 <= 0 || targetCells <= N0) {
+    return { hoursToTarget: 0, daysToTarget: 0 }
+  }
+  const hours = currentTd * Math.log2(targetCells / N0)
+  return {
+    hoursToTarget: Math.round(hours * 10) / 10,
+    daysToTarget: Math.round(hours / 24 * 10) / 10,
+  }
+}
+
 // Создание культуры из донации с автоматическим P0 лотом и контейнерами
 export async function createCultureFromDonation(data: {
   donation_id: string
@@ -3640,9 +3767,16 @@ export async function createOperationFreeze(data: FreezeData) {
   // 3. Создать новый банк если bank_id не передан
   let bankId = data.bank_id
   if (!bankId) {
+    // Генерация кода банка BK-XXXX
+    const { count: bankCount } = await supabase
+      .from('banks')
+      .select('*', { count: 'exact', head: true })
+    const bankCode = `BK-${String((bankCount || 0) + 1).padStart(4, '0')}`
+
     const { data: newBank, error: bankError } = await supabase
       .from('banks')
       .insert({
+        code: bankCode,
         culture_id: lot.culture_id,
         lot_id: data.lot_id,
         bank_type: bankType,

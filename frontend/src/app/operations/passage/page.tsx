@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, Suspense } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 import {
@@ -564,8 +565,10 @@ function PassagePageInner() {
     <div className="container py-6 space-y-6 max-w-3xl mx-auto">
       {/* ---- Header ---- */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
+        <Button variant="ghost" size="icon" asChild>
+          <Link href={searchParams.get('lot_id') ? `/lots/${searchParams.get('lot_id')}` : '/operations'}>
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Пассажирование</h1>

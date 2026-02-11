@@ -32,7 +32,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getLotById, getContainersByLot, getOperations, forecastCells, calculateAndUpdateCoefficient } from "@/lib/api"
+import { getLotById, getContainersByLot, getOperations, forecastCells, forecastGrowth, calculateCultureMetrics, calculateAndUpdateCoefficient } from "@/lib/api"
+import type { CultureMetrics } from "@/lib/api"
 
 // ==================== CONSTANTS ====================
 
@@ -133,6 +134,7 @@ export default function LotDetailPage({
   const [operations, setOperations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [metrics, setMetrics] = useState<CultureMetrics | null>(null)
   const [confidence, setConfidence] = useState<'high' | 'medium' | 'none'>('none')
 
   // Container selection state
@@ -150,12 +152,16 @@ export default function LotDetailPage({
       setContainers(containersData || [])
       setOperations(opsData || [])
 
-      // Load confidence level for cell forecast
+      // Load confidence level for cell forecast + culture metrics
       if (lotData?.culture?.id) {
         try {
           const coeffData = await calculateAndUpdateCoefficient(lotData.culture.id)
           setConfidence(coeffData.confidence)
         } catch { /* ignore */ }
+        try {
+          const m = await calculateCultureMetrics(lotData.culture.id)
+          setMetrics(m)
+        } catch { /* metrics may not be available */ }
       }
     } catch (err: any) {
       const msg = err?.message || "Ошибка загрузки данных лота"
@@ -640,7 +646,7 @@ export default function LotDetailPage({
               </Badge>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {(() => {
               const coeff = culture.coefficient
               const totalForecast = activeContainers.reduce((sum: number, c: any) => {
@@ -650,21 +656,56 @@ export default function LotDetailPage({
               const firstContainer = activeContainers[0]
               const firstArea = firstContainer?.container_type?.surface_area || 0
               const singleForecast = forecastCells(coeff, firstArea, 0.9)
+
+              // Find this lot's PD/Td from metrics
+              const lotMetric = metrics?.passages.find(p => p.passageNumber === lot.passage_number)
+              // Forecast time if Td and initial_cells available
+              const timeForecast = metrics?.currentTd && lot.initial_cells && totalForecast > lot.initial_cells
+                ? forecastGrowth(metrics.currentTd, lot.initial_cells, totalForecast)
+                : null
+
               return (
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Коэффициент</p>
-                    <p className="font-medium">{coeff.toFixed(2)}</p>
+                <>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Коэффициент</p>
+                      <p className="font-medium">{coeff.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">С контейнера ({firstContainer?.container_type?.name || 'N/A'}, 90%)</p>
+                      <p className="font-medium">{(singleForecast / 1e6).toFixed(2)} млн клеток</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">С лота ({activeContainers.length} конт.)</p>
+                      <p className="font-medium text-lg">{(totalForecast / 1e6).toFixed(2)} млн клеток</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">С контейнера ({firstContainer?.container_type?.name || 'N/A'}, 90%)</p>
-                    <p className="font-medium">{(singleForecast / 1e6).toFixed(2)} млн клеток</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">С лота ({activeContainers.length} конт.)</p>
-                    <p className="font-medium text-lg">{(totalForecast / 1e6).toFixed(2)} млн клеток</p>
-                  </div>
-                </div>
+                  {/* PD / Td / time forecast */}
+                  {(lotMetric || timeForecast) && (
+                    <div className="pt-3 border-t grid gap-4 sm:grid-cols-4">
+                      {lotMetric && (
+                        <>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">PD (этот пассаж)</p>
+                            <p className="font-semibold">{lotMetric.populationDoublings}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">Td (этот пассаж)</p>
+                            <p className="font-semibold">{lotMetric.doublingTime ? `${lotMetric.doublingTime} ч` : '—'}</p>
+                          </div>
+                        </>
+                      )}
+                      {timeForecast && lot.status === 'ACTIVE' && (
+                        <div className="sm:col-span-2">
+                          <p className="text-xs text-muted-foreground mb-1">Прогноз до 90% конфлюэнтности</p>
+                          <p className="font-semibold text-primary">
+                            ~{timeForecast.hoursToTarget} ч ({timeForecast.daysToTarget} дн)
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )
             })()}
           </CardContent>

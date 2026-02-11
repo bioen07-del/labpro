@@ -152,7 +152,7 @@ export default function OrdersPage() {
         <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
           <TabsList>
             <TabsTrigger value="all">Все</TabsTrigger>
-            <TabsTrigger value="NEW">Новые</TabsTrigger>
+            <TabsTrigger value="PENDING">Новые</TabsTrigger>
             <TabsTrigger value="IN_PROGRESS">В работе</TabsTrigger>
             <TabsTrigger value="COMPLETED">Завершено</TabsTrigger>
           </TabsList>
