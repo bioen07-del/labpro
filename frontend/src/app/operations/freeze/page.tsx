@@ -13,6 +13,7 @@ import {
   MapPin,
   Scissors,
   TestTubes,
+  Package,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -32,8 +33,10 @@ import {
   getAvailableMediaForFeed,
   getPositions,
   getBanks,
+  getBatches,
   createOperationFreeze,
 } from '@/lib/api'
+import type { Batch } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -115,6 +118,8 @@ function FreezePageInner() {
   const [viability, setViability] = useState('')
 
   // --- Step 3: Cryovials ---
+  const [cryoBatches, setCryoBatches] = useState<Batch[]>([])
+  const [cryoBatchId, setCryoBatchId] = useState('')
   const [volumePerVial, setVolumePerVial] = useState('')
   const [cryoVialCount, setCryoVialCount] = useState('')
 
@@ -145,6 +150,11 @@ function FreezePageInner() {
     [positions, positionId],
   )
 
+  const selectedCryoBatch = useMemo(
+    () => cryoBatches.find((b) => b.id === cryoBatchId),
+    [cryoBatches, cryoBatchId],
+  )
+
   // Auto-calculated cell metrics
   const totalCells = useMemo(() => {
     const conc = Number(concentration)
@@ -172,14 +182,16 @@ function FreezePageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [lotsData, mediaData, positionsData] = await Promise.all([
+        const [lotsData, mediaData, positionsData, cryoBatchesData] = await Promise.all([
           getLots({ status: 'ACTIVE' }),
           getAvailableMediaForFeed(),
           getPositions({ is_active: true }),
+          getBatches({ status: 'AVAILABLE', category: 'CONSUMABLE' }),
         ])
         setLots(lotsData || [])
         setMedia(mediaData || [])
         setPositions(positionsData || [])
+        setCryoBatches(cryoBatchesData || [])
 
         // Auto-bind from URL params
         const paramLotId = searchParams.get('lot_id')
@@ -353,6 +365,7 @@ function FreezePageInner() {
         dissociation_volume_ml: dissociationVolume ? Number(dissociationVolume) : undefined,
         wash_medium_id: washMediumId || undefined,
         wash_volume_ml: washVolume ? Number(washVolume) : undefined,
+        cryo_batch_id: cryoBatchId || undefined,
         viability_percent: Number(viability),
         concentration: Number(concentration),
         notes: notes || undefined,
@@ -758,6 +771,53 @@ function FreezePageInner() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Batch selection from warehouse */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Package className="h-4 w-4" />
+                Партия криовиалов со склада
+              </Label>
+              <Select value={cryoBatchId} onValueChange={(val) => {
+                setCryoBatchId(val)
+                // Auto-fill volumePerVial from batch volume_per_unit
+                const batch = cryoBatches.find((b) => b.id === val)
+                if (batch?.volume_per_unit && !volumePerVial) {
+                  setVolumePerVial(String(batch.volume_per_unit))
+                }
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите партию криовиалов..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {cryoBatches.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.nomenclature?.name || 'Криовиалы'} — {b.batch_number} (ост. {b.quantity} шт.
+                      {b.expiration_date ? `, до ${formatDate(b.expiration_date)}` : ''})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Криовиалы будут списаны со склада после заморозки. Поле необязательное.
+              </p>
+              {cryoBatchId && (
+                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => setCryoBatchId('')}>
+                  ✕ Сбросить выбор
+                </Button>
+              )}
+            </div>
+
+            {/* Quantity warning */}
+            {selectedCryoBatch && Number(cryoVialCount) > selectedCryoBatch.quantity && (
+              <Alert className="border-red-300 bg-red-50">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <AlertDescription className="text-red-800">
+                  Запрошено {cryoVialCount} криовиалов, но в партии осталось только{' '}
+                  <strong>{selectedCryoBatch.quantity}</strong> шт.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="grid gap-4 md:grid-cols-2">
               {/* Number of cryovials */}
               <div className="space-y-2">
@@ -1038,6 +1098,15 @@ function FreezePageInner() {
             <div className="space-y-2">
               <h3 className="font-medium">Криовиалы</h3>
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                {selectedCryoBatch && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Партия со склада:</span>
+                    <span className="font-medium">
+                      {selectedCryoBatch.nomenclature?.name || 'Криовиалы'} — {selectedCryoBatch.batch_number}
+                      {' '}(ост. {selectedCryoBatch.quantity} шт.)
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Криовиалов:</span>
                   <span className="font-medium">{cryoVialCount}</span>

@@ -113,7 +113,9 @@ export default function InventoryPage() {
     } else if (categoryTab !== 'all' && batch.nomenclature?.category !== categoryTab) return false
 
     // Status filter
-    if (selectedStatus !== 'all' && batch.status !== selectedStatus) return false
+    if (selectedStatus === 'LOW_STOCK') {
+      if (!(batch.quantity <= 5 && batch.quantity > 0 && batch.status !== 'EXPIRED')) return false
+    } else if (selectedStatus !== 'all' && batch.status !== selectedStatus) return false
 
     // Search
     if (searchQuery) {
@@ -251,9 +253,12 @@ export default function InventoryPage() {
         </Button>
       </div>
 
-      {/* Stats */}
+      {/* Stats — clickable filters */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
+        <Card
+          className={`cursor-pointer transition-shadow hover:shadow-md ${selectedStatus === 'all' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => setSelectedStatus('all')}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Всего позиций
@@ -263,7 +268,10 @@ export default function InventoryPage() {
             <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-shadow hover:shadow-md ${selectedStatus === 'AVAILABLE' ? 'ring-2 ring-green-500' : ''}`}
+          onClick={() => setSelectedStatus('AVAILABLE')}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               В наличии
@@ -273,7 +281,10 @@ export default function InventoryPage() {
             <div className="text-2xl font-bold text-green-600">{stats.available}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-shadow hover:shadow-md ${selectedStatus === 'LOW_STOCK' ? 'ring-2 ring-amber-500' : ''}`}
+          onClick={() => setSelectedStatus('LOW_STOCK')}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Мало на складе
@@ -283,7 +294,10 @@ export default function InventoryPage() {
             <div className="text-2xl font-bold text-amber-600">{stats.lowStock}</div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-shadow hover:shadow-md ${selectedStatus === 'EXPIRED' ? 'ring-2 ring-red-500' : ''}`}
+          onClick={() => setSelectedStatus('EXPIRED')}
+        >
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Просрочено
@@ -310,6 +324,7 @@ export default function InventoryPage() {
           <TabsList>
             <TabsTrigger value="all">Все</TabsTrigger>
             <TabsTrigger value="AVAILABLE">В наличии</TabsTrigger>
+            <TabsTrigger value="LOW_STOCK">Мало</TabsTrigger>
             <TabsTrigger value="EXPIRED">Просрочено</TabsTrigger>
             <TabsTrigger value="USED">Использовано</TabsTrigger>
           </TabsList>
@@ -448,9 +463,21 @@ export default function InventoryPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge className={getStatusColor(batch.status)}>
-                          {getStatusLabel(batch.status)}
-                        </Badge>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge className={getStatusColor(batch.status)}>
+                            {getStatusLabel(batch.status)}
+                          </Badge>
+                          {batch.quantity > 0 && batch.quantity <= 5 && batch.status !== 'EXPIRED' && (
+                            <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 text-xs">
+                              Мало
+                            </Badge>
+                          )}
+                          {batch.status === 'EXPIRED' && (
+                            <Badge variant="outline" className="text-red-600 border-red-300 bg-red-50 text-xs">
+                              Просрочено
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <DropdownMenu>

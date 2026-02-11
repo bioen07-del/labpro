@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.04"
+export const APP_VERSION = "1.25.05"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.05",
+    date: "11.02.2026",
+    changes: [
+      "Заморозка: выбор партии криовиалов из склада (CONSUMABLE) с авто-списанием",
+      "Склад: карточки статистики стали кликабельными фильтрами (Все/В наличии/Мало/Просрочено)",
+      "Склад: добавлен фильтр «Мало» в табы и бейджи «Мало» / «Просрочено» в строках таблицы",
+    ],
+  },
   {
     version: "1.25.04",
     date: "11.02.2026",
