@@ -18,6 +18,7 @@ import {
   PowerOff,
   Power,
   Trash2,
+  Printer,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -40,11 +41,13 @@ import {
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 
 import { getEquipmentById, updateEquipment, getMonitoringParams, getEquipmentLogs, createEquipmentLog, deactivateEquipment, activateEquipment, deleteEquipment } from "@/lib/api"
+import { QRLabel } from "@/components/qr-label"
 import { formatDate } from "@/lib/utils"
 import type { EquipmentMonitoringParam, EquipmentLog } from "@/types"
 
@@ -54,12 +57,16 @@ import type { EquipmentMonitoringParam, EquipmentLog } from "@/types"
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   ACTIVE: {
-    label: "Активно",
+    label: "Работает",
     className: "bg-green-100 text-green-700 hover:bg-green-100",
   },
   MAINTENANCE: {
     label: "На обслуживании",
     className: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100",
+  },
+  BROKEN: {
+    label: "Неисправно",
+    className: "bg-red-100 text-red-700 hover:bg-red-100",
   },
   DECOMMISSIONED: {
     label: "Списано",
@@ -176,6 +183,55 @@ export default function EquipmentDetailPage({
       }
       setConfirmDelete(false)
     }
+  }
+
+  async function handleStatusChange(newStatus: string) {
+    try {
+      await updateEquipment(id, { status: newStatus })
+      toast.success(`Статус изменён на «${STATUS_CONFIG[newStatus]?.label || newStatus}»`)
+      loadData()
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err?.message || 'Ошибка при смене статуса')
+    }
+  }
+
+  // Helper: print QR for a position
+  function printPositionQR(pos: any) {
+    const qrCode = `POS:${pos.id}`
+    const title = pos.path || 'Позиция'
+    const subtitle = equipment?.name || ''
+    const win = window.open('', '_blank', 'width=400,height=300')
+    if (!win) return
+    win.document.write(`
+      <html><head><title>QR Позиции</title>
+      <style>
+        body { margin: 0; padding: 12px; font-family: Arial, sans-serif; }
+        .label { display: flex; gap: 12px; align-items: flex-start; }
+        .info { flex: 1; }
+        .title { font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+        .subtitle { font-size: 11px; color: #666; margin-bottom: 4px; }
+        .code { font-family: monospace; font-size: 12px; }
+        @media print { body { margin: 0; } }
+      </style>
+      <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"><\/script>
+      </head><body>
+      <div class="label">
+        <canvas id="qr"></canvas>
+        <div class="info">
+          <div class="title">${title}</div>
+          <div class="subtitle">${subtitle}</div>
+          <div class="code">${qrCode}</div>
+        </div>
+      </div>
+      <script>
+        QRCode.toCanvas(document.getElementById('qr'), '${qrCode}', {width: 80, margin: 0}, function() {
+          window.print(); window.close();
+        });
+      <\/script>
+      </body></html>
+    `)
+    win.document.close()
   }
 
   async function handleSaveLog() {
@@ -321,11 +377,21 @@ export default function EquipmentDetailPage({
               value={equipment.location || "---"}
               icon={<MapPin className="h-3.5 w-3.5 text-muted-foreground" />}
             />
-            <InfoRow
-              label="Статус"
-              value=""
-              badge={statusBadge(equipment.status)}
-            />
+            <div className="space-y-1">
+              <dt className="text-sm font-medium text-muted-foreground">Статус</dt>
+              <dd>
+                <Select value={equipment.status} onValueChange={handleStatusChange}>
+                  <SelectTrigger className="w-[200px] h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                      <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </dd>
+            </div>
             <InfoRow
               label="Дата валидации"
               value={equipment.validation_date ? formatDate(equipment.validation_date) : "---"}
@@ -354,6 +420,20 @@ export default function EquipmentDetailPage({
               <dd className="text-sm whitespace-pre-wrap">{equipment.notes}</dd>
             </div>
           )}
+
+          {/* QR Label */}
+          <div className="mt-4 pt-4 border-t">
+            <QRLabel
+              code={`EQP:${equipment.id}`}
+              title={equipment.name}
+              subtitle={typeLabel(equipment.type)}
+              metadata={{
+                ...(equipment.code ? { 'Код': equipment.code } : {}),
+                ...(equipment.inventory_number ? { 'Инв.': equipment.inventory_number } : {}),
+                ...(equipment.location ? { 'Место': equipment.location } : {}),
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -493,6 +573,13 @@ export default function EquipmentDetailPage({
                         <span className="text-xs text-muted-foreground">{children.filter((c: any) => c.is_active !== false).length} мест</span>
                       )}
                       {pos.qr_code && <span className="text-xs text-muted-foreground">QR: {pos.qr_code}</span>}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); printPositionQR(pos) }}
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                        title="Печать QR"
+                      >
+                        <Printer className="h-3 w-3" />
+                      </button>
                       {pos.is_active === false ? (
                         <Badge variant="secondary" className="text-xs">Неактивна</Badge>
                       ) : (
@@ -506,6 +593,13 @@ export default function EquipmentDetailPage({
                             <div className="w-3 h-3 border-l-2 border-b-2 border-muted-foreground/30 shrink-0" />
                             <span className="font-mono text-sm flex-1">{child.path || '---'}</span>
                             {child.qr_code && <span className="text-xs text-muted-foreground">QR: {child.qr_code}</span>}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); printPositionQR(child) }}
+                              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                              title="Печать QR"
+                            >
+                              <Printer className="h-3 w-3" />
+                            </button>
                             {child.is_active === false ? (
                               <Badge variant="secondary" className="text-xs">Неактивна</Badge>
                             ) : (

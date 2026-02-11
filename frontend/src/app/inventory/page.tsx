@@ -228,12 +228,7 @@ export default function InventoryPage() {
               Добавить партию
             </Link>
           </Button>
-          <Button variant="outline" asChild>
-            <Link href="/ready-media/new">
-              <Beaker className="mr-2 h-4 w-4" />
-              Приготовить среду
-            </Link>
-          </Button>
+          {/* Кнопка "Приготовить среду" убрана — функционал /ready-media удалён */}
         </div>
       </div>
 
@@ -363,9 +358,9 @@ export default function InventoryPage() {
                 {filteredReadyMedia.map((media) => (
                   <TableRow key={media.id}>
                     <TableCell>
-                      <Link href={`/ready-media/${media.id}`} className="font-medium hover:underline text-blue-600">
+                      <span className="font-medium">
                         {media.code || media.id?.slice(0, 8)}
-                      </Link>
+                      </span>
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</div>
@@ -382,9 +377,7 @@ export default function InventoryPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" asChild>
-                        <Link href={`/ready-media/${media.id}`}><Eye className="h-4 w-4" /></Link>
-                      </Button>
+                      <span className="text-muted-foreground"><Eye className="h-4 w-4" /></span>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -393,7 +386,7 @@ export default function InventoryPage() {
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       <Beaker className="h-10 w-10 mx-auto mb-3 opacity-40" />
                       <p>Готовые среды не найдены</p>
-                      <Button variant="link" asChild className="mt-2"><Link href="/ready-media/new">Приготовить среду</Link></Button>
+                      <p className="mt-2 text-sm">Нет приготовленных сред</p>
                     </TableCell>
                   </TableRow>
                 )}

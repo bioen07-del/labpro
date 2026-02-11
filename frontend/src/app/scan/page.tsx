@@ -66,7 +66,7 @@ function getEntityRoute(type: string, entity: Record<string, unknown>): string |
     case "bank":
       return entity.id ? `/banks/${entity.id}` : null
     case "ready_medium":
-      return "/ready-media"
+      return "/inventory"
     case "position":
       return "/equipment"
     default:

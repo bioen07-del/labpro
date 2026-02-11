@@ -144,12 +144,14 @@ export default function ReferencesPage() {
     }
   }, [])
 
-  useEffect(() => { loadTab(activeTab) }, [activeTab, loadTab])
-
-  // Also load container_types for nomenclature forms (for container_type_id dropdown)
+  // Load ALL tabs on mount so counts are visible immediately
   useEffect(() => {
-    getContainerTypes(true).then(ct => setContainerTypes(ct || [])).catch(() => {})
-  }, [])
+    const allTabs: TabKey[] = ['culture_types', 'media_reagents', 'consumables', 'morphology_types', 'dispose_reasons']
+    allTabs.forEach(tab => loadTab(tab))
+  }, [loadTab])
+
+  // Reload current tab when switching (in case data changed)
+  useEffect(() => { loadTab(activeTab) }, [activeTab, loadTab])
 
   // ---- Helpers: tissue links for a culture type ----
 

@@ -12,7 +12,6 @@ import {
   XCircle,
   Zap,
   ClipboardList,
-  Trash2,
   Power,
   PowerOff,
   Eye,
@@ -24,7 +23,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getEquipment, createEquipmentLog, getMonitoringParams, deactivateEquipment, activateEquipment, deleteEquipment } from "@/lib/api"
+import { getEquipment, createEquipmentLog, getMonitoringParams, deactivateEquipment, activateEquipment } from "@/lib/api"
 import { format } from "date-fns"
 import { ru } from "date-fns/locale"
 
@@ -84,7 +83,7 @@ export default function EquipmentPage() {
   const [monitoringParams, setMonitoringParams] = useState<MonitoringParam[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showInactive, setShowInactive] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState<any>(null)
+  // confirmDelete removed — deletion only from detail page
 
   useEffect(() => {
     loadEquipment()
@@ -117,22 +116,7 @@ export default function EquipmentPage() {
     }
   }
 
-  const handleDelete = async (item: any) => {
-    try {
-      await deleteEquipment(item.id)
-      toast.success(`${item.name} удалено`)
-      setConfirmDelete(null)
-      loadEquipment()
-    } catch (err: any) {
-      console.error(err)
-      if (err?.message?.includes("foreign key") || err?.code === "23503") {
-        toast.error("Нельзя удалить — есть связанные записи. Деактивируйте вместо удаления.")
-      } else {
-        toast.error("Ошибка при удалении")
-      }
-      setConfirmDelete(null)
-    }
-  }
+  // handleDelete removed — deletion only from detail page
 
   const openMonitoring = async (item: any) => {
     setSelectedEquip(item)
@@ -242,9 +226,12 @@ export default function EquipmentPage() {
         </Button>
       </div>
 
-      {/* Stats */}
+      {/* Stats — clickable filter cards */}
       <div className="grid gap-4 md:grid-cols-4 mb-6">
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${filter === 'ACTIVE' ? 'ring-2 ring-green-500/30' : ''}`}
+          onClick={() => setFilter(filter === 'ACTIVE' ? 'all' : 'ACTIVE')}
+        >
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-100 rounded-lg">
@@ -258,7 +245,10 @@ export default function EquipmentPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${filter === 'MAINTENANCE' ? 'ring-2 ring-yellow-500/30' : ''}`}
+          onClick={() => setFilter(filter === 'MAINTENANCE' ? 'all' : 'MAINTENANCE')}
+        >
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-yellow-100 rounded-lg">
@@ -272,7 +262,10 @@ export default function EquipmentPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${filter === 'BROKEN' ? 'ring-2 ring-red-500/30' : ''}`}
+          onClick={() => setFilter(filter === 'BROKEN' ? 'all' : 'BROKEN')}
+        >
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-100 rounded-lg">
@@ -286,7 +279,10 @@ export default function EquipmentPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all hover:shadow-md ${filter === 'all' ? 'ring-2 ring-blue-500/30' : ''}`}
+          onClick={() => setFilter('all')}
+        >
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-100 rounded-lg">
@@ -294,7 +290,7 @@ export default function EquipmentPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Всего</p>
-                <p className="text-2xl font-bold">{filteredEquipment.length}</p>
+                <p className="text-2xl font-bold">{equipment.filter(e => e.is_active !== false || showInactive).length}</p>
               </div>
             </div>
           </CardContent>
@@ -443,14 +439,7 @@ export default function EquipmentPage() {
                           <><PowerOff className="mr-2 h-4 w-4" />Деактивировать</>
                         )}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => setConfirmDelete(item)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Удалить
-                      </Button>
+                      {/* Удаление — только из карточки equipment/[id] */}
                     </div>
                   </div>
                 </div>
@@ -459,34 +448,6 @@ export default function EquipmentPage() {
           ))
         )}
       </div>
-
-      {/* Delete Confirmation */}
-      {confirmDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-sm mx-4">
-            <CardHeader>
-              <CardTitle className="text-destructive">Удалить оборудование?</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm">
-                Вы уверены, что хотите удалить <strong>{confirmDelete.name}</strong>?
-                Это действие нельзя отменить. Все позиции этого оборудования также будут удалены.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Если есть связанные контейнеры или логи, удаление будет невозможно. Используйте деактивацию.
-              </p>
-              <div className="flex gap-2 justify-end">
-                <Button variant="outline" onClick={() => setConfirmDelete(null)}>
-                  Отмена
-                </Button>
-                <Button variant="destructive" onClick={() => handleDelete(confirmDelete)}>
-                  Удалить
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Monitoring Modal */}
       {showMonitoringModal && selectedEquip && (

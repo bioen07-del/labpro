@@ -288,7 +288,7 @@ export function Header() {
 }
 
 function NavLink({ href, pathname, children }: { href: string; pathname: string; children: React.ReactNode }) {
-  const invPaths = ['/inventory', '/ready-media']
+  const invPaths = ['/inventory']
   const refPaths = ['/references']
   const eqPaths = ['/equipment']
   const isActive = href === '/inventory'

@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.07"
+export const APP_VERSION = "1.25.08"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.08",
+    date: "11.02.2026",
+    changes: [
+      "Удалена страница /ready-media (не используется), ссылки перенаправлены на /inventory",
+      "Оборудование: кликабельные карточки-фильтры (Работает/Обслуживание/Неисправно/Всего)",
+      "Оборудование: кнопка «Удалить» убрана из списка (только из карточки)",
+      "Оборудование: QR-печать в карточке (этикетка оборудования + позиции хранения)",
+      "Оборудование: смена статуса прямо из карточки (Select без перехода в редактирование)",
+      "Справочники: счётчики табов загружаются сразу при открытии страницы (не 0)",
+    ],
+  },
   {
     version: "1.25.07",
     date: "11.02.2026",
