@@ -1349,7 +1349,7 @@ export async function cancelOrder(orderId: string) {
 
 // ==================== INVENTORY ====================
 
-export async function getBatches(filters?: { status?: string; category?: string }) {
+export async function getBatches(filters?: { status?: string; category?: string; usage_tag?: string }) {
   let query = supabase
     .from('batches')
     .select(`
@@ -1371,6 +1371,16 @@ export async function getBatches(filters?: { status?: string; category?: string 
   let result = data as Batch[]
   if (filters?.category) {
     result = result.filter((b: any) => b.nomenclature?.category === filters.category)
+  }
+  // Client-side filter by usage_tag (nomenclature.usage_tags array)
+  if (filters?.usage_tag) {
+    const tag = filters.usage_tag
+    const tagged = result.filter((b: any) => {
+      const tags = b.nomenclature?.usage_tags as string[] | undefined
+      return tags && tags.includes(tag)
+    })
+    // Fallback: if no tagged results, return all (backward compatibility)
+    if (tagged.length > 0) result = tagged
   }
   return result
 }
@@ -3896,7 +3906,17 @@ export async function createOperationFreeze(data: FreezeData) {
       .update({ container_status: 'IN_BANK' })
       .eq('id', containerId)
   }
-  
+
+  // 7.5. Обновить лот: final_cells, viability, harvest_at (заморозка = harvest)
+  await supabase
+    .from('lots')
+    .update({
+      final_cells: data.total_cells,
+      viability: data.viability_percent,
+      harvest_at: new Date().toISOString(),
+    })
+    .eq('id', data.lot_id)
+
   // 8. Создать Operation_Metrics
   await supabase
     .from('operation_metrics')

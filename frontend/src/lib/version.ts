@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.10"
+export const APP_VERSION = "1.25.11"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.11",
+    date: "12.02.2026",
+    changes: [
+      "Заморозка: метрики (final_cells, viability, harvest_at) сохраняются в лот",
+      "Заморозка: криовиалы фильтруются по тегу FREEZING (usage_tags)",
+      "Заморозка: рабочий объём — единый или индивидуальный по пробиркам",
+      "API: getBatches поддерживает фильтрацию по usage_tag",
+    ],
+  },
   {
     version: "1.25.10",
     date: "11.02.2026",

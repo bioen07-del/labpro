@@ -26,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   getLots,
@@ -124,8 +125,11 @@ function FreezePageInner() {
   // --- Step 3: Cryovials ---
   const [cryoBatches, setCryoBatches] = useState<Batch[]>([])
   const [cryoBatchId, setCryoBatchId] = useState('')
-  const [volumePerVial, setVolumePerVial] = useState('')
+  const [volumePerVial, setVolumePerVial] = useState('')  // номинальный объём пробирки (авто из партии)
   const [cryoVialCount, setCryoVialCount] = useState('')
+  const [useIndividualVolume, setUseIndividualVolume] = useState(false)
+  const [workingVolume, setWorkingVolume] = useState('')  // единый рабочий объём
+  const [individualVolumes, setIndividualVolumes] = useState<string[]>([])  // индивидуальные объёмы
 
   // --- Step 4: Freezing ---
   const [freezingMediumId, setFreezingMediumId] = useState('')
@@ -173,11 +177,21 @@ function FreezePageInner() {
     return 0
   }, [totalCells, cryoVialCount])
 
+  // Эффективный рабочий объём: берём рабочий объём если задан, иначе номинальный
+  const effectiveVolumePerVial = useMemo(() => {
+    if (useIndividualVolume) {
+      // Средний объём из индивидуальных (для расчёта cellsPerMl)
+      const filled = individualVolumes.filter(v => Number(v) > 0)
+      if (filled.length > 0) return filled.reduce((s, v) => s + Number(v), 0) / filled.length
+      return Number(volumePerVial) || 0
+    }
+    return Number(workingVolume) || Number(volumePerVial) || 0
+  }, [useIndividualVolume, workingVolume, individualVolumes, volumePerVial])
+
   const cellsPerMl = useMemo(() => {
-    const volVial = Number(volumePerVial)
-    if (cellsPerVial > 0 && volVial > 0) return Math.round(cellsPerVial / volVial)
+    if (cellsPerVial > 0 && effectiveVolumePerVial > 0) return Math.round(cellsPerVial / effectiveVolumePerVial)
     return 0
-  }, [cellsPerVial, volumePerVial])
+  }, [cellsPerVial, effectiveVolumePerVial])
 
   // ---------------------------------------------------------------------------
   // Initial data load
@@ -192,7 +206,7 @@ function FreezePageInner() {
           getAvailableMediaByUsage('WASH'),
           getAvailableMediaByUsage('FREEZING'),
           getPositions({ is_active: true }),
-          getBatches({ status: 'AVAILABLE', category: 'CONSUMABLE' }),
+          getBatches({ status: 'AVAILABLE', category: 'CONSUMABLE', usage_tag: 'FREEZING' }),
         ])
         setLots(lotsData || [])
         setDissociationOptions(buildMediaOptions(dissResult.readyMedia, dissResult.reagentBatches))
@@ -315,8 +329,8 @@ function FreezePageInner() {
     Number(viability) <= 100
 
   const isStep3Valid =
-    volumePerVial !== '' &&
-    Number(volumePerVial) > 0 &&
+    (volumePerVial !== '' || workingVolume !== '') &&
+    effectiveVolumePerVial > 0 &&
     cryoVialCount !== '' &&
     Number(cryoVialCount) >= 1
 
@@ -845,24 +859,103 @@ function FreezePageInner() {
                   step={1}
                   placeholder="Например: 10"
                   value={cryoVialCount}
-                  onChange={(e) => setCryoVialCount(e.target.value)}
+                  onChange={(e) => {
+                    setCryoVialCount(e.target.value)
+                    // Sync individual volumes array length
+                    const count = Number(e.target.value) || 0
+                    setIndividualVolumes(prev => {
+                      const arr = [...prev]
+                      while (arr.length < count) arr.push(workingVolume || volumePerVial || '')
+                      return arr.slice(0, count)
+                    })
+                  }}
                 />
               </div>
 
-              {/* Volume per vial */}
+              {/* Nominal volume per vial (auto from batch) */}
               <div className="space-y-2">
                 <Label>
-                  Объём на криовиал, мл <span className="text-red-500">*</span>
+                  Номинальный объём пробирки, мл
                 </Label>
                 <Input
                   type="number"
                   min={0}
                   step="0.1"
-                  placeholder="Например: 1.0"
+                  placeholder="Авто из партии"
                   value={volumePerVial}
                   onChange={(e) => setVolumePerVial(e.target.value)}
+                  className="bg-muted/50"
                 />
+                <p className="text-xs text-muted-foreground">Автозаполняется из партии</p>
               </div>
+            </div>
+
+            {/* Working volume section */}
+            <div className="space-y-3 border-t pt-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Рабочий объём</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Единый</span>
+                  <Switch
+                    checked={useIndividualVolume}
+                    onCheckedChange={setUseIndividualVolume}
+                  />
+                  <span className="text-xs text-muted-foreground">Индивидуальный</span>
+                </div>
+              </div>
+
+              {!useIndividualVolume ? (
+                <div className="space-y-2">
+                  <Label className="text-sm">
+                    Рабочий объём на виал, мл
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    placeholder={volumePerVial ? `Номинал: ${volumePerVial} мл` : 'Введите рабочий объём'}
+                    value={workingVolume}
+                    onChange={(e) => setWorkingVolume(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Если не указан — используется номинальный объём пробирки
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Укажите рабочий объём для каждой пробирки ({cryoVialCount || 0} шт.)
+                  </p>
+                  {Number(cryoVialCount) > 0 && (
+                    <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                      {Array.from({ length: Math.min(Number(cryoVialCount), 50) }, (_, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground w-8 shrink-0">#{i + 1}</span>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.1"
+                            placeholder={volumePerVial || '1.0'}
+                            value={individualVolumes[i] || ''}
+                            onChange={(e) => {
+                              setIndividualVolumes(prev => {
+                                const arr = [...prev]
+                                arr[i] = e.target.value
+                                return arr
+                              })
+                            }}
+                            className="h-8 text-sm"
+                          />
+                          <span className="text-xs text-muted-foreground">мл</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {Number(cryoVialCount) > 50 && (
+                    <p className="text-xs text-amber-600">Показано только первые 50 виалов</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Auto-calculated indicators */}
@@ -889,20 +982,20 @@ function FreezePageInner() {
             )}
 
             {/* Volume check */}
-            {Number(cryoVialCount) > 0 && Number(volumePerVial) > 0 && Number(totalVolume) > 0 && (
+            {Number(cryoVialCount) > 0 && effectiveVolumePerVial > 0 && Number(totalVolume) > 0 && (
               <div className={`p-3 rounded-lg border ${
-                Number(cryoVialCount) * Number(volumePerVial) > Number(totalVolume)
+                Number(cryoVialCount) * effectiveVolumePerVial > Number(totalVolume)
                   ? 'bg-red-50 border-red-200'
                   : 'bg-green-50 border-green-200'
               }`}>
                 <p className="text-sm">
                   <span className="text-muted-foreground">Требуемый объём: </span>
                   <span className="font-medium">
-                    {(Number(cryoVialCount) * Number(volumePerVial)).toFixed(1)} мл
+                    {(Number(cryoVialCount) * effectiveVolumePerVial).toFixed(1)} мл
                   </span>
                   <span className="text-muted-foreground"> из </span>
                   <span className="font-medium">{totalVolume} мл</span>
-                  {Number(cryoVialCount) * Number(volumePerVial) > Number(totalVolume) && (
+                  {Number(cryoVialCount) * effectiveVolumePerVial > Number(totalVolume) && (
                     <span className="text-red-600 font-medium ml-2">
                       (недостаточно объёма!)
                     </span>
@@ -1124,8 +1217,17 @@ function FreezePageInner() {
                   <span className="font-medium">{cryoVialCount}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Объём на виал:</span>
+                  <span className="text-muted-foreground">Номинальный объём:</span>
                   <span className="font-medium">{volumePerVial} мл</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Рабочий объём:</span>
+                  <span className="font-medium">
+                    {useIndividualVolume
+                      ? `индивид. (сред. ${effectiveVolumePerVial.toFixed(1)} мл)`
+                      : `${effectiveVolumePerVial.toFixed(1)} мл`
+                    }
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Клеток на виал:</span>
