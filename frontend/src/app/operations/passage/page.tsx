@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
+
 import {
   ArrowLeft,
   ArrowRight,
@@ -564,10 +564,8 @@ function PassagePageInner() {
     <div className="container py-6 space-y-6 max-w-3xl mx-auto">
       {/* ---- Header ---- */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/operations">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Пассажирование</h1>
@@ -1438,11 +1436,10 @@ function PassagePageInner() {
       <div className="flex justify-between">
         <Button
           variant="outline"
-          onClick={() => setStep((s) => Math.max(1, s - 1))}
-          disabled={step === 1}
+          onClick={step === 1 ? () => router.back() : () => setStep((s) => s - 1)}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Назад
+          {step === 1 ? 'Отмена' : 'Назад'}
         </Button>
 
         {step < 5 ? (

@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.03"
+export const APP_VERSION = "1.25.04"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.04",
+    date: "11.02.2026",
+    changes: [
+      "Форма заморозки: перестроены шаги (Источник → Снятие клеток → Криовиалы → Заморозка → Сводка)",
+      "Форма заморозки: авто-расчёт клеток/виалу, клеток/мл, проверка объёма",
+      "Навигация назад: все формы операций — router.back() вместо hardcoded /operations",
+      "Пассаж: кнопка Отмена на шаге 1 вместо disabled Назад",
+    ],
+  },
   {
     version: "1.25.03",
     date: "11.02.2026",

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,6 +11,8 @@ import {
   AlertCircle,
   Snowflake,
   MapPin,
+  Scissors,
+  TestTubes,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -45,15 +46,15 @@ interface StepDef {
 
 const STEPS: StepDef[] = [
   { label: 'Источник', shortLabel: 'Источник' },
-  { label: 'Параметры', shortLabel: 'Параметры' },
-  { label: 'Среды и метрики', shortLabel: 'Среды' },
-  { label: 'Размещение', shortLabel: 'Размещение' },
+  { label: 'Снятие клеток', shortLabel: 'Снятие' },
+  { label: 'Криовиалы', shortLabel: 'Виалы' },
+  { label: 'Заморозка', shortLabel: 'Заморозка' },
   { label: 'Подтверждение', shortLabel: 'Итого' },
 ]
 
 const FREEZING_METHODS = [
   { value: 'PROGRAMMED', label: 'Программное замораживание' },
-  { value: 'MANUAL_80', label: 'Ручное (-80 C)' },
+  { value: 'MANUAL_80', label: 'Ручное (-80 \u00B0C)' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -103,26 +104,29 @@ function FreezePageInner() {
   const [selectedLotId, setSelectedLotId] = useState('')
   const [selectedContainerIds, setSelectedContainerIds] = useState<string[]>([])
 
-  // --- Step 2: Parameters ---
-  const [bankType, setBankType] = useState<'MCB' | 'WCB' | null>(null)
-  const [bankTypeLoading, setBankTypeLoading] = useState(false)
-  const [freezingMethod, setFreezingMethod] = useState('')
-  const [volumePerVial, setVolumePerVial] = useState('')
-  const [cryoVialCount, setCryoVialCount] = useState('')
-
-  // --- Step 3: Media & Metrics ---
-  const [freezingMediumId, setFreezingMediumId] = useState('')
-  const [freezingMediumVolume, setFreezingMediumVolume] = useState('')
+  // --- Step 2: Cell detachment (как при пассаже) ---
   const [dissociationMediumId, setDissociationMediumId] = useState('')
   const [dissociationVolume, setDissociationVolume] = useState('')
   const [washMediumId, setWashMediumId] = useState('')
   const [washVolume, setWashVolume] = useState('')
+  // Metrics after cell counting
   const [concentration, setConcentration] = useState('')
   const [totalVolume, setTotalVolume] = useState('')
   const [viability, setViability] = useState('')
 
-  // --- Step 4: Placement ---
+  // --- Step 3: Cryovials ---
+  const [volumePerVial, setVolumePerVial] = useState('')
+  const [cryoVialCount, setCryoVialCount] = useState('')
+
+  // --- Step 4: Freezing ---
+  const [freezingMediumId, setFreezingMediumId] = useState('')
+  const [freezingMediumVolume, setFreezingMediumVolume] = useState('')
+  const [freezingMethod, setFreezingMethod] = useState('')
   const [positionId, setPositionId] = useState('')
+
+  // --- Bank type (auto-determined) ---
+  const [bankType, setBankType] = useState<'MCB' | 'WCB' | null>(null)
+  const [bankTypeLoading, setBankTypeLoading] = useState(false)
 
   // --- Step 5: Notes ---
   const [notes, setNotes] = useState('')
@@ -154,6 +158,12 @@ function FreezePageInner() {
     if (totalCells > 0 && count > 0) return Math.round(totalCells / count)
     return 0
   }, [totalCells, cryoVialCount])
+
+  const cellsPerMl = useMemo(() => {
+    const volVial = Number(volumePerVial)
+    if (cellsPerVial > 0 && volVial > 0) return Math.round(cellsPerVial / volVial)
+    return 0
+  }, [cellsPerVial, volumePerVial])
 
   // ---------------------------------------------------------------------------
   // Initial data load
@@ -222,7 +232,7 @@ function FreezePageInner() {
   }
 
   // ---------------------------------------------------------------------------
-  // Determine MCB / WCB when lot is selected and user proceeds to step 2
+  // Determine MCB / WCB when lot is selected and user proceeds from step 1
   // ---------------------------------------------------------------------------
 
   const determineBankType = useCallback(async () => {
@@ -246,6 +256,14 @@ function FreezePageInner() {
   // Container selection helpers
   // ---------------------------------------------------------------------------
 
+  const activeContainers = useMemo(
+    () => containers.filter((c: any) => {
+      const st = c.container_status || c.status
+      return st !== 'DISPOSE' && st !== 'USED'
+    }),
+    [containers],
+  )
+
   const toggleContainer = (id: string) => {
     setSelectedContainerIds((prev) =>
       prev.includes(id) ? prev.filter((cid) => cid !== id) : [...prev, id],
@@ -253,10 +271,10 @@ function FreezePageInner() {
   }
 
   const toggleAll = () => {
-    if (selectedContainerIds.length === containers.length) {
+    if (selectedContainerIds.length === activeContainers.length) {
       setSelectedContainerIds([])
     } else {
-      setSelectedContainerIds(containers.map((c: any) => c.id))
+      setSelectedContainerIds(activeContainers.map((c: any) => c.id))
     }
   }
 
@@ -268,15 +286,6 @@ function FreezePageInner() {
     selectedLotId !== '' && selectedContainerIds.length > 0
 
   const isStep2Valid =
-    bankType !== null &&
-    freezingMethod !== '' &&
-    volumePerVial !== '' &&
-    Number(volumePerVial) > 0 &&
-    cryoVialCount !== '' &&
-    Number(cryoVialCount) >= 1
-
-  const isStep3Valid =
-    freezingMediumId !== '' &&
     concentration !== '' &&
     Number(concentration) > 0 &&
     totalVolume !== '' &&
@@ -285,7 +294,16 @@ function FreezePageInner() {
     Number(viability) >= 0 &&
     Number(viability) <= 100
 
-  const isStep4Valid = positionId !== ''
+  const isStep3Valid =
+    volumePerVial !== '' &&
+    Number(volumePerVial) > 0 &&
+    cryoVialCount !== '' &&
+    Number(cryoVialCount) >= 1
+
+  const isStep4Valid =
+    freezingMediumId !== '' &&
+    freezingMethod !== '' &&
+    positionId !== ''
 
   const canProceed = (): boolean => {
     switch (step) {
@@ -386,10 +404,8 @@ function FreezePageInner() {
     <div className="container py-6 space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/operations">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
@@ -469,21 +485,39 @@ function FreezePageInner() {
               </Select>
             </div>
 
+            {/* Lot info */}
+            {selectedLot && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3 bg-muted/40">
+                <Badge variant="secondary">
+                  {selectedLot.culture?.name || selectedLot.culture?.culture_type?.name || '---'}
+                </Badge>
+                <span className="text-sm text-muted-foreground">
+                  Пассаж: <span className="font-medium text-foreground">P{selectedLot.passage_number ?? '?'}</span>
+                </span>
+                {/* Bank type badge */}
+                {bankType && (
+                  <Badge className={bankType === 'MCB' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}>
+                    {bankType}
+                  </Badge>
+                )}
+              </div>
+            )}
+
             {/* Container list */}
             {selectedLotId && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label>
                     Контейнеры
-                    {containers.length > 0 && (
+                    {activeContainers.length > 0 && (
                       <span className="text-muted-foreground font-normal ml-1">
-                        ({selectedContainerIds.length} / {containers.length})
+                        ({selectedContainerIds.length} / {activeContainers.length})
                       </span>
                     )}
                   </Label>
-                  {containers.length > 1 && (
+                  {activeContainers.length > 1 && (
                     <Button variant="outline" size="sm" onClick={toggleAll}>
-                      {selectedContainerIds.length === containers.length
+                      {selectedContainerIds.length === activeContainers.length
                         ? 'Снять все'
                         : 'Выбрать все'}
                     </Button>
@@ -495,17 +529,15 @@ function FreezePageInner() {
                     <RefreshCw className="h-5 w-5 mx-auto animate-spin mb-2" />
                     <p className="text-sm">Загрузка контейнеров...</p>
                   </div>
-                ) : containers.length === 0 ? (
+                ) : activeContainers.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground border rounded-lg">
                     <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                    <p>Нет контейнеров в выбранном лоте</p>
+                    <p>Нет активных контейнеров в выбранном лоте</p>
                   </div>
                 ) : (
                   <div className="grid gap-2 max-h-72 overflow-y-auto border rounded-lg p-2">
-                    {containers.map((container: any) => {
-                      const isSelected = selectedContainerIds.includes(
-                        container.id,
-                      )
+                    {activeContainers.map((container: any) => {
+                      const isSelected = selectedContainerIds.includes(container.id)
                       return (
                         <div
                           key={container.id}
@@ -523,18 +555,14 @@ function FreezePageInner() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <Badge variant="outline">{container.code}</Badge>
-                              {container.status && (
-                                <Badge variant="secondary">
-                                  {container.status}
-                                </Badge>
-                              )}
+                              <Badge variant="secondary" className="text-xs">
+                                {container.container_type?.name || container.type?.name || 'Контейнер'}
+                              </Badge>
                             </div>
                           </div>
                           {container.confluent_percent != null && (
                             <div className="text-sm text-right whitespace-nowrap">
-                              <span className="text-muted-foreground">
-                                Конф.&nbsp;
-                              </span>
+                              <span className="text-muted-foreground">Конф.&nbsp;</span>
                               <span
                                 className={
                                   container.confluent_percent >= 90
@@ -560,218 +588,108 @@ function FreezePageInner() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 2 : PARAMETERS                                                */}
+      {/* STEP 2 : CELL DETACHMENT (снятие клеток, как при пассаже)         */}
       {/* ================================================================== */}
       {step === 2 && (
         <Card>
           <CardHeader>
-            <CardTitle>Шаг 2. Параметры заморозки</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Scissors className="h-5 w-5" />
+              Шаг 2. Снятие клеток
+            </CardTitle>
             <CardDescription>
-              Укажите метод замораживания и количество криовиалов
+              Среды для снятия клеток и результаты подсчёта
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Bank type badge (auto-determined) */}
-            <div className="space-y-2">
-              <Label>Тип банка (определяется автоматически)</Label>
-              <div className="flex items-center gap-3">
-                {bankTypeLoading ? (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Определение типа...</span>
+            {/* Bank type auto-determined */}
+            {bankType && (
+              <div className="flex items-center gap-3 p-3 rounded-lg border bg-muted/50">
+                <span className="text-sm text-muted-foreground">Тип банка:</span>
+                <Badge className={`text-base px-3 py-0.5 ${bankType === 'MCB' ? 'bg-blue-100 text-blue-800 hover:bg-blue-100' : 'bg-purple-100 text-purple-800 hover:bg-purple-100'}`}>
+                  {bankType === 'MCB' ? 'MCB (Master Cell Bank)' : 'WCB (Working Cell Bank)'}
+                </Badge>
+              </div>
+            )}
+            {bankTypeLoading && (
+              <div className="flex items-center gap-2 text-muted-foreground p-3 rounded-lg border">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Определение типа банка...</span>
+              </div>
+            )}
+
+            {/* --- Dissociation & Wash media --- */}
+            <div>
+              <h3 className="font-medium mb-3">Среды для снятия клеток</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Dissociation medium */}
+                <div className="space-y-2">
+                  <Label>Среда диссоциации</Label>
+                  <div className="grid gap-2 grid-cols-[1fr_90px]">
+                    <Select value={dissociationMediumId} onValueChange={setDissociationMediumId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="(необязательно)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {media.map((m: any) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.code || m.name}
+                            {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      placeholder="мл"
+                      value={dissociationVolume}
+                      onChange={(e) => setDissociationVolume(e.target.value)}
+                      disabled={!dissociationMediumId}
+                    />
                   </div>
-                ) : bankType === 'MCB' ? (
-                  <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-base px-4 py-1">
-                    MCB (Master Cell Bank)
-                  </Badge>
-                ) : bankType === 'WCB' ? (
-                  <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-base px-4 py-1">
-                    WCB (Working Cell Bank)
-                  </Badge>
-                ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Тип будет определен после выбора лота
-                  </span>
-                )}
-              </div>
-              {bankType && (
-                <p className="text-xs text-muted-foreground">
-                  {bankType === 'MCB'
-                    ? 'Первая заморозка для этой культуры - создается Master Cell Bank'
-                    : 'У культуры уже есть банк - создается Working Cell Bank'}
-                </p>
-              )}
-            </div>
-
-            {/* Freezing method */}
-            <div className="space-y-2">
-              <Label htmlFor="freezingMethod">Метод заморозки</Label>
-              <Select value={freezingMethod} onValueChange={setFreezingMethod}>
-                <SelectTrigger id="freezingMethod">
-                  <SelectValue placeholder="Выберите метод..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {FREEZING_METHODS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Volume per vial */}
-            <div className="space-y-2">
-              <Label htmlFor="volumePerVial">Объем на криовиал, мл</Label>
-              <Input
-                id="volumePerVial"
-                type="number"
-                min={0}
-                step="0.1"
-                placeholder="Например: 1.0"
-                value={volumePerVial}
-                onChange={(e) => setVolumePerVial(e.target.value)}
-              />
-            </div>
-
-            {/* Number of cryovials */}
-            <div className="space-y-2">
-              <Label htmlFor="cryoVialCount">Количество криовиалов</Label>
-              <Input
-                id="cryoVialCount"
-                type="number"
-                min={1}
-                step={1}
-                placeholder="Например: 10"
-                value={cryoVialCount}
-                onChange={(e) => setCryoVialCount(e.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ================================================================== */}
-      {/* STEP 3 : MEDIA & METRICS                                           */}
-      {/* ================================================================== */}
-      {step === 3 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Шаг 3. Среды и метрики</CardTitle>
-            <CardDescription>
-              Укажите использованные среды и показатели подсчета клеток
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* --- Media --- */}
-            <div className="grid gap-4 md:grid-cols-3">
-              {/* Freezing medium (required) */}
-              <div className="space-y-2">
-                <Label htmlFor="freezingMedium">
-                  Среда для заморозки <span className="text-red-500">*</span>
-                </Label>
-                <div className="grid gap-2 grid-cols-[1fr_100px]">
-                  <Select
-                    value={freezingMediumId}
-                    onValueChange={setFreezingMediumId}
-                  >
-                    <SelectTrigger id="freezingMedium">
-                      <SelectValue placeholder="Выберите..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {media.map((m: any) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.code || m.name}
-                          {m.expiration_date &&
-                            ` | до ${formatDate(m.expiration_date)}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    placeholder="мл"
-                    value={freezingMediumVolume}
-                    onChange={(e) => setFreezingMediumVolume(e.target.value)}
-                  />
                 </div>
-              </div>
 
-              {/* Dissociation medium (optional) */}
-              <div className="space-y-2">
-                <Label htmlFor="dissociationMedium">
-                  Среда диссоциации
-                </Label>
-                <div className="grid gap-2 grid-cols-[1fr_100px]">
-                  <Select
-                    value={dissociationMediumId}
-                    onValueChange={setDissociationMediumId}
-                  >
-                    <SelectTrigger id="dissociationMedium">
-                      <SelectValue placeholder="(необязательно)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {media.map((m: any) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.code || m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    placeholder="мл"
-                    value={dissociationVolume}
-                    onChange={(e) => setDissociationVolume(e.target.value)}
-                    disabled={!dissociationMediumId}
-                  />
-                </div>
-              </div>
-
-              {/* Wash medium (optional) */}
-              <div className="space-y-2">
-                <Label htmlFor="washMedium">Среда для промывки</Label>
-                <div className="grid gap-2 grid-cols-[1fr_100px]">
-                  <Select value={washMediumId} onValueChange={setWashMediumId}>
-                    <SelectTrigger id="washMedium">
-                      <SelectValue placeholder="(необязательно)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {media.map((m: any) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.code || m.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.1}
-                    placeholder="мл"
-                    value={washVolume}
-                    onChange={(e) => setWashVolume(e.target.value)}
-                    disabled={!washMediumId}
-                  />
+                {/* Wash medium */}
+                <div className="space-y-2">
+                  <Label>Среда для промывки</Label>
+                  <div className="grid gap-2 grid-cols-[1fr_90px]">
+                    <Select value={washMediumId} onValueChange={setWashMediumId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="(необязательно)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {media.map((m: any) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.code || m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      placeholder="мл"
+                      value={washVolume}
+                      onChange={(e) => setWashVolume(e.target.value)}
+                      disabled={!washMediumId}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* --- Metrics --- */}
+            {/* --- Cell count metrics --- */}
             <div className="border-t pt-4">
-              <h3 className="font-medium mb-4">Метрики подсчета клеток</h3>
+              <h3 className="font-medium mb-3">Результаты подсчёта клеток</h3>
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="concentration">
-                    Концентрация (клеток/мл){' '}
-                    <span className="text-red-500">*</span>
+                  <Label>
+                    Концентрация (кл/мл) <span className="text-red-500">*</span>
                   </Label>
                   <Input
-                    id="concentration"
                     type="number"
                     min={0}
                     step={1000}
@@ -782,11 +700,10 @@ function FreezePageInner() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="totalVolume">
-                    Общий объем (мл) <span className="text-red-500">*</span>
+                  <Label>
+                    Общий объём (мл) <span className="text-red-500">*</span>
                   </Label>
                   <Input
-                    id="totalVolume"
                     type="number"
                     min={0}
                     step="0.1"
@@ -797,11 +714,10 @@ function FreezePageInner() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="viability">
+                  <Label>
                     Жизнеспособность (%) <span className="text-red-500">*</span>
                   </Label>
                   <Input
-                    id="viability"
                     type="number"
                     min={0}
                     max={100}
@@ -814,28 +730,13 @@ function FreezePageInner() {
               </div>
             </div>
 
-            {/* Auto-calculated */}
-            {(totalCells > 0 || cellsPerVial > 0) && (
-              <div className="border-t pt-4">
-                <h3 className="font-medium mb-3">Расчетные показатели</h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="p-3 bg-muted rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      Всего клеток
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {formatNumber(totalCells)}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-muted rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      Клеток на криовиал
-                    </p>
-                    <p className="text-lg font-semibold">
-                      {cellsPerVial > 0 ? formatNumber(cellsPerVial) : '---'}
-                    </p>
-                  </div>
-                </div>
+            {/* Auto-calculated total cells */}
+            {totalCells > 0 && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-muted-foreground">Всего клеток</p>
+                <p className="text-lg font-semibold text-green-800">
+                  {formatNumber(totalCells)} ({(totalCells / 1e6).toFixed(2)} млн)
+                </p>
               </div>
             )}
           </CardContent>
@@ -843,69 +744,202 @@ function FreezePageInner() {
       )}
 
       {/* ================================================================== */}
-      {/* STEP 4 : PLACEMENT                                                 */}
+      {/* STEP 3 : CRYOVIALS (криовиалы и расчёты)                          */}
+      {/* ================================================================== */}
+      {step === 3 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TestTubes className="h-5 w-5" />
+              Шаг 3. Криовиалы
+            </CardTitle>
+            <CardDescription>
+              Количество криовиалов, объём на виал и расчёт клеток
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Number of cryovials */}
+              <div className="space-y-2">
+                <Label>
+                  Количество криовиалов <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  step={1}
+                  placeholder="Например: 10"
+                  value={cryoVialCount}
+                  onChange={(e) => setCryoVialCount(e.target.value)}
+                />
+              </div>
+
+              {/* Volume per vial */}
+              <div className="space-y-2">
+                <Label>
+                  Объём на криовиал, мл <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.1"
+                  placeholder="Например: 1.0"
+                  value={volumePerVial}
+                  onChange={(e) => setVolumePerVial(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Auto-calculated indicators */}
+            {(cellsPerVial > 0 || cellsPerMl > 0) && (
+              <div className="border-t pt-4">
+                <h3 className="font-medium mb-3">Расчётные показатели</h3>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm text-muted-foreground">Всего клеток</p>
+                    <p className="text-lg font-semibold">{formatNumber(totalCells)}</p>
+                    <p className="text-xs text-muted-foreground">{(totalCells / 1e6).toFixed(2)} млн</p>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm text-muted-foreground">Клеток на виал</p>
+                    <p className="text-lg font-semibold">{formatNumber(cellsPerVial)}</p>
+                    <p className="text-xs text-muted-foreground">{(cellsPerVial / 1e6).toFixed(2)} млн</p>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm text-muted-foreground">Клеток / мл (в виале)</p>
+                    <p className="text-lg font-semibold">{formatNumber(cellsPerMl)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Volume check */}
+            {Number(cryoVialCount) > 0 && Number(volumePerVial) > 0 && Number(totalVolume) > 0 && (
+              <div className={`p-3 rounded-lg border ${
+                Number(cryoVialCount) * Number(volumePerVial) > Number(totalVolume)
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-green-50 border-green-200'
+              }`}>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Требуемый объём: </span>
+                  <span className="font-medium">
+                    {(Number(cryoVialCount) * Number(volumePerVial)).toFixed(1)} мл
+                  </span>
+                  <span className="text-muted-foreground"> из </span>
+                  <span className="font-medium">{totalVolume} мл</span>
+                  {Number(cryoVialCount) * Number(volumePerVial) > Number(totalVolume) && (
+                    <span className="text-red-600 font-medium ml-2">
+                      (недостаточно объёма!)
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ================================================================== */}
+      {/* STEP 4 : FREEZING (среда, метод, хранение)                       */}
       {/* ================================================================== */}
       {step === 4 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Шаг 4. Размещение в криохранилище
+              <Snowflake className="h-5 w-5" />
+              Шаг 4. Заморозка и хранение
             </CardTitle>
             <CardDescription>
-              Выберите позицию для хранения криовиалов
+              Среда для заморозки, метод замораживания и место хранения
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Freezing medium */}
             <div className="space-y-2">
-              <Label htmlFor="position">
-                Позиция <span className="text-red-500">*</span>
+              <Label>
+                Среда для заморозки <span className="text-red-500">*</span>
+              </Label>
+              <div className="grid gap-2 grid-cols-[1fr_100px]">
+                <Select value={freezingMediumId} onValueChange={setFreezingMediumId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите среду..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {media.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.code || m.name}
+                        {m.expiration_date && ` | до ${formatDate(m.expiration_date)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  placeholder="мл"
+                  value={freezingMediumVolume}
+                  onChange={(e) => setFreezingMediumVolume(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Freezing method */}
+            <div className="space-y-2">
+              <Label>
+                Метод заморозки <span className="text-red-500">*</span>
+              </Label>
+              <Select value={freezingMethod} onValueChange={setFreezingMethod}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Выберите метод..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {FREEZING_METHODS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Position */}
+            <div className="space-y-2">
+              <Label>
+                Место хранения <span className="text-red-500">*</span>
               </Label>
               <PositionTreeSelect
                 positions={positions}
                 value={positionId}
                 onValueChange={setPositionId}
-                placeholder="Выберите позицию..."
+                placeholder="Выберите позицию в криохранилище..."
               />
             </div>
 
             {/* Position details */}
             {selectedPosition && (
               <div className="p-4 border rounded-lg space-y-2 bg-muted/50">
-                <h4 className="font-medium">Информация о позиции</h4>
+                <h4 className="font-medium flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Информация о позиции
+                </h4>
                 <div className="grid gap-2 text-sm">
                   {selectedPosition.equipment?.name && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Оборудование:</span>
-                      <span className="font-medium">
-                        {selectedPosition.equipment.name}
-                      </span>
+                      <span className="font-medium">{selectedPosition.equipment.name}</span>
                     </div>
                   )}
                   {selectedPosition.path && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Путь:</span>
-                      <span className="font-medium">
-                        {selectedPosition.path}
-                      </span>
+                      <span className="font-medium">{selectedPosition.path}</span>
                     </div>
                   )}
                   {selectedPosition.capacity != null && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Ёмкость:</span>
-                      <span className="font-medium">
-                        {selectedPosition.capacity} мест
-                      </span>
-                    </div>
-                  )}
-                  {selectedPosition.equipment?.type && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        Тип:
-                      </span>
-                      <span className="font-medium">
-                        {selectedPosition.equipment.type}
-                      </span>
+                      <span className="font-medium">{selectedPosition.capacity} мест</span>
                     </div>
                   )}
                 </div>
@@ -936,168 +970,126 @@ function FreezePageInner() {
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Лот:</span>
-                  <span className="font-medium">
-                    {selectedLot?.lot_number || selectedLotId}
-                  </span>
+                  <span className="font-medium">{selectedLot?.lot_number || selectedLotId}</span>
                 </div>
                 {selectedLot?.culture?.name && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Культура:</span>
-                    <span className="font-medium">
-                      {selectedLot.culture.name}
-                    </span>
+                    <span className="font-medium">{selectedLot.culture.name}</span>
                   </div>
                 )}
                 {selectedLot?.passage_number != null && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Пассаж:</span>
-                    <span className="font-medium">
-                      P{selectedLot.passage_number}
-                    </span>
+                    <span className="font-medium">P{selectedLot.passage_number}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Контейнеров:</span>
-                  <span className="font-medium">
-                    {selectedContainerIds.length}
-                  </span>
+                  <span className="font-medium">{selectedContainerIds.length}</span>
                 </div>
               </div>
             </div>
 
-            {/* Parameters */}
+            {/* Cell detachment & metrics */}
             <div className="space-y-2">
-              <h3 className="font-medium">Параметры</h3>
+              <h3 className="font-medium">Снятие клеток и метрики</h3>
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Тип банка:</span>
-                  {bankType === 'MCB' ? (
-                    <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
-                      MCB
-                    </Badge>
-                  ) : (
-                    <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
-                      WCB
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Метод заморозки:</span>
-                  <span className="font-medium">
-                    {FREEZING_METHODS.find((m) => m.value === freezingMethod)
-                      ?.label || freezingMethod}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    Объем на виал:
-                  </span>
-                  <span className="font-medium">{volumePerVial} мл</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Криовиалов:</span>
-                  <span className="font-medium">{cryoVialCount}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Media & Metrics */}
-            <div className="space-y-2">
-              <h3 className="font-medium">Среды и метрики</h3>
-              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    Среда для заморозки:
-                  </span>
-                  <span className="font-medium">
-                    {media.find((m: any) => m.id === freezingMediumId)?.code ||
-                      media.find((m: any) => m.id === freezingMediumId)?.name ||
-                      '---'}
-                  </span>
-                </div>
                 {dissociationMediumId && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">
-                        Среда диссоциации:
-                      </span>
-                      <span className="font-medium">
-                        {media.find(
-                          (m: any) => m.id === dissociationMediumId,
-                        )?.code ||
-                          media.find(
-                            (m: any) => m.id === dissociationMediumId,
-                          )?.name ||
-                          '---'}
-                      </span>
-                    </div>
-                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Среда диссоциации:</span>
+                    <span className="font-medium">
+                      {media.find((m: any) => m.id === dissociationMediumId)?.code ||
+                        media.find((m: any) => m.id === dissociationMediumId)?.name || '---'}
+                      {dissociationVolume && ` (${dissociationVolume} мл)`}
+                    </span>
+                  </div>
+                )}
                 {washMediumId && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      Среда для промывки:
-                    </span>
+                    <span className="text-muted-foreground">Среда промывки:</span>
                     <span className="font-medium">
                       {media.find((m: any) => m.id === washMediumId)?.code ||
-                        media.find((m: any) => m.id === washMediumId)?.name ||
-                        '---'}
+                        media.find((m: any) => m.id === washMediumId)?.name || '---'}
+                      {washVolume && ` (${washVolume} мл)`}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Концентрация:</span>
-                  <span className="font-medium">
-                    {formatNumber(Number(concentration))} клеток/мл
-                  </span>
+                  <span className="font-medium">{formatNumber(Number(concentration))} кл/мл</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Общий объем:</span>
+                  <span className="text-muted-foreground">Объём суспензии:</span>
                   <span className="font-medium">{totalVolume} мл</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    Жизнеспособность:
-                  </span>
+                  <span className="text-muted-foreground">Жизнеспособность:</span>
                   <span className="font-medium">{viability}%</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Всего клеток:</span>
-                  <span className="font-medium">
-                    {formatNumber(totalCells)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    Клеток на виал:
-                  </span>
-                  <span className="font-medium">
-                    {formatNumber(cellsPerVial)}
-                  </span>
+                  <span className="font-semibold">{formatNumber(totalCells)} ({(totalCells / 1e6).toFixed(2)} млн)</span>
                 </div>
               </div>
             </div>
 
-            {/* Placement */}
+            {/* Cryovials */}
             <div className="space-y-2">
-              <h3 className="font-medium">Размещение</h3>
+              <h3 className="font-medium">Криовиалы</h3>
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
-                {selectedPosition?.equipment?.name && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Криовиалов:</span>
+                  <span className="font-medium">{cryoVialCount}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Объём на виал:</span>
+                  <span className="font-medium">{volumePerVial} мл</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Клеток на виал:</span>
+                  <span className="font-medium">{formatNumber(cellsPerVial)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Клеток/мл в виале:</span>
+                  <span className="font-medium">{formatNumber(cellsPerMl)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Freezing & storage */}
+            <div className="space-y-2">
+              <h3 className="font-medium">Заморозка и хранение</h3>
+              <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Тип банка:</span>
+                  <Badge className={bankType === 'MCB' ? 'bg-blue-100 text-blue-800 hover:bg-blue-100' : 'bg-purple-100 text-purple-800 hover:bg-purple-100'}>
+                    {bankType}
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Среда заморозки:</span>
+                  <span className="font-medium">
+                    {media.find((m: any) => m.id === freezingMediumId)?.code ||
+                      media.find((m: any) => m.id === freezingMediumId)?.name || '---'}
+                    {freezingMediumVolume && ` (${freezingMediumVolume} мл)`}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Метод:</span>
+                  <span className="font-medium">
+                    {FREEZING_METHODS.find((m) => m.value === freezingMethod)?.label || freezingMethod}
+                  </span>
+                </div>
+                {selectedPosition && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      Оборудование:
-                    </span>
+                    <span className="text-muted-foreground">Хранение:</span>
                     <span className="font-medium">
-                      {selectedPosition.equipment.name}
+                      {selectedPosition.equipment?.name && `${selectedPosition.equipment.name} / `}
+                      {selectedPosition.path || selectedPosition.name || positionId}
                     </span>
                   </div>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Позиция:</span>
-                  <span className="font-medium">
-                    {selectedPosition?.path ||
-                      selectedPosition?.name ||
-                      positionId}
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -1130,9 +1122,9 @@ function FreezePageInner() {
       {/* NAVIGATION                                                         */}
       {/* ================================================================== */}
       <div className="flex justify-between">
-        <Button variant="outline" onClick={goBack} disabled={step === 1}>
+        <Button variant="outline" onClick={step === 1 ? () => router.back() : goBack}>
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Назад
+          {step === 1 ? 'Отмена' : 'Назад'}
         </Button>
 
         {step < 5 ? (

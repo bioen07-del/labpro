@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
+
 import {
   ArrowLeft,
   CheckCircle2,
@@ -343,10 +343,8 @@ function ThawPageInner() {
     <div className="container py-6 space-y-6 max-w-4xl">
       {/* ---- Header ---- */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/operations">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+        <Button variant="ghost" size="icon" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
@@ -763,7 +761,7 @@ function ThawPageInner() {
           variant="outline"
           onClick={() => {
             if (step === 1) {
-              router.push('/operations')
+              router.back()
             } else {
               setStep((s) => s - 1)
             }
