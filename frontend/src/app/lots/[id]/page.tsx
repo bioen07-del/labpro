@@ -410,10 +410,9 @@ export default function LotDetailPage({
         </CardContent>
       </Card>
 
-      {/* ==================== LOT METRICS ==================== */}
+      {/* ==================== LOT METRICS (individual, with parent inheritance) ==================== */}
       {(() => {
-        // Extract metrics from operations (latest values)
-        const passageOps = operations.filter((op: any) => op.type === 'PASSAGE' || op.type === 'FREEZE')
+        // Extract metrics from THIS lot's operations (latest values)
         const observeOps = operations.filter((op: any) => op.type === 'OBSERVE' || op.type === 'PASSAGE')
 
         // Get latest metrics from any operation that has them
@@ -433,19 +432,38 @@ export default function LotDetailPage({
 
         // Latest confluency from containers
         const maxConfluent = activeContainers.reduce((max: number, c: any) => Math.max(max, c.confluent_percent ?? 0), 0)
+        const avgConfluent = activeContainers.length > 0
+          ? activeContainers.reduce((sum: number, c: any) => sum + (c.confluent_percent ?? 0), 0) / activeContainers.length
+          : 0
 
         // Last observation date
         const lastObserve = observeOps[0]
         const lastObserveDate = lastObserve?.started_at || lastObserve?.created_at
 
-        const hasMetrics = latestConcentration || latestViability || latestTotalCells || maxConfluent > 0
+        // Inherited data from lot record (initial/final cells, viability)
+        const inheritedViability = lot.viability ?? null
+        const inheritedInitialCells = lot.initial_cells ?? null
+        const inheritedFinalCells = lot.final_cells ?? null
+
+        // Display viability: prefer measured, fall back to lot record (inherited from passage)
+        const displayViability = latestViability ?? inheritedViability
+        const viabilitySource = latestViability != null ? 'измерено' : inheritedViability != null ? 'из пассажа' : null
+
+        const hasMetrics = latestConcentration || displayViability || latestTotalCells || maxConfluent > 0 || inheritedInitialCells
 
         if (!hasMetrics) return null
 
         return (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Метрики лота</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Метрики лота</CardTitle>
+                {lot.parent_lot_id && (
+                  <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
+                    P{lot.passage_number ?? 0} — наследует от P{(lot.passage_number ?? 1) - 1}
+                  </Badge>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -453,12 +471,18 @@ export default function LotDetailPage({
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Конфлюэнтность (макс.)</p>
                     <p className={`font-semibold text-lg ${confluenceColor(maxConfluent)}`}>{maxConfluent}%</p>
+                    {avgConfluent > 0 && activeContainers.length > 1 && (
+                      <p className="text-xs text-muted-foreground">сред. {Math.round(avgConfluent)}% ({activeContainers.length} конт.)</p>
+                    )}
                   </div>
                 )}
-                {latestViability != null && (
+                {displayViability != null && (
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Жизнеспособность</p>
-                    <p className="font-semibold text-lg">{latestViability}%</p>
+                    <p className="font-semibold text-lg">{displayViability}%</p>
+                    {viabilitySource && (
+                      <p className="text-xs text-muted-foreground">{viabilitySource}</p>
+                    )}
                   </div>
                 )}
                 {latestConcentration != null && (
@@ -467,10 +491,22 @@ export default function LotDetailPage({
                     <p className="font-medium">{latestConcentration.toLocaleString('ru-RU')} кл/мл</p>
                   </div>
                 )}
-                {latestTotalCells != null && (
+                {(latestTotalCells != null || inheritedInitialCells != null) && (
                   <div>
-                    <p className="text-xs text-muted-foreground mb-1">Общее кол-во клеток</p>
-                    <p className="font-medium">{(latestTotalCells / 1e6).toFixed(2)} млн</p>
+                    <p className="text-xs text-muted-foreground mb-1">Клетки</p>
+                    {inheritedInitialCells != null && (
+                      <p className="text-xs text-muted-foreground">
+                        нач: {(inheritedInitialCells / 1e6).toFixed(2)} млн
+                      </p>
+                    )}
+                    {inheritedFinalCells != null && (
+                      <p className="text-xs text-muted-foreground">
+                        кон: {(inheritedFinalCells / 1e6).toFixed(2)} млн
+                      </p>
+                    )}
+                    {latestTotalCells != null && (
+                      <p className="font-medium">{(latestTotalCells / 1e6).toFixed(2)} млн (послед.)</p>
+                    )}
                   </div>
                 )}
                 {latestVolume != null && (

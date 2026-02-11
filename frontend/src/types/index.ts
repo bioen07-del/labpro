@@ -395,6 +395,19 @@ export interface OperationMetrics {
   created_at: string
 }
 
+// Container Photos
+export interface ContainerPhoto {
+  id: string
+  container_id: string
+  operation_id?: string
+  file_path: string
+  file_url: string
+  file_name?: string
+  file_size?: number
+  notes?: string
+  created_at: string
+}
+
 // QC Tests
 export type QCTestType = 'MYCOPLASMA' | 'STERILITY' | 'LAL' | 'VIA'
 export type QCTestStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
@@ -703,6 +716,11 @@ export interface Database {
         Row: OperationMetrics
         Insert: Partial<OperationMetrics>
         Update: Partial<OperationMetrics>
+      }
+      container_photos: {
+        Row: ContainerPhoto
+        Insert: Partial<ContainerPhoto>
+        Update: Partial<ContainerPhoto>
       }
       qc_tests: {
         Row: QCTest

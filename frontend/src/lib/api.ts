@@ -827,6 +827,85 @@ export async function createOperationObserve(data: {
   return operation
 }
 
+// ==================== CONTAINER PHOTOS ====================
+
+/**
+ * Upload a photo for a specific container (linked to an operation).
+ * Stores file in Supabase Storage bucket "container-photos".
+ * Records metadata in container_photos table.
+ */
+export async function uploadContainerPhoto(
+  containerId: string,
+  operationId: string,
+  file: File,
+): Promise<{ path: string; url: string } | null> {
+  const timestamp = Date.now()
+  const ext = file.name.split('.').pop() || 'jpg'
+  const filePath = `${containerId}/${timestamp}.${ext}`
+
+  // Upload to storage
+  const { error: uploadError } = await supabase.storage
+    .from('container-photos')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+    })
+
+  if (uploadError) {
+    console.error('Storage upload error:', uploadError)
+    // If bucket doesn't exist, try to continue without photo upload
+    throw uploadError
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from('container-photos')
+    .getPublicUrl(filePath)
+
+  const publicUrl = urlData?.publicUrl || ''
+
+  // Record in DB
+  const { error: dbError } = await supabase
+    .from('container_photos')
+    .insert({
+      container_id: containerId,
+      operation_id: operationId,
+      file_path: filePath,
+      file_url: publicUrl,
+      file_name: file.name,
+      file_size: file.size,
+    })
+
+  if (dbError) {
+    console.error('DB insert error for photo:', dbError)
+    // Photo uploaded but metadata failed — non-critical
+  }
+
+  return { path: filePath, url: publicUrl }
+}
+
+/**
+ * Get all photos for a container, optionally filtered by operation.
+ */
+export async function getContainerPhotos(
+  containerId: string,
+  operationId?: string,
+) {
+  let query = supabase
+    .from('container_photos')
+    .select('*')
+    .eq('container_id', containerId)
+    .order('created_at', { ascending: false })
+
+  if (operationId) {
+    query = query.eq('operation_id', operationId)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return data ?? []
+}
+
 // ==================== DISPOSE OPERATION ====================
 
 export interface DisposeData {

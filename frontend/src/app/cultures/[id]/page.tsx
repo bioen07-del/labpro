@@ -407,28 +407,60 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
 
       <Separator />
 
-      {/* ==================== SUMMARY CARDS ==================== */}
+      {/* ==================== CUMULATIVE SUMMARY CARDS ==================== */}
       {(() => {
-        // Gather latest metrics across all operations
+        // Gather CUMULATIVE metrics across ALL operations in ALL lots
+        // Per-lot metrics will be displayed inside each lot's expanded view
         let latestViability: number | null = null
         let latestConcentration: number | null = null
         let lastObserveDate: string | null = null
+        let totalCellsAccum: number = 0
+        let viabilityValues: number[] = []
+        let concentrationValues: number[] = []
 
         for (const op of operations) {
           const metrics = (op as any).operation_metrics?.[0]
-          if (metrics?.viability_percent != null && latestViability === null) latestViability = metrics.viability_percent
-          if (metrics?.concentration != null && latestConcentration === null) latestConcentration = metrics.concentration
+          if (metrics?.viability_percent != null) {
+            viabilityValues.push(metrics.viability_percent)
+            if (latestViability === null) latestViability = metrics.viability_percent
+          }
+          if (metrics?.concentration != null) {
+            concentrationValues.push(metrics.concentration)
+            if (latestConcentration === null) latestConcentration = metrics.concentration
+          }
+          if (metrics?.total_cells != null) {
+            totalCellsAccum += metrics.total_cells
+          }
           if (!lastObserveDate && (op.type === 'OBSERVE' || op.type === 'PASSAGE')) {
             lastObserveDate = op.started_at || op.created_at
           }
         }
 
+        // Cumulative averages
+        const avgViability = viabilityValues.length > 0
+          ? viabilityValues.reduce((s, v) => s + v, 0) / viabilityValues.length
+          : null
+        const avgConcentration = concentrationValues.length > 0
+          ? concentrationValues.reduce((s, v) => s + v, 0) / concentrationValues.length
+          : null
+
         // Max confluency across all active containers in all lots
         const allActiveConts = lots.flatMap(l => (l.containers || []).filter((c: Container) => c.container_status === 'IN_CULTURE'))
         const maxConfluent = allActiveConts.reduce((max: number, c: Container) => Math.max(max, (c as any).confluent_percent ?? 0), 0)
+        // Average confluency
+        const confluentValues = allActiveConts
+          .map((c: Container) => (c as any).confluent_percent ?? 0)
+          .filter((v: number) => v > 0)
+        const avgConfluent = confluentValues.length > 0
+          ? confluentValues.reduce((s: number, v: number) => s + v, 0) / confluentValues.length
+          : 0
+
+        // Total operations count
+        const totalOps = operations.length
 
         return (
           <>
+          {/* Row 1: Structure metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4">
@@ -483,14 +515,17 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                     <p className={`font-semibold text-lg ${maxConfluent >= 80 ? 'text-green-600' : maxConfluent >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
                       {maxConfluent > 0 ? `${maxConfluent}%` : '---'}
                     </p>
+                    {avgConfluent > 0 && maxConfluent !== Math.round(avgConfluent) && (
+                      <p className="text-xs text-muted-foreground">сред. {Math.round(avgConfluent)}%</p>
+                    )}
                   </div>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          {/* Bio metrics row */}
-          {(latestViability != null || latestConcentration != null || lastObserveDate) && (
+          {/* Row 2: Cumulative bio metrics */}
+          {(latestViability != null || latestConcentration != null || lastObserveDate || totalCellsAccum > 0) && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {latestViability != null && (
                 <Card>
@@ -502,6 +537,11 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                       <div>
                         <p className="text-sm text-muted-foreground">Жизнеспособность</p>
                         <p className="font-semibold text-lg">{latestViability}%</p>
+                        {avgViability != null && viabilityValues.length > 1 && (
+                          <p className="text-xs text-muted-foreground">
+                            сред. {avgViability.toFixed(1)}% ({viabilityValues.length} изм.)
+                          </p>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -517,6 +557,11 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                       <div>
                         <p className="text-sm text-muted-foreground">Концентрация</p>
                         <p className="font-semibold text-sm">{latestConcentration.toLocaleString('ru-RU')} кл/мл</p>
+                        {avgConcentration != null && concentrationValues.length > 1 && (
+                          <p className="text-xs text-muted-foreground">
+                            сред. {Math.round(avgConcentration).toLocaleString('ru-RU')} ({concentrationValues.length} изм.)
+                          </p>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -547,6 +592,11 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                       <div>
                         <p className="text-sm text-muted-foreground">Последний осмотр</p>
                         <p className="font-semibold text-sm">{formatDate(lastObserveDate)}</p>
+                        {totalOps > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            всего {totalOps} операций
+                          </p>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -671,25 +721,83 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                         <CardContent className="pt-0 space-y-4">
                           <Separator />
 
-                          {/* Lot details */}
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                            <div>
-                              <p className="text-muted-foreground">Дата посева</p>
-                              <p className="font-medium">{lot.seeded_at ? formatDate(lot.seeded_at) : '---'}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Кол-во клеток (нач.)</p>
-                              <p className="font-medium">{lot.initial_cells ? formatCellsCount(lot.initial_cells) : '---'}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Кол-во клеток (кон.)</p>
-                              <p className="font-medium">{lot.final_cells ? formatCellsCount(lot.final_cells) : '---'}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Жизнеспособность</p>
-                              <p className="font-medium">{lot.viability ? `${lot.viability}%` : '---'}</p>
-                            </div>
-                          </div>
+                          {/* Lot details + per-lot metrics */}
+                          {(() => {
+                            // Per-lot metrics: find operations for this lot
+                            const lotOps = operations.filter((op: Operation) => op.lot_id === lot.id)
+                            let lotViability: number | null = null
+                            let lotConcentration: number | null = null
+                            let lotTotalCells: number | null = null
+                            let lotLastObserve: string | null = null
+
+                            for (const op of lotOps) {
+                              const metrics = (op as any).operation_metrics?.[0]
+                              if (metrics?.viability_percent != null && lotViability === null) lotViability = metrics.viability_percent
+                              if (metrics?.concentration != null && lotConcentration === null) lotConcentration = metrics.concentration
+                              if (metrics?.total_cells != null && lotTotalCells === null) lotTotalCells = metrics.total_cells
+                              if (!lotLastObserve && (op.type === 'OBSERVE' || op.type === 'PASSAGE')) {
+                                lotLastObserve = op.started_at || op.created_at
+                              }
+                            }
+
+                            // Max confluency in this lot's containers
+                            const lotMaxConfluent = activeConts.reduce((max: number, c: Container) => Math.max(max, (c as any).confluent_percent ?? 0), 0)
+
+                            return (
+                              <>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                  <p className="text-muted-foreground">Дата посева</p>
+                                  <p className="font-medium">{lot.seeded_at ? formatDate(lot.seeded_at) : '---'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Конфлюэнтность (макс.)</p>
+                                  <p className={`font-medium ${lotMaxConfluent >= 80 ? 'text-green-600' : lotMaxConfluent >= 50 ? 'text-yellow-600' : ''}`}>
+                                    {lotMaxConfluent > 0 ? `${lotMaxConfluent}%` : '---'}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Кол-во клеток (нач.)</p>
+                                  <p className="font-medium">{lot.initial_cells ? formatCellsCount(lot.initial_cells) : '---'}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Кол-во клеток (кон.)</p>
+                                  <p className="font-medium">{lot.final_cells ? formatCellsCount(lot.final_cells) : '---'}</p>
+                                </div>
+                              </div>
+
+                              {/* Per-lot bio metrics from operations */}
+                              {(lotViability != null || lotConcentration != null || lotTotalCells != null || lotLastObserve) && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm p-3 rounded-lg bg-muted/30 border">
+                                  {lotViability != null && (
+                                    <div>
+                                      <p className="text-muted-foreground">Жизнеспособность</p>
+                                      <p className="font-medium">{lotViability}%</p>
+                                    </div>
+                                  )}
+                                  {lotConcentration != null && (
+                                    <div>
+                                      <p className="text-muted-foreground">Концентрация</p>
+                                      <p className="font-medium">{lotConcentration.toLocaleString('ru-RU')} кл/мл</p>
+                                    </div>
+                                  )}
+                                  {lotTotalCells != null && (
+                                    <div>
+                                      <p className="text-muted-foreground">Общее кол-во клеток</p>
+                                      <p className="font-medium">{(lotTotalCells / 1e6).toFixed(2)} млн</p>
+                                    </div>
+                                  )}
+                                  {lotLastObserve && (
+                                    <div>
+                                      <p className="text-muted-foreground">Последний осмотр</p>
+                                      <p className="font-medium">{formatDate(lotLastObserve)}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              </>
+                            )
+                          })()}
 
                           {/* Containers grid */}
                           {containers.length > 0 && (() => {

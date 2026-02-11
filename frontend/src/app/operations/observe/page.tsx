@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
-import { Eye } from 'lucide-react'
+import { Eye, Camera, X, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,11 +16,13 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import {
   getLots,
   getContainersByLot,
   getMorphologyTypes,
   createOperationObserve,
+  uploadContainerPhoto,
 } from '@/lib/api'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -31,6 +33,7 @@ interface ContainerObservation {
   confluent_percent: number
   morphology: string
   contaminated: boolean
+  photos: File[]
 }
 
 // ---------- component ----------
@@ -49,8 +52,15 @@ function ObservePageInner() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [observations, setObservations] = useState<Record<string, ContainerObservation>>({})
   const [notes, setNotes] = useState('')
-  const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Unified input mode
+  const [unifiedMode, setUnifiedMode] = useState(false)
+  const [unifiedValues, setUnifiedValues] = useState<{
+    confluent_percent: number
+    morphology: string
+    contaminated: boolean
+  }>({ confluent_percent: 0, morphology: '', contaminated: false })
 
   // derived
   const selectedLot = lots.find((l) => l.id === selectedLotId)
@@ -90,6 +100,7 @@ function ObservePageInner() {
                   confluent_percent: container.confluent_percent ?? 0,
                   morphology: container.morphology ?? '',
                   contaminated: container.contaminated ?? false,
+                  photos: [],
                 },
               })
             }
@@ -126,6 +137,13 @@ function ObservePageInner() {
     loadContainers(lotId)
   }
 
+  const initObservation = (container: any): ContainerObservation => ({
+    confluent_percent: container?.confluent_percent ?? 0,
+    morphology: container?.morphology ?? '',
+    contaminated: container?.contaminated ?? false,
+    photos: [],
+  })
+
   const toggleContainer = (id: string) => {
     setSelectedIds((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -134,11 +152,7 @@ function ObservePageInner() {
         const container = containers.find((c) => c.id === id)
         setObservations((o) => ({
           ...o,
-          [id]: {
-            confluent_percent: container?.confluent_percent ?? 0,
-            morphology: container?.morphology ?? '',
-            contaminated: container?.contaminated ?? false,
-          },
+          [id]: initObservation(container),
         }))
       }
       return next
@@ -155,11 +169,7 @@ function ObservePageInner() {
       const newObs = { ...observations }
       for (const c of containers) {
         if (!newObs[c.id]) {
-          newObs[c.id] = {
-            confluent_percent: c.confluent_percent ?? 0,
-            morphology: c.morphology ?? '',
-            contaminated: c.contaminated ?? false,
-          }
+          newObs[c.id] = initObservation(c)
         }
       }
       setObservations(newObs)
@@ -169,13 +179,78 @@ function ObservePageInner() {
   const updateObservation = (
     id: string,
     field: keyof ContainerObservation,
-    value: number | string | boolean,
+    value: number | string | boolean | File[],
   ) => {
     setObservations((prev) => ({
       ...prev,
       [id]: {
         ...prev[id],
         [field]: value,
+      },
+    }))
+  }
+
+  // Apply unified values to all selected containers
+  const applyUnifiedToAll = () => {
+    const newObs = { ...observations }
+    for (const id of selectedIds) {
+      newObs[id] = {
+        ...newObs[id],
+        confluent_percent: unifiedValues.confluent_percent,
+        morphology: unifiedValues.morphology,
+        contaminated: unifiedValues.contaminated,
+      }
+    }
+    setObservations(newObs)
+  }
+
+  // When unified mode is toggled on, propagate values
+  const handleUnifiedModeChange = (checked: boolean) => {
+    setUnifiedMode(checked)
+    if (checked && selectedIds.length > 0) {
+      // Take values from first selected container as default
+      const firstObs = observations[selectedIds[0]]
+      if (firstObs) {
+        setUnifiedValues({
+          confluent_percent: firstObs.confluent_percent,
+          morphology: firstObs.morphology,
+          contaminated: firstObs.contaminated,
+        })
+      }
+    }
+  }
+
+  // When unified values change, apply to all
+  const updateUnifiedValue = (field: keyof typeof unifiedValues, value: number | string | boolean) => {
+    const newUnified = { ...unifiedValues, [field]: value }
+    setUnifiedValues(newUnified)
+    // Apply to all selected containers immediately
+    const newObs = { ...observations }
+    for (const id of selectedIds) {
+      if (newObs[id]) {
+        newObs[id] = { ...newObs[id], [field]: value }
+      }
+    }
+    setObservations(newObs)
+  }
+
+  // Photo handlers
+  const addPhoto = (containerId: string, file: File) => {
+    setObservations((prev) => ({
+      ...prev,
+      [containerId]: {
+        ...prev[containerId],
+        photos: [...(prev[containerId]?.photos || []), file],
+      },
+    }))
+  }
+
+  const removePhoto = (containerId: string, index: number) => {
+    setObservations((prev) => ({
+      ...prev,
+      [containerId]: {
+        ...prev[containerId],
+        photos: prev[containerId].photos.filter((_, i) => i !== index),
       },
     }))
   }
@@ -202,14 +277,30 @@ function ObservePageInner() {
         contaminated: observations[id].contaminated,
       }))
 
-      await createOperationObserve({
+      const operation = await createOperationObserve({
         lot_id: selectedLotId,
         containers: containerPayloads,
         notes: notes || undefined,
       })
 
+      // Upload photos per container
+      let photoCount = 0
+      for (const id of selectedIds) {
+        const obs = observations[id]
+        if (obs?.photos?.length > 0) {
+          for (const photo of obs.photos) {
+            try {
+              await uploadContainerPhoto(id, operation.id, photo)
+              photoCount++
+            } catch (err) {
+              console.error('Failed to upload photo:', err)
+            }
+          }
+        }
+      }
+
       toast.success('Наблюдение зарегистрировано', {
-        description: `Данные сохранены для ${selectedIds.length} контейнеров`,
+        description: `Данные сохранены для ${selectedIds.length} контейнеров${photoCount > 0 ? `, ${photoCount} фото загружено` : ''}`,
       })
 
       // Return to culture card
@@ -291,20 +382,112 @@ function ObservePageInner() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Контейнеры ({containers.length})</Label>
-                {containers.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={toggleSelectAll}
-                    className="flex items-center gap-2 text-sm text-primary hover:underline"
-                  >
-                    <Checkbox
-                      checked={allSelected}
-                      onCheckedChange={toggleSelectAll}
-                    />
-                    Выбрать все
-                  </button>
-                )}
+                <div className="flex items-center gap-4">
+                  {containers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="flex items-center gap-2 text-sm text-primary hover:underline"
+                    >
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                      Выбрать все
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* ===== Unified mode toggle ===== */}
+              {selectedIds.length > 1 && (
+                <div className="flex items-center gap-3 p-3 rounded-lg border bg-blue-50/50 border-blue-200">
+                  <Switch
+                    checked={unifiedMode}
+                    onCheckedChange={handleUnifiedModeChange}
+                  />
+                  <div className="flex-1">
+                    <Label className="text-sm font-medium cursor-pointer" onClick={() => handleUnifiedModeChange(!unifiedMode)}>
+                      Единые показатели для всех контейнеров
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Одно значение конфлюэнтности, морфологии и контаминации для {selectedIds.length} контейнеров
+                    </p>
+                  </div>
+                  {unifiedMode && (
+                    <Badge variant="secondary" className="text-xs">
+                      <Copy className="h-3 w-3 mr-1" />
+                      {selectedIds.length} шт.
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              {/* ===== Unified inputs ===== */}
+              {unifiedMode && selectedIds.length > 1 && (
+                <div className="p-4 rounded-lg border-2 border-blue-300 bg-blue-50/30 space-y-4">
+                  <p className="text-sm font-medium text-blue-800">
+                    Общие показатели (применяются ко всем {selectedIds.length} контейнерам)
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Confluence */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Конфлюэнтность, %</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={unifiedValues.confluent_percent}
+                        onChange={(e) =>
+                          updateUnifiedValue(
+                            'confluent_percent',
+                            Math.min(100, Math.max(0, Number(e.target.value))),
+                          )
+                        }
+                      />
+                    </div>
+
+                    {/* Morphology */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Морфология</Label>
+                      <Select
+                        value={unifiedValues.morphology}
+                        onValueChange={(v) => updateUnifiedValue('morphology', v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {morphologyTypes.map((mt) => (
+                            <SelectItem key={mt.id} value={mt.code || mt.name}>
+                              {mt.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Contamination */}
+                    <div className="flex items-end pb-1">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="contam-unified"
+                          checked={unifiedValues.contaminated}
+                          onCheckedChange={(v) =>
+                            updateUnifiedValue('contaminated', v as boolean)
+                          }
+                        />
+                        <Label
+                          htmlFor="contam-unified"
+                          className="text-xs cursor-pointer text-red-600"
+                        >
+                          Контаминация
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {containers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground border rounded-lg">
@@ -359,63 +542,130 @@ function ObservePageInner() {
 
                         {/* Expanded: per-container inputs */}
                         {isSelected && obs && (
-                          <div className="border-t px-3 pb-3 pt-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            {/* Confluence */}
-                            <div className="space-y-1">
-                              <Label className="text-xs">Конфлюэнтность, %</Label>
-                              <Input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={obs.confluent_percent}
-                                onChange={(e) =>
-                                  updateObservation(
-                                    container.id,
-                                    'confluent_percent',
-                                    Math.min(100, Math.max(0, Number(e.target.value))),
-                                  )
-                                }
-                              />
-                            </div>
+                          <div className="border-t px-3 pb-3 pt-3 space-y-3">
+                            {/* Metrics inputs — shown only in individual mode */}
+                            {!unifiedMode && (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                {/* Confluence */}
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Конфлюэнтность, %</Label>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={obs.confluent_percent}
+                                    onChange={(e) =>
+                                      updateObservation(
+                                        container.id,
+                                        'confluent_percent',
+                                        Math.min(100, Math.max(0, Number(e.target.value))),
+                                      )
+                                    }
+                                  />
+                                </div>
 
-                            {/* Morphology */}
-                            <div className="space-y-1">
-                              <Label className="text-xs">Морфология</Label>
-                              <Select
-                                value={obs.morphology}
-                                onValueChange={(v) =>
-                                  updateObservation(container.id, 'morphology', v)
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Выберите..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {morphologyTypes.map((mt) => (
-                                    <SelectItem key={mt.id} value={mt.code || mt.name}>
-                                      {mt.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                                {/* Morphology */}
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Морфология</Label>
+                                  <Select
+                                    value={obs.morphology}
+                                    onValueChange={(v) =>
+                                      updateObservation(container.id, 'morphology', v)
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Выберите..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {morphologyTypes.map((mt) => (
+                                        <SelectItem key={mt.id} value={mt.code || mt.name}>
+                                          {mt.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
 
-                            {/* Contamination */}
-                            <div className="flex items-end pb-1">
+                                {/* Contamination */}
+                                <div className="flex items-end pb-1">
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`contam-${container.id}`}
+                                      checked={obs.contaminated}
+                                      onCheckedChange={(v) =>
+                                        updateObservation(container.id, 'contaminated', v as boolean)
+                                      }
+                                    />
+                                    <Label
+                                      htmlFor={`contam-${container.id}`}
+                                      className="text-xs cursor-pointer text-red-600"
+                                    >
+                                      Контаминация
+                                    </Label>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* In unified mode, show a summary instead */}
+                            {unifiedMode && (
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                <Badge variant="outline" className="text-xs bg-blue-50">
+                                  Конфл.: {obs.confluent_percent}%
+                                </Badge>
+                                <Badge variant="outline" className="text-xs bg-blue-50">
+                                  {obs.morphology || '—'}
+                                </Badge>
+                                {obs.contaminated && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    Контаминация
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+
+                            {/* ===== Per-container photo upload ===== */}
+                            <div className="space-y-2">
                               <div className="flex items-center gap-2">
-                                <Checkbox
-                                  id={`contam-${container.id}`}
-                                  checked={obs.contaminated}
-                                  onCheckedChange={(v) =>
-                                    updateObservation(container.id, 'contaminated', v as boolean)
-                                  }
-                                />
-                                <Label
-                                  htmlFor={`contam-${container.id}`}
-                                  className="text-xs cursor-pointer text-red-600"
-                                >
-                                  Контаминация
+                                <Camera className="h-3.5 w-3.5 text-muted-foreground" />
+                                <Label className="text-xs text-muted-foreground">
+                                  Фото контейнера {container.code}
                                 </Label>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {obs.photos.map((file, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="relative group border rounded-md p-1 bg-muted/50"
+                                  >
+                                    <span className="text-xs truncate max-w-[120px] block px-1">
+                                      {file.name}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removePhoto(container.id, idx)}
+                                      className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                                <label className="cursor-pointer flex items-center gap-1 text-xs text-primary hover:text-primary/80 border border-dashed rounded-md px-2 py-1">
+                                  <Camera className="h-3.5 w-3.5" />
+                                  Добавить фото
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0]
+                                      if (file) {
+                                        addPhoto(container.id, file)
+                                        e.target.value = '' // reset for re-upload
+                                      }
+                                    }}
+                                  />
+                                </label>
                               </div>
                             </div>
                           </div>
@@ -439,22 +689,7 @@ function ObservePageInner() {
             />
           </div>
 
-          {/* ===== 4. Photo upload placeholder ===== */}
-          <div className="space-y-2">
-            <Label>Фото (необязательно)</Label>
-            <Input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
-            />
-            {photoFile && (
-              <p className="text-xs text-muted-foreground">
-                Выбрано: {photoFile.name}
-              </p>
-            )}
-          </div>
-
-          {/* ===== 5. Actions ===== */}
+          {/* ===== 4. Actions ===== */}
           <div className="flex justify-end gap-4 pt-2">
             <Button variant="outline" onClick={() => router.back()}>
               Отмена

@@ -387,6 +387,19 @@ CREATE TABLE IF NOT EXISTS operation_metrics (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Container Photos
+CREATE TABLE IF NOT EXISTS container_photos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    container_id UUID NOT NULL REFERENCES containers(id) ON DELETE CASCADE,
+    operation_id UUID REFERENCES operations(id) ON DELETE SET NULL,
+    file_path TEXT NOT NULL,
+    file_url TEXT NOT NULL,
+    file_name TEXT,
+    file_size INTEGER,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- ============================================
 -- INVENTORY TABLES
 -- ============================================

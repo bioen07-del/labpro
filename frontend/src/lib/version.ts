@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.02"
+export const APP_VERSION = "1.25.03"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.03",
+    date: "11.02.2026",
+    changes: [
+      "Форма осмотра: toggle единый/индивидуальный ввод показателей по контейнерам",
+      "Форма осмотра: прикрепление фото к конкретному контейнеру (Supabase Storage)",
+      "Метрики лота: наследование от родительского лота, средняя конфлюэнтность",
+      "Метрики культуры: кумулятивные показатели (средн. viability, концентрация, кол-во измерений)",
+      "Per-lot метрики в развёрнутом виде лота на странице культуры",
+      "Таблица container_photos + Storage bucket для фото контейнеров",
+    ],
+  },
   {
     version: "1.25.02",
     date: "11.02.2026",
