@@ -13,6 +13,8 @@ import {
   MapPin,
   AlertTriangle,
   CheckSquare,
+  FileText,
+  ClipboardList,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -284,6 +286,22 @@ export default function LotDetailPage({
           </div>
         </div>
 
+        {/* ===== DOCUMENT BUTTONS (always visible) ===== */}
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/lots/${id}/passport`}>
+            <Button variant="outline" size="sm">
+              <FileText className="mr-1.5 h-4 w-4" />
+              Паспорт
+            </Button>
+          </Link>
+          <Link href={`/operations/worksheet?lot_id=${id}`}>
+            <Button variant="outline" size="sm">
+              <ClipboardList className="mr-1.5 h-4 w-4" />
+              Рабочий лист
+            </Button>
+          </Link>
+        </div>
+
         {/* ===== ACTION BUTTONS ===== */}
         {lot.status === 'ACTIVE' && activeContainers.length > 0 ? (
         <div className="flex flex-wrap gap-2">
@@ -449,7 +467,61 @@ export default function LotDetailPage({
         const displayViability = latestViability ?? inheritedViability
         const viabilitySource = latestViability != null ? 'измерено' : inheritedViability != null ? 'из пассажа' : null
 
-        const hasMetrics = latestConcentration || displayViability || latestTotalCells || maxConfluent > 0 || inheritedInitialCells
+        // === PDL (Population Doubling Level) ===
+        let lotPDL: number | null = null
+        const cellsForPDL = inheritedFinalCells || latestTotalCells
+        if (inheritedInitialCells && inheritedInitialCells > 0 && cellsForPDL && cellsForPDL > 0) {
+          lotPDL = Math.log2(cellsForPDL / inheritedInitialCells)
+          if (!isFinite(lotPDL) || lotPDL <= 0) lotPDL = null
+        }
+
+        // === Proliferation rate ===
+        let proliferationRate: number | null = null
+        let doublingTime: number | null = null
+        if (lotPDL && lotPDL > 0 && lot.seeded_at) {
+          const startDate = new Date(lot.seeded_at).getTime()
+          const lastOp = operations[0]
+          const endDate = lastOp ? new Date(lastOp.started_at || lastOp.created_at).getTime() : Date.now()
+          const days = (endDate - startDate) / (1000 * 60 * 60 * 24)
+          if (days > 0) {
+            proliferationRate = lotPDL / days
+            doublingTime = days / lotPDL
+          }
+        }
+
+        // === Days to 80% monolayer (linear regression on confluence) ===
+        let daysTo80: number | null = null
+        const observeOpsChron = [...observeOps].reverse()
+        if (observeOpsChron.length >= 2 && lot.seeded_at) {
+          const lotStart = new Date(lot.seeded_at).getTime()
+          const dataPoints: { days: number; confluence: number }[] = []
+          for (const op of observeOpsChron) {
+            const opContainers = (op as any).operation_containers || []
+            const confValues = opContainers.map((c: any) => c.confluent_percent).filter((v: any) => v != null && v > 0)
+            if (confValues.length > 0) {
+              const opAvgConf = confValues.reduce((s: number, v: number) => s + v, 0) / confValues.length
+              const days = (new Date(op.started_at || op.created_at).getTime() - lotStart) / (1000 * 60 * 60 * 24)
+              if (days >= 0) dataPoints.push({ days, confluence: opAvgConf })
+            }
+          }
+          if (dataPoints.length >= 2) {
+            const n = dataPoints.length
+            const sumX = dataPoints.reduce((s, p) => s + p.days, 0)
+            const sumY = dataPoints.reduce((s, p) => s + p.confluence, 0)
+            const sumXY = dataPoints.reduce((s, p) => s + p.days * p.confluence, 0)
+            const sumX2 = dataPoints.reduce((s, p) => s + p.days * p.days, 0)
+            const denom = n * sumX2 - sumX * sumX
+            if (denom !== 0) {
+              const slope = (n * sumXY - sumX * sumY) / denom
+              if (slope > 0 && avgConfluent < 80) {
+                const est = Math.round((80 - avgConfluent) / slope)
+                if (est > 0 && est < 365) daysTo80 = est
+              }
+            }
+          }
+        }
+
+        const hasMetrics = latestConcentration || displayViability || latestTotalCells || maxConfluent > 0 || inheritedInitialCells || lotPDL
 
         if (!hasMetrics) return null
 
@@ -519,6 +591,27 @@ export default function LotDetailPage({
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Последний осмотр</p>
                     <p className="font-medium">{fmtDate(lastObserveDate)}</p>
+                  </div>
+                )}
+                {lotPDL != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Кумул. удвоения (PDL)</p>
+                    <p className="font-semibold text-lg">{lotPDL.toFixed(2)}</p>
+                  </div>
+                )}
+                {proliferationRate != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Скорость пролиферации</p>
+                    <p className="font-medium">{proliferationRate.toFixed(3)} удв./день</p>
+                    {doublingTime != null && (
+                      <p className="text-xs text-muted-foreground">{doublingTime.toFixed(1)} дн./удвоение</p>
+                    )}
+                  </div>
+                )}
+                {daysTo80 != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Прогноз до 80% монослоя</p>
+                    <p className="font-semibold text-lg">~{daysTo80} дн.</p>
                   </div>
                 )}
               </div>

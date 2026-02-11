@@ -553,7 +553,7 @@ export async function getLotById(id: string) {
     .from('lots')
     .select(`
       *,
-      culture:cultures(*),
+      culture:cultures(*, culture_type:culture_types(*)),
       containers:containers!lot_id(*)
     `)
     .eq('id', id)

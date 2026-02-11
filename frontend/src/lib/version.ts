@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.06"
+export const APP_VERSION = "1.25.07"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.07",
+    date: "11.02.2026",
+    changes: [
+      "Метрики лота: PDL (кумулятивные удвоения), скорость пролиферации, время удвоения, прогноз дней до 80% монослоя",
+      "Метрики культуры (Row 3): общее кол-во клеток, средняя viability, общее PDL, средняя пролиферация, средний дорост",
+      "Паспорт лота: /lots/[id]/passport — полный документ с печатью и скачиванием",
+      "Кнопки «Паспорт» и «Рабочий лист» на странице лота",
+      "API: getLotById join culture_type для паспорта лота",
+    ],
+  },
   {
     version: "1.25.06",
     date: "11.02.2026",

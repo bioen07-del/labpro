@@ -25,6 +25,8 @@ import {
   Activity,
   Beaker,
   Clock,
+  TrendingUp,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -458,6 +460,103 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
         // Total operations count
         const totalOps = operations.length
 
+        // ===== Row 3: Aggregated metrics across active lots =====
+        // Total cells across all active lots (latest measurement per lot)
+        let cultureTotalCells = 0
+        const lotViabilities: number[] = []
+        let cultureTotalPDL = 0
+        const lotProlifRates: number[] = []
+        const lotDaysTo80: number[] = []
+
+        for (const lot of activeLots) {
+          const lotOps = operations.filter((op: Operation) => op.lot_id === lot.id)
+
+          // Latest total_cells for this lot
+          for (const op of lotOps) {
+            const m = (op as any).operation_metrics?.[0]
+            if (m?.total_cells) { cultureTotalCells += m.total_cells; break }
+          }
+          // Latest viability for this lot
+          for (const op of lotOps) {
+            const m = (op as any).operation_metrics?.[0]
+            if (m?.viability_percent != null) { lotViabilities.push(m.viability_percent); break }
+          }
+
+          // PDL per lot
+          const lotInitial = lot.initial_cells ?? 0
+          const lotFinal = lot.final_cells ?? 0
+          let lotLatestCells = 0
+          for (const op of lotOps) {
+            const m = (op as any).operation_metrics?.[0]
+            if (m?.total_cells) { lotLatestCells = m.total_cells; break }
+          }
+          const cellsForPDL = lotFinal || lotLatestCells
+          if (lotInitial > 0 && cellsForPDL > 0) {
+            const pdl = Math.log2(cellsForPDL / lotInitial)
+            if (isFinite(pdl) && pdl > 0) cultureTotalPDL += pdl
+          }
+
+          // Proliferation rate per lot
+          if (lotInitial > 0 && cellsForPDL > 0 && lot.seeded_at) {
+            const pdl = Math.log2(cellsForPDL / lotInitial)
+            if (isFinite(pdl) && pdl > 0) {
+              const startDate = new Date(lot.seeded_at).getTime()
+              const lastOp = lotOps[0]
+              const endDate = lastOp ? new Date(lastOp.started_at || lastOp.created_at).getTime() : Date.now()
+              const days = (endDate - startDate) / (1000 * 60 * 60 * 24)
+              if (days > 0) lotProlifRates.push(pdl / days)
+            }
+          }
+
+          // Days to 80% per lot (linear regression)
+          const lotContainers = (lot.containers || []) as Container[]
+          const lotActiveConts = lotContainers.filter((c: Container) => c.container_status === 'IN_CULTURE')
+          const lotAvgConf = lotActiveConts.length > 0
+            ? lotActiveConts.reduce((s: number, c: Container) => s + ((c as any).confluent_percent ?? 0), 0) / lotActiveConts.length
+            : 0
+          const lotObsOps = [...lotOps.filter((op: Operation) => op.type === 'OBSERVE' || op.type === 'PASSAGE')].reverse()
+          if (lotObsOps.length >= 2 && lot.seeded_at) {
+            const lotStart = new Date(lot.seeded_at).getTime()
+            const dp: { d: number; c: number }[] = []
+            for (const op of lotObsOps) {
+              const opC = (op as any).operation_containers || []
+              const vals = opC.map((c: any) => c.confluent_percent).filter((v: any) => v != null && v > 0)
+              if (vals.length > 0) {
+                const avg = vals.reduce((s: number, v: number) => s + v, 0) / vals.length
+                const d = (new Date(op.started_at || op.created_at).getTime() - lotStart) / (1000 * 60 * 60 * 24)
+                if (d >= 0) dp.push({ d, c: avg })
+              }
+            }
+            if (dp.length >= 2) {
+              const n = dp.length
+              const sX = dp.reduce((s, p) => s + p.d, 0)
+              const sY = dp.reduce((s, p) => s + p.c, 0)
+              const sXY = dp.reduce((s, p) => s + p.d * p.c, 0)
+              const sX2 = dp.reduce((s, p) => s + p.d * p.d, 0)
+              const den = n * sX2 - sX * sX
+              if (den !== 0) {
+                const slope = (n * sXY - sX * sY) / den
+                if (slope > 0 && lotAvgConf < 80) {
+                  const est = Math.round((80 - lotAvgConf) / slope)
+                  if (est > 0 && est < 365) lotDaysTo80.push(est)
+                }
+              }
+            }
+          }
+        }
+
+        const cultureAvgViability = lotViabilities.length > 0
+          ? lotViabilities.reduce((s, v) => s + v, 0) / lotViabilities.length
+          : null
+        const cultureAvgProlifRate = lotProlifRates.length > 0
+          ? lotProlifRates.reduce((s, v) => s + v, 0) / lotProlifRates.length
+          : null
+        const cultureAvgDaysTo80 = lotDaysTo80.length > 0
+          ? Math.round(lotDaysTo80.reduce((s, v) => s + v, 0) / lotDaysTo80.length)
+          : null
+
+        const hasRow3 = cultureTotalCells > 0 || cultureAvgViability != null || cultureTotalPDL > 0 || cultureAvgProlifRate != null || cultureAvgDaysTo80 != null
+
         return (
           <>
           {/* Row 1: Structure metrics */}
@@ -597,6 +696,96 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                             всего {totalOps} операций
                           </p>
                         )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* Row 3: Aggregated bio-metrics across active lots */}
+          {hasRow3 && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {cultureTotalCells > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-teal-50 p-2.5">
+                        <Beaker className="h-5 w-5 text-teal-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Общее кол-во клеток</p>
+                        <p className="font-semibold text-lg">
+                          {cultureTotalCells >= 1e6
+                            ? `${(cultureTotalCells / 1e6).toFixed(2)} млн`
+                            : cultureTotalCells.toLocaleString('ru-RU')}
+                        </p>
+                        <p className="text-xs text-muted-foreground">по {activeLots.length} акт. лотам</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {cultureAvgViability != null && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-emerald-50 p-2.5">
+                        <Activity className="h-5 w-5 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Средняя viability</p>
+                        <p className="font-semibold text-lg">{cultureAvgViability.toFixed(1)}%</p>
+                        <p className="text-xs text-muted-foreground">{lotViabilities.length} лот(ов)</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {cultureTotalPDL > 0 && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-violet-50 p-2.5">
+                        <TrendingUp className="h-5 w-5 text-violet-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Общее PDL</p>
+                        <p className="font-semibold text-lg">{cultureTotalPDL.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">кумулятивные удвоения</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {cultureAvgProlifRate != null && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-orange-50 p-2.5">
+                        <Zap className="h-5 w-5 text-orange-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Ср. пролиферация</p>
+                        <p className="font-semibold text-lg">{cultureAvgProlifRate.toFixed(3)}</p>
+                        <p className="text-xs text-muted-foreground">удв./день</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              {cultureAvgDaysTo80 != null && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-sky-50 p-2.5">
+                        <Clock className="h-5 w-5 text-sky-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Ср. дорост до 80%</p>
+                        <p className="font-semibold text-lg">~{cultureAvgDaysTo80} дн.</p>
+                        <p className="text-xs text-muted-foreground">{lotDaysTo80.length} лот(ов)</p>
                       </div>
                     </div>
                   </CardContent>
