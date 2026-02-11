@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.09"
+export const APP_VERSION = "1.25.10"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.10",
+    date: "11.02.2026",
+    changes: [
+      "Восстановлена форма «Приготовить среду» (/ready-media/new) с кнопкой на складе",
+      "Фикс 400 Bad Request: calculateAndUpdateCoefficient — убран inner join на lots",
+      "Фикс 400 Bad Request: getAvailableMediaByUsage — убран несуществующий FK ready_media→batches",
+      "Фикс DialogContent aria-describedby warning (глобально в компоненте dialog.tsx)",
+      "Фикс ResponsiveContainer chart width/height — добавлен minWidth/minHeight",
+      "Ready media tag фильтрация: fallback на все среды если usage_tags не заданы",
+    ],
+  },
   {
     version: "1.25.09",
     date: "11.02.2026",

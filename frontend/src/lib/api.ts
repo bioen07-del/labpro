@@ -167,13 +167,24 @@ export async function calculateAndUpdateCoefficient(cultureId: string): Promise<
   passageCount: number
   confidence: 'high' | 'medium' | 'none'
 }> {
-  // Получить все PASSAGE операции для этой культуры
+  // 1. Получить lot_id для данной культуры
+  const { data: cultureLots } = await supabase
+    .from('lots')
+    .select('id')
+    .eq('culture_id', cultureId)
+
+  const lotIds = (cultureLots || []).map((l: any) => l.id)
+  if (lotIds.length === 0) {
+    return { coefficient: null, passageCount: 0, confidence: 'none' }
+  }
+
+  // 2. Получить PASSAGE операции для этих лотов
   const { data: operations } = await supabase
     .from('operations')
     .select(`
       id,
       type,
-      lot:lots!inner(culture_id),
+      lot_id,
       metrics:operation_metrics(*),
       containers:operation_containers(
         container_id,
@@ -183,7 +194,7 @@ export async function calculateAndUpdateCoefficient(cultureId: string): Promise<
       )
     `)
     .eq('type', 'PASSAGE')
-    .eq('lots.culture_id', cultureId)
+    .in('lot_id', lotIds)
     .order('created_at', { ascending: false })
 
   if (!operations || operations.length === 0) {
@@ -3373,10 +3384,10 @@ export async function getAvailableMediaByUsage(usageTag: string): Promise<{
   readyMedia: any[]
   reagentBatches: any[]
 }> {
-  // 1. Get ready_media with remaining volume, join to get nomenclature via batch
+  // 1. Get ready_media with remaining volume (no FK to batches — query separately if needed)
   const { data: rmData, error: rmErr } = await supabase
     .from('ready_media')
-    .select('*, batch:batches(*, nomenclature:nomenclatures(*))')
+    .select('*')
     .in('status', ['ACTIVE', 'PREPARED'])
     .order('expiration_date', { ascending: true })
 
@@ -3406,9 +3417,15 @@ export async function getAvailableMediaByUsage(usageTag: string): Promise<{
   })
 
   // Filter by usage_tag
+  // ready_media doesn't have FK to batches; include all RM for now (they are pre-mixed media)
+  // In the future, ready_media could have its own usage_tags column
   const filteredRM = allRM.filter((m: any) => {
-    const tags: string[] = m.batch?.nomenclature?.usage_tags || []
-    return tags.includes(usageTag)
+    // Ready media are pre-made — always available for SEED/FEED/THAW etc.
+    // If composition stores nomenclature data, we could filter by that
+    const tags: string[] = m.usage_tags || []
+    if (tags.length > 0) return tags.includes(usageTag)
+    // No tags = include for any usage (backward compatibility)
+    return true
   })
 
   const filteredBatches = allBatches.filter((b: any) => {

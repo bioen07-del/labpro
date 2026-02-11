@@ -808,7 +808,7 @@ function CulturePassportContent() {
                         График конфлюэнтности
                       </h3>
                       <div className="border rounded-lg p-4" style={{ height: 250 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                           <LineChart data={chartData}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
@@ -837,7 +837,7 @@ function CulturePassportContent() {
                         Кинетика роста (Td по пассажам)
                       </h3>
                       <div className="border rounded-lg p-4" style={{ height: 250 }}>
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                           <LineChart data={tdData}>
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="passage" tick={{ fontSize: 11 }} />

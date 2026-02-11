@@ -237,7 +237,12 @@ export default function InventoryPage() {
               Добавить партию
             </Link>
           </Button>
-          {/* Кнопка "Приготовить среду" убрана — функционал /ready-media удалён */}
+          <Button asChild variant="outline">
+            <Link href="/ready-media/new">
+              <Beaker className="mr-2 h-4 w-4" />
+              Приготовить среду
+            </Link>
+          </Button>
         </div>
       </div>
 

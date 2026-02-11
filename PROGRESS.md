@@ -406,6 +406,15 @@
 - [x] **Склад: колонка «Годность»** — цветовая индикация: зелёный (>24ч), жёлтый (<6ч), красный (просрочена)
 - [x] TypeScript: 0 ошибок
 
+#### Фаза 25.9: Багфиксы, восстановление приготовления сред (v1.25.10)
+- [x] **Восстановлена форма «Приготовить среду»** — /ready-media/new вернулась, кнопка на странице склада, redirect на /inventory
+- [x] **Фикс 400 calculateAndUpdateCoefficient** — заменён `lots!inner(culture_id)` на 2-шаговый запрос: сначала lot_id по culture_id, затем operations по lot_id
+- [x] **Фикс 400 getAvailableMediaByUsage** — убран несуществующий FK `batch:batches(*)` из ready_media запроса
+- [x] **Фикс ready media tag фильтрация** — fallback: если usage_tags не заданы, готовые среды доступны для любого назначения
+- [x] **Фикс DialogContent aria-describedby** — глобально в dialog.tsx, убирает Radix warning на всех страницах
+- [x] **Фикс ResponsiveContainer** — minWidth={1} minHeight={1} предотвращает ошибку chart width/height -1
+- [x] TypeScript: 0 ошибок
+
 ### Статистика
 
 | Метрика | Значение |

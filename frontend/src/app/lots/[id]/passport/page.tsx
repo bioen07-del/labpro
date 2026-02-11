@@ -819,7 +819,7 @@ export default function LotPassportPage({ params }: { params: Promise<{ id: stri
                     График конфлюэнтности
                   </h3>
                   <div className="border rounded-lg p-4" style={{ height: 250 }}>
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                       <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="date" tick={{ fontSize: 11 }} />
