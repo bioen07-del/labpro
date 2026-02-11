@@ -32,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getLotById, getContainersByLot, getOperations, forecastCells, forecastGrowth, calculateCultureMetrics, calculateAndUpdateCoefficient } from "@/lib/api"
+import { getLotById, getContainersByLot, getOperations, forecastCells, forecastGrowth, calculateCultureMetrics, calculateAndUpdateCoefficient, getBanks } from "@/lib/api"
 import type { CultureMetrics } from "@/lib/api"
 
 // ==================== CONSTANTS ====================
@@ -136,6 +136,7 @@ export default function LotDetailPage({
   const [error, setError] = useState<string | null>(null)
   const [metrics, setMetrics] = useState<CultureMetrics | null>(null)
   const [confidence, setConfidence] = useState<'high' | 'medium' | 'none'>('none')
+  const [lotBanks, setLotBanks] = useState<any[]>([])  // банки, созданные из этого лота
 
   // Container selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -151,6 +152,12 @@ export default function LotDetailPage({
       setLot(lotData)
       setContainers(containersData || [])
       setOperations(opsData || [])
+
+      // Load banks created from this lot
+      try {
+        const banks = await getBanks({ lot_id: id })
+        setLotBanks(banks || [])
+      } catch { /* banks may not exist */ }
 
       // Load confidence level for cell forecast + culture metrics
       if (lotData?.culture?.id) {
@@ -279,6 +286,17 @@ export default function LotDetailPage({
               >
                 {LOT_STATUS_LABEL[lot.status] || lot.status}
               </Badge>
+              {lotBanks.length > 0 && lotBanks.map((bank: any) => (
+                <Badge
+                  key={bank.id}
+                  variant="outline"
+                  className="bg-blue-100 text-blue-800 border-blue-300"
+                >
+                  🧊 {bank.bank_type} — {bank.code}
+                  {bank.status === 'QUARANTINE' && ' (QC)'}
+                  {bank.status === 'APPROVED' && ' ✓'}
+                </Badge>
+              ))}
             </div>
 
             {culture && (
@@ -527,7 +545,7 @@ export default function LotDetailPage({
           }
         }
 
-        const hasMetrics = latestConcentration || displayViability || latestTotalCells || maxConfluent > 0 || inheritedInitialCells || lotPDL
+        const hasMetrics = displayViability || latestTotalCells || maxConfluent > 0 || inheritedInitialCells || lotPDL
 
         if (!hasMetrics) return null
 
@@ -563,12 +581,7 @@ export default function LotDetailPage({
                     )}
                   </div>
                 )}
-                {latestConcentration != null && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Концентрация</p>
-                    <p className="font-medium">{latestConcentration.toLocaleString('ru-RU')} кл/мл</p>
-                  </div>
-                )}
+                {/* Концентрация (кл/мл) — технический показатель, не отображается на карточке лота */}
                 {(latestTotalCells != null || inheritedInitialCells != null) && (
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Клетки</p>
@@ -587,12 +600,7 @@ export default function LotDetailPage({
                     )}
                   </div>
                 )}
-                {latestVolume != null && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Объём суспензии</p>
-                    <p className="font-medium">{latestVolume} мл</p>
-                  </div>
-                )}
+                {/* Объём суспензии — технический показатель операций, не отображается на карточке лота */}
                 {lastObserveDate && (
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Последний осмотр</p>

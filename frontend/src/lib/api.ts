@@ -703,7 +703,7 @@ export async function getLotById(id: string) {
 
 // ==================== BANKS ====================
 
-export async function getBanks(filters?: { status?: string; type?: string; culture_id?: string }) {
+export async function getBanks(filters?: { status?: string; type?: string; culture_id?: string; lot_id?: string }) {
   let query = supabase
     .from('banks')
     .select(`
@@ -723,6 +723,9 @@ export async function getBanks(filters?: { status?: string; type?: string; cultu
   }
   if (filters?.culture_id) {
     query = query.eq('culture_id', filters.culture_id)
+  }
+  if (filters?.lot_id) {
+    query = query.eq('lot_id', filters.lot_id)
   }
 
   const { data, error } = await query
@@ -3770,6 +3773,7 @@ export interface FreezeData {
   cryo_batch_id?: string             // Партия криовиалов со склада
   viability_percent: number
   concentration: number
+  volume_ml?: number                 // Общий объём суспензии (мл)
   notes?: string
 }
 
@@ -3925,7 +3929,7 @@ export async function createOperationFreeze(data: FreezeData) {
       concentration: data.concentration,
       viability_percent: data.viability_percent,
       total_cells: data.total_cells,
-      volume_ml: data.cryo_vial_count // примерно
+      volume_ml: data.volume_ml || null
     })
   
   // 9. Создать QC-задачу через createQCTask()
@@ -4118,7 +4122,7 @@ export async function createOperationThaw(data: ThawData) {
 
   const thawLotNumber = `${thawCultureName}-L${(thawLotCount || 0) + 1}`
 
-  // 4. Создать новый лот
+  // 4. Создать новый лот (initial_cells = клетки из криовиала)
   const { data: newLot, error: newLotError } = await supabase
     .from('lots')
     .insert({
@@ -4128,6 +4132,8 @@ export async function createOperationThaw(data: ThawData) {
       parent_lot_id: parentLot.id,
       status: 'ACTIVE',
       seeded_at: new Date().toISOString(),
+      initial_cells: cryoVial.cells_count || null,
+      viability: data.viability_percent || null,
       notes: `Thaw from bank ${cryoVial.bank?.bank_type}`
     })
     .select()
@@ -4191,6 +4197,15 @@ export async function createOperationThaw(data: ThawData) {
       confluent_percent: 0
     })
   
+  // 7.5. Создать operation_metrics для THAW
+  await supabase
+    .from('operation_metrics')
+    .insert({
+      operation_id: operation.id,
+      total_cells: cryoVial.cells_count || null,
+      viability_percent: data.viability_percent || null,
+    })
+
   // 8. Обновить крио_vial: status=THAWED, thaw_date=today
   await supabase
     .from('cryo_vials')

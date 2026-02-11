@@ -655,26 +655,7 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                   </CardContent>
                 </Card>
               )}
-              {latestConcentration != null && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-lg bg-indigo-50 p-2.5">
-                        <Beaker className="h-5 w-5 text-indigo-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Концентрация</p>
-                        <p className="font-semibold text-sm">{latestConcentration.toLocaleString('ru-RU')} кл/мл</p>
-                        {avgConcentration != null && concentrationValues.length > 1 && (
-                          <p className="text-xs text-muted-foreground">
-                            сред. {Math.round(avgConcentration).toLocaleString('ru-RU')} ({concentrationValues.length} изм.)
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              {/* Концентрация (кл/мл) — технический показатель операций, не отображается */}
               {culture.coefficient != null && culture.coefficient > 0 && (
                 <Card>
                   <CardContent className="p-4">
@@ -1061,12 +1042,7 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                                       <p className="font-medium">{lotViability}%</p>
                                     </div>
                                   )}
-                                  {lotConcentration != null && (
-                                    <div>
-                                      <p className="text-muted-foreground">Концентрация</p>
-                                      <p className="font-medium">{lotConcentration.toLocaleString('ru-RU')} кл/мл</p>
-                                    </div>
-                                  )}
+                                  {/* Концентрация — технический показатель, не отображается */}
                                   {lotTotalCells != null && (
                                     <div>
                                       <p className="text-muted-foreground">Общее кол-во клеток</p>

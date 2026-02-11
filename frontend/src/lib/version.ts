@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.11"
+export const APP_VERSION = "1.25.12"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.12",
+    date: "12.02.2026",
+    changes: [
+      "Метрики: убрана «Концентрация кл/мл» с карточек лота и культуры (технический показатель)",
+      "Разморозка: initial_cells в новом лоте берётся из cryo_vial.cells_count",
+      "Разморозка: operation_metrics сохраняются (total_cells, viability)",
+      "Заморозка: volume_ml записывает реальный объём суспензии, не кол-во виалов",
+      "Лот: бейдж «Банк» (MCB/WCB) с кодом и статусом QC рядом со статусом лота",
+      "API: getBanks поддерживает фильтрацию по lot_id",
+    ],
+  },
   {
     version: "1.25.11",
     date: "12.02.2026",
