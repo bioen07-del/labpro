@@ -64,7 +64,13 @@ function FeedPageInner() {
           getLots({ status: 'ACTIVE' }),
           getAvailableMediaByUsage('FEED'),
         ])
-        setLots(lotsData || [])
+        // Filter out banked lots (all containers IN_BANK)
+        const selectableLots = (lotsData || []).filter((lot: any) => {
+          const conts = lot.containers || []
+          if (conts.length === 0) return true
+          return !conts.every((c: any) => c.container_status === 'IN_BANK')
+        })
+        setLots(selectableLots)
         setMediaOptions(buildMediaOptions(mediaResult.readyMedia, mediaResult.reagentBatches))
 
         // Auto-bind from URL params

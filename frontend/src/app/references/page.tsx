@@ -25,13 +25,15 @@ import {
   getMorphologyTypes, createMorphologyType, updateMorphologyType, deleteMorphologyType,
   getDisposeReasons, createDisposeReason, updateDisposeReason, deleteDisposeReason,
   getAllCultureTypeTissueLinks, linkCultureTypeToTissueType, unlinkCultureTypeFromTissueType, updateCultureTypeTissueLink,
+  getQCTestConfigs, createQCTestConfig, updateQCTestConfig, deleteQCTestConfig,
+  getCultureTypeQCRequirements, setCultureTypeQCRequirements,
 } from '@/lib/api'
-import type { UsageTag } from '@/types'
+import type { UsageTag, QCTestConfig } from '@/types'
 import { USAGE_TAG_LABELS } from '@/types'
 
 // ---- Tab configuration ----
 
-type TabKey = 'culture_types' | 'media_reagents' | 'consumables' | 'morphology_types' | 'dispose_reasons'
+type TabKey = 'culture_types' | 'media_reagents' | 'consumables' | 'morphology_types' | 'dispose_reasons' | 'qc_tests'
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'culture_types', label: 'Типы культур', icon: <FlaskConical className="h-4 w-4" /> },
@@ -39,7 +41,14 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'consumables', label: 'Контейнеры', icon: <Package className="h-4 w-4" /> },
   { key: 'morphology_types', label: 'Морфология', icon: <Microscope className="h-4 w-4" /> },
   { key: 'dispose_reasons', label: 'Утилизация', icon: <Trash2 className="h-4 w-4" /> },
+  { key: 'qc_tests', label: 'QC-тесты', icon: <TestTubes className="h-4 w-4" /> },
 ]
+
+const RESULT_TYPE_LABELS: Record<string, string> = {
+  BINARY: 'Да/Нет',
+  NUMERIC: 'Числовой',
+  TEXT: 'Текст',
+}
 
 const NOM_MEDIA_CATEGORIES = [
   { value: 'MEDIUM', label: 'Среда' },
@@ -97,6 +106,13 @@ export default function ReferencesPage() {
   // Show inactive toggle
   const [showInactive, setShowInactive] = useState(false)
 
+  // QC test configs
+  const [qcTestConfigs, setQcTestConfigs] = useState<QCTestConfig[]>([])
+  const [qcDialogOpen, setQcDialogOpen] = useState(false)
+  const [editQcConfig, setEditQcConfig] = useState<QCTestConfig | null>(null)
+  const [qcForm, setQcForm] = useState<Record<string, any>>({})
+  const [savingQc, setSavingQc] = useState(false)
+
   // Container types
   const [containerTypes, setContainerTypes] = useState<any[]>([])
 
@@ -134,6 +150,12 @@ export default function ReferencesPage() {
         }
         case 'morphology_types': result = await getMorphologyTypes(); break
         case 'dispose_reasons': result = await getDisposeReasons(); break
+        case 'qc_tests': {
+          const configs = await getQCTestConfigs(false) // include inactive
+          setQcTestConfigs(configs || [])
+          result = configs || []
+          break
+        }
       }
       setData(prev => ({ ...prev, [tab]: result || [] }))
     } catch (err) {
@@ -146,7 +168,7 @@ export default function ReferencesPage() {
 
   // Load ALL tabs on mount so counts are visible immediately
   useEffect(() => {
-    const allTabs: TabKey[] = ['culture_types', 'media_reagents', 'consumables', 'morphology_types', 'dispose_reasons']
+    const allTabs: TabKey[] = ['culture_types', 'media_reagents', 'consumables', 'morphology_types', 'dispose_reasons', 'qc_tests']
     allTabs.forEach(tab => loadTab(tab))
   }, [loadTab])
 
@@ -716,6 +738,126 @@ export default function ReferencesPage() {
     )
   }
 
+  // ==================== TAB: QC Tests ====================
+
+  const openQcDialog = (item?: QCTestConfig) => {
+    setEditQcConfig(item || null)
+    setQcForm(item ? { ...item } : { code: '', name: '', description: '', methodology: '', unit: '', ref_min: '', ref_max: '', result_type: 'BINARY', is_active: true, sort_order: 0 })
+    setQcDialogOpen(true)
+  }
+
+  const handleSaveQc = async () => {
+    setSavingQc(true)
+    try {
+      const cleaned: Record<string, unknown> = {
+        code: qcForm.code,
+        name: qcForm.name,
+        description: qcForm.description || null,
+        methodology: qcForm.methodology || null,
+        unit: qcForm.unit || null,
+        ref_min: qcForm.ref_min === '' || qcForm.ref_min == null ? null : Number(qcForm.ref_min),
+        ref_max: qcForm.ref_max === '' || qcForm.ref_max == null ? null : Number(qcForm.ref_max),
+        result_type: qcForm.result_type || 'BINARY',
+        is_active: qcForm.is_active ?? true,
+        sort_order: Number(qcForm.sort_order) || 0,
+      }
+      if (editQcConfig) {
+        await updateQCTestConfig(editQcConfig.id, cleaned)
+        toast.success('QC-тест обновлён')
+      } else {
+        await createQCTestConfig(cleaned)
+        toast.success('QC-тест создан')
+      }
+      setQcDialogOpen(false)
+      loadTab('qc_tests')
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка сохранения')
+    } finally {
+      setSavingQc(false)
+    }
+  }
+
+  const handleDeleteQc = async (item: QCTestConfig) => {
+    try {
+      await deleteQCTestConfig(item.id)
+      toast.success('QC-тест деактивирован')
+      loadTab('qc_tests')
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка')
+    }
+  }
+
+  const handleToggleQcActive = async (item: QCTestConfig) => {
+    try {
+      await updateQCTestConfig(item.id, { is_active: !item.is_active })
+      toast.success(item.is_active ? 'Деактивирован' : 'Активирован')
+      loadTab('qc_tests')
+    } catch (err: any) {
+      toast.error(err.message || 'Ошибка')
+    }
+  }
+
+  const renderQCTestsTab = () => {
+    if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+
+    const visibleQc = showInactive ? qcTestConfigs : qcTestConfigs.filter(c => c.is_active)
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Настройте типы QC-тестов, единицы измерения и референсные значения.
+            Привяжите тесты к типам культур для автоматического создания при заморозке.
+          </p>
+          <Button size="sm" onClick={() => openQcDialog()}>
+            <Plus className="mr-2 h-4 w-4" />Добавить QC-тест
+          </Button>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Код</TableHead>
+              <TableHead>Название</TableHead>
+              <TableHead>Тип результата</TableHead>
+              <TableHead>Ед. изм.</TableHead>
+              <TableHead>Реф. мин</TableHead>
+              <TableHead>Реф. макс</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead className="text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleQc.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Нет QC-тестов</TableCell></TableRow>
+            ) : visibleQc.map(item => (
+              <TableRow key={item.id} className={!item.is_active ? 'opacity-50' : ''}>
+                <TableCell className="font-mono text-sm">{item.code}</TableCell>
+                <TableCell className="font-medium">{item.name}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{RESULT_TYPE_LABELS[item.result_type] || item.result_type}</Badge>
+                </TableCell>
+                <TableCell>{item.unit || '-'}</TableCell>
+                <TableCell>{item.ref_min != null ? item.ref_min : '-'}</TableCell>
+                <TableCell>{item.ref_max != null ? item.ref_max : '-'}</TableCell>
+                <TableCell>{renderStatusBadge(item)}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openQcDialog(item)} title="Редактировать">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggleQcActive(item)} title={item.is_active ? 'Деактивировать' : 'Активировать'}>
+                      {item.is_active ? <ToggleRight className="h-4 w-4 text-green-600" /> : <ToggleLeft className="h-4 w-4 text-gray-400" />}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    )
+  }
+
   // ==================== Form fields per dialog =====================
 
   const renderFormFields = () => {
@@ -900,6 +1042,7 @@ export default function ReferencesPage() {
             : renderNomTable(items, 'nomenclature'))}
           {activeTab === 'consumables' && renderConsumablesTab()}
           {(activeTab === 'morphology_types' || activeTab === 'dispose_reasons') && renderSimpleTab()}
+          {activeTab === 'qc_tests' && renderQCTestsTab()}
         </CardContent>
       </Card>
 
@@ -995,6 +1138,51 @@ export default function ReferencesPage() {
           </div>
           <DialogFooter>
             <Button onClick={() => setLinkDialogOpen(false)}>Готово</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QC Test Config Dialog */}
+      <Dialog open={qcDialogOpen} onOpenChange={setQcDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editQcConfig ? 'Редактировать QC-тест' : 'Новый QC-тест'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Код *</Label><Input value={qcForm.code || ''} onChange={e => setQcForm(p => ({ ...p, code: e.target.value }))} placeholder="MYCOPLASMA" /></div>
+              <div><Label>Название *</Label><Input value={qcForm.name || ''} onChange={e => setQcForm(p => ({ ...p, name: e.target.value }))} placeholder="Микоплазма" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Тип результата</Label>
+                <Select value={qcForm.result_type || 'BINARY'} onValueChange={v => setQcForm(p => ({ ...p, result_type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BINARY">Да/Нет (PASSED/FAILED)</SelectItem>
+                    <SelectItem value="NUMERIC">Числовой</SelectItem>
+                    <SelectItem value="TEXT">Текстовый</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Единица измерения</Label><Input value={qcForm.unit || ''} onChange={e => setQcForm(p => ({ ...p, unit: e.target.value }))} placeholder="КОЕ/мл, EU/мл, %" /></div>
+            </div>
+            {qcForm.result_type === 'NUMERIC' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Мин. значение (реф.)</Label><Input type="number" step="any" value={qcForm.ref_min ?? ''} onChange={e => setQcForm(p => ({ ...p, ref_min: e.target.value }))} /></div>
+                <div><Label>Макс. значение (реф.)</Label><Input type="number" step="any" value={qcForm.ref_max ?? ''} onChange={e => setQcForm(p => ({ ...p, ref_max: e.target.value }))} /></div>
+              </div>
+            )}
+            <div><Label>Описание</Label><Input value={qcForm.description || ''} onChange={e => setQcForm(p => ({ ...p, description: e.target.value }))} placeholder="Описание теста..." /></div>
+            <div><Label>Методика</Label><Input value={qcForm.methodology || ''} onChange={e => setQcForm(p => ({ ...p, methodology: e.target.value }))} placeholder="ПЦР, культуральный метод и т.д." /></div>
+            <div><Label>Порядок сортировки</Label><Input type="number" value={qcForm.sort_order ?? 0} onChange={e => setQcForm(p => ({ ...p, sort_order: e.target.value }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQcDialogOpen(false)}>Отмена</Button>
+            <Button onClick={handleSaveQc} disabled={savingQc || !qcForm.code || !qcForm.name}>
+              {savingQc ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Сохранить
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

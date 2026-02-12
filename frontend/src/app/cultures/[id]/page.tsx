@@ -1180,66 +1180,106 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                     )}
 
                     {/* Quick actions for active lots */}
-                    {lot.status === 'ACTIVE' && (
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/operations/observe?lot_id=${lot.id}`)
-                          }}
-                        >
-                          <Eye className="mr-1.5 h-3.5 w-3.5" />
-                          Наблюдение
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/operations/feed?lot_id=${lot.id}`)
-                          }}
-                        >
-                          <Droplets className="mr-1.5 h-3.5 w-3.5" />
-                          Кормление
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/operations/passage?lot_id=${lot.id}`)
-                          }}
-                        >
-                          <GitBranch className="mr-1.5 h-3.5 w-3.5" />
-                          Пассаж
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/operations/freeze?lot_id=${lot.id}`)
-                          }}
-                        >
-                          <Snowflake className="mr-1.5 h-3.5 w-3.5" />
-                          Заморозка
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/operations/dispose?lot_id=${lot.id}`)
-                          }}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                          Утилизация
-                        </Button>
-                      </div>
-                    )}
+                    {lot.status === 'ACTIVE' && (() => {
+                      const isBankedLot = containers.length > 0 && containers.every((c: Container) => c.container_status === 'IN_BANK')
+
+                      if (isBankedLot) {
+                        // Banked lot: only thaw, issue, dispose
+                        return (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                              <Snowflake className="mr-1 h-3 w-3" />
+                              Все контейнеры в банке
+                            </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(`/operations/thaw?lot_id=${lot.id}`)
+                              }}
+                            >
+                              <Snowflake className="mr-1.5 h-3.5 w-3.5" />
+                              Разморозка
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(`/operations/dispose?lot_id=${lot.id}`)
+                              }}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                              Утилизация
+                            </Button>
+                          </div>
+                        )
+                      }
+
+                      // Normal active lot: all operations
+                      return (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/operations/observe?lot_id=${lot.id}`)
+                            }}
+                          >
+                            <Eye className="mr-1.5 h-3.5 w-3.5" />
+                            Наблюдение
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/operations/feed?lot_id=${lot.id}`)
+                            }}
+                          >
+                            <Droplets className="mr-1.5 h-3.5 w-3.5" />
+                            Кормление
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/operations/passage?lot_id=${lot.id}`)
+                            }}
+                          >
+                            <GitBranch className="mr-1.5 h-3.5 w-3.5" />
+                            Пассаж
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/operations/freeze?lot_id=${lot.id}`)
+                            }}
+                          >
+                            <Snowflake className="mr-1.5 h-3.5 w-3.5" />
+                            Заморозка
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              router.push(`/operations/dispose?lot_id=${lot.id}`)
+                            }}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                            Утилизация
+                          </Button>
+                        </div>
+                      )
+                    })()}
 
                     {/* Link to lot detail */}
                     <div className="flex justify-end pt-1">

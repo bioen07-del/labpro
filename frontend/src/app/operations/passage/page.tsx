@@ -222,7 +222,13 @@ function PassagePageInner() {
           getPositions(),
           getContainerStockByType(),
         ])
-        setLots((lotsData as LotItem[]) || [])
+        // Filter out banked lots (all containers IN_BANK)
+        const selectableLots = ((lotsData as LotItem[]) || []).filter((lot: any) => {
+          const conts = lot.containers || []
+          if (conts.length === 0) return true
+          return !conts.every((c: any) => c.container_status === 'IN_BANK')
+        })
+        setLots(selectableLots)
         setContainerTypes((typesData as ContainerTypeItem[]) || [])
         setReadyMedia((mediaData as ReadyMediumItem[]) || [])
         setReagentBatches((reagentsData as ReagentBatchItem[]) || [])
@@ -770,7 +776,7 @@ function PassagePageInner() {
                   <SelectContent>
                     {allMediaOptions.map((opt) => (
                       <SelectItem key={opt.id} value={opt.id}>
-                        {opt.label}
+                        {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -807,7 +813,7 @@ function PassagePageInner() {
                   <SelectContent>
                     {allMediaOptions.map((opt) => (
                       <SelectItem key={opt.id} value={opt.id}>
-                        {opt.label}
+                        {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1120,7 +1126,7 @@ function PassagePageInner() {
                         <SelectContent>
                           {allMediaOptions.map((opt) => (
                             <SelectItem key={opt.id} value={opt.id}>
-                              {opt.label}
+                              {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1189,7 +1195,7 @@ function PassagePageInner() {
                             <SelectContent>
                               {allMediaOptions.map((opt) => (
                                 <SelectItem key={opt.id} value={opt.id}>
-                                  {opt.label}
+                                  {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1255,7 +1261,7 @@ function PassagePageInner() {
                       <SelectContent>
                         {allMediaOptions.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
-                            {opt.label}
+                            {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
                         ))}
                       </SelectContent>

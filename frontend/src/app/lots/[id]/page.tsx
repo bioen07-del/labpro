@@ -327,44 +327,67 @@ export default function LotDetailPage({
         </div>
 
         {/* ===== ACTION BUTTONS ===== */}
-        {lot.status === 'ACTIVE' && activeContainers.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          <Link href={`/operations/observe?lot_id=${id}`}>
-            <Button variant="outline" size="sm">
-              <Eye className="mr-1.5 h-4 w-4" />
-              Осмотр
-            </Button>
-          </Link>
-          <Link href={`/operations/feed?lot_id=${id}`}>
-            <Button variant="outline" size="sm">
-              <Utensils className="mr-1.5 h-4 w-4" />
-              Подкормка
-            </Button>
-          </Link>
-          <Link href={`/operations/passage?lot_id=${id}`}>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="mr-1.5 h-4 w-4" />
-              Пассаж
-            </Button>
-          </Link>
-          <Link href={`/operations/freeze?lot_id=${id}`}>
-            <Button variant="outline" size="sm">
-              <Snowflake className="mr-1.5 h-4 w-4" />
-              Заморозка
-            </Button>
-          </Link>
-          <Link href={`/operations/dispose?lot_id=${id}`}>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-red-600 hover:text-red-700 hover:border-red-300"
-            >
-              <Trash2 className="mr-1.5 h-4 w-4" />
-              Утилизация
-            </Button>
-          </Link>
-        </div>
-        ) : (
+        {lot.status === 'ACTIVE' && activeContainers.length > 0 ? (() => {
+          const isBankedLot = containers.length > 0 && containers.every(c => c.container_status === 'IN_BANK')
+
+          if (isBankedLot) {
+            return (
+              <div className="flex flex-wrap gap-2 items-center">
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                  <Snowflake className="mr-1 h-3 w-3" />
+                  Все контейнеры в банке
+                </Badge>
+                <Link href={`/operations/thaw?lot_id=${id}`}>
+                  <Button variant="outline" size="sm">
+                    <Snowflake className="mr-1.5 h-4 w-4" />
+                    Разморозка
+                  </Button>
+                </Link>
+                <Link href={`/operations/dispose?lot_id=${id}`}>
+                  <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:border-red-300">
+                    <Trash2 className="mr-1.5 h-4 w-4" />
+                    Утилизация
+                  </Button>
+                </Link>
+              </div>
+            )
+          }
+
+          return (
+            <div className="flex flex-wrap gap-2">
+              <Link href={`/operations/observe?lot_id=${id}`}>
+                <Button variant="outline" size="sm">
+                  <Eye className="mr-1.5 h-4 w-4" />
+                  Осмотр
+                </Button>
+              </Link>
+              <Link href={`/operations/feed?lot_id=${id}`}>
+                <Button variant="outline" size="sm">
+                  <Utensils className="mr-1.5 h-4 w-4" />
+                  Подкормка
+                </Button>
+              </Link>
+              <Link href={`/operations/passage?lot_id=${id}`}>
+                <Button variant="outline" size="sm">
+                  <RefreshCw className="mr-1.5 h-4 w-4" />
+                  Пассаж
+                </Button>
+              </Link>
+              <Link href={`/operations/freeze?lot_id=${id}`}>
+                <Button variant="outline" size="sm">
+                  <Snowflake className="mr-1.5 h-4 w-4" />
+                  Заморозка
+                </Button>
+              </Link>
+              <Link href={`/operations/dispose?lot_id=${id}`}>
+                <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:border-red-300">
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Утилизация
+                </Button>
+              </Link>
+            </div>
+          )
+        })() : (
           <Badge variant="outline" className="text-muted-foreground">
             {lot.status === 'DISPOSE' ? 'Лот утилизирован' : lot.status === 'CLOSED' ? 'Лот закрыт' : 'Нет активных контейнеров'}
           </Badge>

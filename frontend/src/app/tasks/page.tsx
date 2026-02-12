@@ -50,6 +50,38 @@ import {
 import { getTasks, createTask, completeTask, getContainers, getBanks } from '@/lib/api'
 import { formatDate, formatDateTime, getStatusLabel } from '@/lib/utils'
 
+// Маппинг типа задачи → путь формы операции
+const OPERATION_TYPE_MAP: Record<string, string> = {
+  FEED: 'feed',
+  PASSAGE: 'passage',
+  OBSERVE: 'observe',
+  QC: 'qc',
+  FREEZE: 'freeze',
+  THAW: 'thaw',
+  DISPOSE: 'dispose',
+}
+
+// Формирует URL операции с контекстом (lot_id, bank_id, container_id)
+function buildOperationUrl(task: any): string | null {
+  const opType = OPERATION_TYPE_MAP[task.type]
+  if (!opType) return null
+
+  let url = `/operations/${opType}`
+  const params: string[] = []
+
+  // Контекст из связанного контейнера → lot_id
+  if (task.container?.lot_id) {
+    params.push(`lot_id=${task.container.lot_id}`)
+  } else if (task.bank_id) {
+    params.push(`bank_id=${task.bank_id}`)
+  } else if (task.container_id) {
+    params.push(`container_id=${task.container_id}`)
+  }
+
+  if (params.length) url += '?' + params.join('&')
+  return url
+}
+
 const PRIORITY_CONFIG: Record<string, { color: string; label: string }> = {
   LOW: { color: 'bg-gray-100 text-gray-800', label: 'Низкий' },
   MEDIUM: { color: 'bg-yellow-100 text-yellow-800', label: 'Средний' },
@@ -431,16 +463,33 @@ export default function TasksPage() {
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      {task.status === 'PENDING' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleComplete(task.id)}
-                        >
-                          <CheckCircle2 className="h-4 w-4 mr-1" />
-                          Выполнить
-                        </Button>
-                      )}
+                      {task.status === 'PENDING' && (() => {
+                        const opUrl = buildOperationUrl(task)
+                        return (
+                          <>
+                            {opUrl && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                asChild
+                              >
+                                <Link href={opUrl}>
+                                  <ArrowRight className="h-4 w-4 mr-1" />
+                                  Выполнить
+                                </Link>
+                              </Button>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleComplete(task.id)}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                              Готово
+                            </Button>
+                          </>
+                        )
+                      })()}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -450,12 +499,14 @@ export default function TasksPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>Действия</DropdownMenuLabel>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem asChild>
-                            <Link href={`/operations/new?type=${task.type}`}>
-                              <ArrowRight className="h-4 w-4 mr-2" />
-                              Выполнить операцию
-                            </Link>
-                          </DropdownMenuItem>
+                          {buildOperationUrl(task) && (
+                            <DropdownMenuItem asChild>
+                              <Link href={buildOperationUrl(task)!}>
+                                <ArrowRight className="h-4 w-4 mr-2" />
+                                Открыть форму операции
+                              </Link>
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem>
                             <Bell className="h-4 w-4 mr-2" />
                             Напомнить позже

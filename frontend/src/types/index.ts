@@ -422,8 +422,35 @@ export interface ContainerPhoto {
   created_at: string
 }
 
+// QC Test Configs (reference table)
+export type QCResultType = 'BINARY' | 'NUMERIC' | 'TEXT'
+
+export interface QCTestConfig {
+  id: string
+  code: string
+  name: string
+  description?: string
+  methodology?: string
+  unit?: string
+  ref_min?: number
+  ref_max?: number
+  result_type: QCResultType
+  is_active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CultureTypeQCRequirement {
+  id: string
+  culture_type_id: string
+  qc_test_config_id: string
+  is_required: boolean
+  qc_test_config?: QCTestConfig
+}
+
 // QC Tests
-export type QCTestType = 'MYCOPLASMA' | 'STERILITY' | 'LAL' | 'VIA'
+export type QCTestType = 'MYCOPLASMA' | 'STERILITY' | 'LAL' | 'VIA' | string
 export type QCTestStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
 export type QCResult = 'PASSED' | 'FAILED'
 
@@ -434,12 +461,15 @@ export interface QCTest {
   test_type: QCTestType
   status: QCTestStatus
   result?: QCResult
+  results_data?: Record<string, unknown>
   started_at?: string
   completed_at?: string
   notes?: string
+  methodology?: string
   created_by?: string
   created_by_user?: User
   created_at: string
+  qc_test_config?: QCTestConfig
 }
 
 // Orders

@@ -75,7 +75,13 @@ function ObservePageInner() {
           getLots({ status: 'ACTIVE' }),
           getMorphologyTypes(),
         ])
-        setLots(lotsData || [])
+        // Filter out banked lots (all containers IN_BANK)
+        const selectableLots = (lotsData || []).filter((lot: any) => {
+          const conts = lot.containers || []
+          if (conts.length === 0) return true
+          return !conts.every((c: any) => c.container_status === 'IN_BANK')
+        })
+        setLots(selectableLots)
         setMorphologyTypes(morphData || [])
 
         // Auto-bind from URL params

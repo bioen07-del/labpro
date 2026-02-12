@@ -1945,6 +1945,95 @@ export async function getCultureTypes(includeInactive = false) {
   return data
 }
 
+// ==================== QC TEST CONFIGS (REFERENCE) ====================
+
+export async function getQCTestConfigs(onlyActive = true) {
+  let query = supabase
+    .from('qc_test_configs')
+    .select('*')
+    .order('sort_order', { ascending: true })
+
+  if (onlyActive) {
+    query = query.eq('is_active', true)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return data || []
+}
+
+export async function createQCTestConfig(config: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('qc_test_configs')
+    .insert(config)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function updateQCTestConfig(id: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('qc_test_configs')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function deleteQCTestConfig(id: string) {
+  // Soft delete
+  const { data, error } = await supabase
+    .from('qc_test_configs')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// Culture type → QC requirements mapping
+export async function getCultureTypeQCRequirements(cultureTypeId: string) {
+  const { data, error } = await supabase
+    .from('culture_type_qc_requirements')
+    .select('*, qc_test_config:qc_test_configs(*)')
+    .eq('culture_type_id', cultureTypeId)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function setCultureTypeQCRequirements(cultureTypeId: string, configIds: string[]) {
+  // Delete existing
+  await supabase
+    .from('culture_type_qc_requirements')
+    .delete()
+    .eq('culture_type_id', cultureTypeId)
+
+  if (configIds.length === 0) return []
+
+  // Insert new
+  const rows = configIds.map(qc_test_config_id => ({
+    culture_type_id: cultureTypeId,
+    qc_test_config_id,
+    is_required: true,
+  }))
+
+  const { data, error } = await supabase
+    .from('culture_type_qc_requirements')
+    .insert(rows)
+    .select('*, qc_test_config:qc_test_configs(*)')
+
+  if (error) throw error
+  return data || []
+}
+
 // ==================== QC TESTS ====================
 
 export async function getQCTests(filters?: { status?: string; target_type?: string; target_id?: string }) {
@@ -2002,19 +2091,29 @@ export async function updateQCTestStatus(id: string, status: string) {
   return data
 }
 
-export async function submitQCResult(id: string, result: 'PASSED' | 'FAILED', notes?: string) {
+export async function submitQCResult(
+  id: string,
+  result: 'PASSED' | 'FAILED',
+  notes?: string,
+  resultsData?: Record<string, unknown>
+) {
+  const updatePayload: Record<string, unknown> = {
+    result,
+    status: 'COMPLETED',
+    completed_at: new Date().toISOString(),
+    notes,
+  }
+  if (resultsData) {
+    updatePayload.results_data = resultsData
+  }
+
   const { data, error } = await supabase
     .from('qc_tests')
-    .update({
-      result,
-      status: 'COMPLETED',
-      completed_at: new Date().toISOString(),
-      notes
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single()
-  
+
   if (error) throw error
   return data
 }
@@ -3750,10 +3849,34 @@ export async function createQCTask(bankId: string) {
   })
 }
 
-// Auto-create standard QC tests for a new bank
-export async function createAutoQCTests(bankId: string) {
-  const testTypes = ['MYCOPLASMA', 'STERILITY', 'LAL', 'VIA'] as const
-  const tests = testTypes.map(test_type => ({
+// Auto-create QC tests for a new bank based on culture type config or all active configs
+export async function createAutoQCTests(bankId: string, cultureTypeId?: string) {
+  let testCodes: string[] = []
+
+  // Try to get culture-type-specific requirements
+  if (cultureTypeId) {
+    try {
+      const reqs = await getCultureTypeQCRequirements(cultureTypeId)
+      if (reqs.length > 0) {
+        testCodes = reqs.map((r: { qc_test_config?: { code?: string } }) => r.qc_test_config?.code).filter(Boolean) as string[]
+      }
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Fallback: use all active test configs
+  if (testCodes.length === 0) {
+    try {
+      const configs = await getQCTestConfigs(true)
+      testCodes = configs.map((c: { code: string }) => c.code)
+    } catch {
+      // Ultimate fallback: hardcoded
+      testCodes = ['MYCOPLASMA', 'STERILITY', 'LAL', 'VIA']
+    }
+  }
+
+  const tests = testCodes.map(test_type => ({
     test_type,
     target_type: 'BANK',
     target_id: bankId,
@@ -3967,7 +4090,8 @@ export async function createOperationFreeze(data: FreezeData) {
   if (bankId) {
     await createQCTask(bankId)
     try {
-      await createAutoQCTests(bankId)
+      const cultureTypeId = lot.culture?.culture_type_id
+      await createAutoQCTests(bankId, cultureTypeId)
     } catch (e) {
       console.error('Failed to auto-create QC tests:', e)
     }

@@ -208,7 +208,13 @@ function FreezePageInner() {
           getPositions({ is_active: true }),
           getBatches({ status: 'AVAILABLE', category: 'CONSUMABLE', usage_tag: 'FREEZING' }),
         ])
-        setLots(lotsData || [])
+        // Filter out banked lots (all containers IN_BANK)
+        const selectableLots = (lotsData || []).filter((lot: any) => {
+          const conts = lot.containers || []
+          if (conts.length === 0) return true
+          return !conts.every((c: any) => c.container_status === 'IN_BANK')
+        })
+        setLots(selectableLots)
         setDissociationOptions(buildMediaOptions(dissResult.readyMedia, dissResult.reagentBatches))
         setWashOptions(buildMediaOptions(washResult.readyMedia, washResult.reagentBatches))
         setFreezingOptions(buildMediaOptions(freezeResult.readyMedia, freezeResult.reagentBatches))
