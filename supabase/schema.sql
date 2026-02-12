@@ -149,6 +149,8 @@ CREATE TABLE IF NOT EXISTS nomenclatures (
     unit TEXT,
     storage_requirements TEXT,
     usage_tags TEXT[] DEFAULT '{}',
+    min_stock_threshold NUMERIC DEFAULT 0,
+    min_stock_threshold_type TEXT DEFAULT 'ABSOLUTE', -- 'ABSOLUTE' | 'PERCENT'
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -411,6 +413,7 @@ CREATE TABLE IF NOT EXISTS batches (
     nomenclature_id UUID REFERENCES nomenclatures(id),
     batch_number TEXT NOT NULL,
     quantity NUMERIC NOT NULL,
+    initial_quantity NUMERIC, -- начальное кол-во при приёмке (для порога % «Мало»)
     unit TEXT DEFAULT 'шт',
     expiration_date DATE,
     manufacturing_date DATE,

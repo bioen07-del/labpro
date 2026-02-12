@@ -93,6 +93,7 @@ function NewBatchPageInner() {
         nomenclature_id: formData.nomenclature_id,
         batch_number: formData.batch_number,
         quantity: Number(formData.quantity),
+        initial_quantity: Number(formData.quantity), // начальное кол-во для порога «Мало» в %
         volume_per_unit: volumePerUnit,
         current_unit_volume: volumePerUnit, // инициализация: первый флакон полный
         unit: formData.unit,

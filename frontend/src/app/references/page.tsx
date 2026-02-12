@@ -66,7 +66,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент',
 }
 
-const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days'])
+const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'min_stock_threshold'])
 
 // ---- Component ----
 
@@ -217,7 +217,7 @@ export default function ReferencesPage() {
       case 'culture_types':
         return { code: '', name: '', description: '', optimal_confluent: '', observe_interval_days: '', feed_interval_days: '', is_active: true }
       case 'media_reagents':
-        return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', usage_tags: [], is_active: true }
+        return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', usage_tags: [], min_stock_threshold: '', min_stock_threshold_type: 'ABSOLUTE', is_active: true }
       case 'consumables':
         return { code: '', name: '', surface_area_cm2: '', volume_ml: '', is_cryo: false, optimal_confluent: '', is_active: true }
       case 'morphology_types':
@@ -232,7 +232,7 @@ export default function ReferencesPage() {
   const TABLE_FIELDS: Record<string, string[]> = {
     culture_types: ['code', 'name', 'description', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'is_active'],
     tissue_types: ['code', 'name', 'tissue_form', 'is_active'],
-    media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'usage_tags', 'is_active'],
+    media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'usage_tags', 'min_stock_threshold', 'min_stock_threshold_type', 'is_active'],
     consumables: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
     container_types: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
     morphology_types: ['code', 'name', 'description'],
@@ -918,6 +918,28 @@ export default function ReferencesPage() {
               <div><Label>Единица измерения</Label><Input value={form.unit || ''} onChange={e => updateForm('unit', e.target.value)} placeholder="мл / г" /></div>
             </div>
             <div><Label>Условия хранения</Label><Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="+2..+8°C" /></div>
+            {/* Min stock threshold */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Тип порога «Мало»</Label>
+                <Select value={form.min_stock_threshold_type || 'ABSOLUTE'} onValueChange={v => updateForm('min_stock_threshold_type', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ABSOLUTE">Абсолютное (шт/мл)</SelectItem>
+                    <SelectItem value="PERCENT">% от начального кол-ва</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Порог «Мало»</Label>
+                <Input type="number" min={0} step="any" value={form.min_stock_threshold ?? ''} onChange={e => updateForm('min_stock_threshold', e.target.value)} placeholder="0" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.min_stock_threshold_type === 'PERCENT'
+                    ? '% от начального кол-ва в партии. 0 = без порога'
+                    : 'Кол-во шт или мл. 0 = без порога (fallback: ≤5)'}
+                </p>
+              </div>
+            </div>
             {/* Usage tags */}
             <div className="space-y-2">
               <Label>Назначение (этапы операций)</Label>

@@ -33,8 +33,18 @@ interface BatchOption {
   batch_number: string
   quantity: number
   unit: string
+  volume_per_unit?: number | null
+  current_unit_volume?: number | null
   nomenclature?: { id: string; name: string; category: string } | null
   expiration_date?: string
+}
+
+/** Формат остатка партии: учитывает пофлаконный учёт */
+function formatBatchStock(b: BatchOption): string {
+  if (b.volume_per_unit && b.volume_per_unit > 0) {
+    return `${b.quantity} фл, тек: ${b.current_unit_volume ?? b.volume_per_unit}/${b.volume_per_unit} мл`
+  }
+  return `${b.quantity} ${b.unit}`
 }
 
 interface Component {
@@ -249,7 +259,7 @@ export default function NewReadyMediumPage() {
                       ) : (
                         mediaBatches.map((batch) => (
                           <SelectItem key={batch.id} value={batch.id}>
-                            {batch.nomenclature?.name} — {batch.batch_number} ({batch.quantity} {batch.unit})
+                            {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
                           </SelectItem>
                         ))
                       )}
@@ -327,7 +337,7 @@ export default function NewReadyMediumPage() {
                       <SelectContent>
                         {filteredComponentBatches.map((batch) => (
                           <SelectItem key={batch.id} value={batch.id}>
-                            {batch.nomenclature?.name} — {batch.batch_number} ({batch.quantity} {batch.unit})
+                            {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
                           </SelectItem>
                         ))}
                       </SelectContent>

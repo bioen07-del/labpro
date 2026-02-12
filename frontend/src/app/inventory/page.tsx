@@ -67,6 +67,33 @@ type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPL
 
 const MEDIA_CATEGORIES = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'ENZYME', 'REAGENT'])
 
+/** Проверяет, является ли остаток партии «Мало» по настраиваемому порогу номенклатуры */
+function isLowStock(batch: any): boolean {
+  if (batch.quantity <= 0) return false
+  if (batch.status === 'EXPIRED') return false
+
+  const nom = batch.nomenclature
+  const threshold = nom?.min_stock_threshold
+
+  // Если порог не задан или 0 — fallback: quantity <= 5
+  if (!threshold || threshold <= 0) return batch.quantity <= 5
+
+  if (nom?.min_stock_threshold_type === 'PERCENT') {
+    const initial = batch.initial_quantity ?? batch.quantity
+    if (initial <= 0) return false
+    const percentLeft = (batch.quantity / initial) * 100
+    return percentLeft <= threshold
+  }
+
+  // ABSOLUTE: для пофлаконных — общий доступный объём
+  if (batch.volume_per_unit && batch.volume_per_unit > 0) {
+    const totalVolume = (batch.quantity - 1) * batch.volume_per_unit
+      + (batch.current_unit_volume ?? batch.volume_per_unit)
+    return totalVolume <= threshold
+  }
+  return batch.quantity <= threshold
+}
+
 export default function InventoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('AVAILABLE')
@@ -115,7 +142,7 @@ export default function InventoryPage() {
 
     // Status filter
     if (selectedStatus === 'LOW_STOCK') {
-      if (!(batch.quantity <= 5 && batch.quantity > 0 && batch.status !== 'EXPIRED')) return false
+      if (!isLowStock(batch)) return false
     } else if (selectedStatus !== 'all' && batch.status !== selectedStatus) return false
 
     // Search
@@ -169,7 +196,7 @@ export default function InventoryPage() {
       : categoryBatches.filter(b => b.status === 'AVAILABLE' || b.status === 'ACTIVE').length,
     lowStock: categoryTab === 'ready_media'
       ? 0
-      : categoryBatches.filter(b => b.quantity <= 5 && b.quantity > 0 && b.status !== 'EXPIRED').length,
+      : categoryBatches.filter(b => isLowStock(b)).length,
     expired: categoryTab === 'ready_media'
       ? readyMedia.filter(m => m.status === 'EXPIRED').length
       : categoryBatches.filter(b => b.status === 'EXPIRED').length,
@@ -448,7 +475,7 @@ export default function InventoryPage() {
                         {batch.batch_number || batch.id?.slice(0, 8)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className={`font-semibold ${batch.quantity <= 0 ? 'text-red-600' : batch.quantity <= 5 ? 'text-amber-600' : ''}`}>
+                        <span className={`font-semibold ${batch.quantity <= 0 ? 'text-red-600' : isLowStock(batch) ? 'text-amber-600' : ''}`}>
                           {formatNumber(batch.quantity)}
                         </span>
                         {batch.volume_per_unit ? (
@@ -487,7 +514,7 @@ export default function InventoryPage() {
                           <Badge className={getStatusColor(batch.status)}>
                             {getStatusLabel(batch.status)}
                           </Badge>
-                          {batch.quantity > 0 && batch.quantity <= 5 && batch.status !== 'EXPIRED' && (
+                          {isLowStock(batch) && (
                             <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 text-xs">
                               Мало
                             </Badge>

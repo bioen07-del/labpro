@@ -269,6 +269,8 @@ export const NOMENCLATURE_CATEGORY_LABELS: Record<string, string> = {
   CONSUMABLE: 'Расходники',
 }
 
+export type MinStockThresholdType = 'ABSOLUTE' | 'PERCENT'
+
 export type UsageTag = 'FEED' | 'DISSOCIATION' | 'WASH' | 'SEED' | 'FREEZING' | 'THAW'
 
 export const USAGE_TAG_LABELS: Record<UsageTag, string> = {
@@ -289,6 +291,8 @@ export interface Nomenclature {
   storage_temp?: number
   storage_requirements?: string
   usage_tags?: UsageTag[]
+  min_stock_threshold?: number
+  min_stock_threshold_type?: MinStockThresholdType
   is_active: boolean
   created_at: string
   batches?: Batch[]
@@ -303,6 +307,7 @@ export interface Batch {
   batch_number: string
   expiration_date: string
   quantity: number
+  initial_quantity?: number
   volume_per_unit?: number | null
   current_unit_volume?: number | null
   unit: string

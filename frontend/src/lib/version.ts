@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.16"
+export const APP_VERSION = "1.25.17"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.17",
+    date: "12.02.2026",
+    changes: [
+      "Настраиваемый порог «Мало» на складе: в карточке номенклатуры — тип (абсолютное / %) + значение",
+      "isLowStock(): замена хардкода quantity≤5 на настраиваемый порог (ABSOLUTE / PERCENT от initial_quantity)",
+      "Начальное кол-во (initial_quantity) сохраняется при приёмке партии — для расчёта % порога",
+      "Для пофлаконного учёта (volume_per_unit): порог считается по суммарному объёму",
+      "Фикс отображения остатка в ready-media/new: пофлаконный формат (2 фл, тек: 2/500 мл) вместо «2 мл»",
+    ],
+  },
   {
     version: "1.25.16",
     date: "12.02.2026",
