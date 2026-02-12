@@ -30,6 +30,8 @@ import {
 import {
   getReadyMediumById, updateReadyMedium, deleteReadyMedium, writeOffReadyMediumFull
 } from '@/lib/api'
+import { PHYSICAL_STATE_LABELS } from '@/types'
+import type { PhysicalState } from '@/types'
 
 // ---- helpers ----
 function fmtDate(d?: string | null) {
@@ -219,6 +221,19 @@ export default function ReadyMediumDetailPage() {
               <Badge variant="outline" className={STATUS_COLOR[medium.status] || ''}>
                 {STATUS_LABEL[medium.status] || medium.status}
               </Badge>
+              {medium.physical_state && (
+                <Badge variant="outline" className={
+                  medium.physical_state === 'STOCK_SOLUTION' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                  medium.physical_state === 'WORKING_SOLUTION' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                  medium.physical_state === 'ALIQUOT' ? 'bg-cyan-100 text-cyan-800 border-cyan-300' :
+                  'bg-gray-100 text-gray-700 border-gray-300'
+                }>
+                  {PHYSICAL_STATE_LABELS[medium.physical_state as PhysicalState] || medium.physical_state}
+                </Badge>
+              )}
+              {medium.concentration && (
+                <Badge variant="secondary">{medium.concentration}{medium.concentration_unit || '×'}</Badge>
+              )}
               {expInfo.level === 'expired' && (
                 <Badge variant="outline" className="bg-red-100 text-red-800 border-red-300">
                   Просрочена
@@ -278,6 +293,18 @@ export default function ReadyMediumDetailPage() {
                     expInfo.level === 'warning' ? 'text-amber-600' : ''
                   }`}>{expInfo.date}</p>
                 </div>
+                {medium.physical_state && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Тип раствора</p>
+                    <p className="font-medium">{PHYSICAL_STATE_LABELS[medium.physical_state as PhysicalState] || medium.physical_state}</p>
+                  </div>
+                )}
+                {medium.concentration && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Концентрация</p>
+                    <p className="font-medium">{medium.concentration}{medium.concentration_unit || '×'}</p>
+                  </div>
+                )}
                 <div>
                   <p className="text-sm text-muted-foreground">Объём (начальный)</p>
                   <p className="font-medium">{medium.volume_ml || 0} мл</p>
@@ -315,7 +342,54 @@ export default function ReadyMediumDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {composition.base || composition.components ? (
+              {composition.mode && (
+                <Badge variant="outline" className="mb-3 text-xs">
+                  {composition.mode === 'PERCENT' ? '% Процентный' : composition.mode === 'ABSOLUTE' ? 'mg Абсолютный' : composition.mode === 'DILUTION' ? 'C₁V₁ Разведение' : composition.mode}
+                </Badge>
+              )}
+              {composition.mode === 'DILUTION' ? (
+                /* DILUTION mode — source + diluent */
+                <div className="space-y-3">
+                  {composition.source && (
+                    <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FlaskConical className="h-5 w-5 text-purple-500" />
+                        <div>
+                          <p className="font-medium">{composition.source.name || 'Сток'}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Стоковый раствор ({composition.source.concentration}{composition.source.concentration_unit || '×'})
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">{composition.source.volume_ml} мл</p>
+                      </div>
+                    </div>
+                  )}
+                  {composition.diluent && (
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Droplets className="h-4 w-4 text-blue-500" />
+                        <div>
+                          <p className="font-medium">{composition.diluent.nomenclature || 'Разбавитель'}</p>
+                          <p className="text-xs text-muted-foreground">Разбавитель</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">{composition.diluent.volume_ml} мл</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t text-sm">
+                    <span className="text-muted-foreground">Целевая концентрация</span>
+                    <span className="font-semibold">{composition.target_concentration}{composition.target_concentration_unit || '×'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Общий объём</span>
+                    <span className="font-semibold">{composition.total_volume_ml || medium.volume_ml || '—'} мл</span>
+                  </div>
+                </div>
+              ) : (composition.base || composition.components) ? (
                 <div className="space-y-3">
                   {/* Base */}
                   {composition.base && (
@@ -330,7 +404,7 @@ export default function ReadyMediumDetailPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-semibold">{composition.base.percent ?? '—'}%</p>
+                        {composition.base.percent != null && <p className="font-semibold">{composition.base.percent}%</p>}
                         {composition.base.volume_ml != null && (
                           <p className="text-xs text-muted-foreground">{composition.base.volume_ml} мл</p>
                         )}
@@ -352,7 +426,8 @@ export default function ReadyMediumDetailPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-semibold">{comp.percent ?? '—'}%</p>
+                        {comp.percent != null && <p className="font-semibold">{comp.percent}%</p>}
+                        {comp.amount != null && <p className="font-semibold">{comp.amount} {comp.amount_unit || ''}</p>}
                         {comp.volume_ml != null && (
                           <p className="text-xs text-muted-foreground">{comp.volume_ml} мл</p>
                         )}

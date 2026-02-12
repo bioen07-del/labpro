@@ -28,8 +28,9 @@ import {
   getQCTestConfigs, createQCTestConfig, updateQCTestConfig, deleteQCTestConfig,
   getCultureTypeQCRequirements, setCultureTypeQCRequirements,
 } from '@/lib/api'
-import type { UsageTag, QCTestConfig } from '@/types'
-import { USAGE_TAG_LABELS } from '@/types'
+import type { UsageTag, QCTestConfig, UnitType, NomenclatureCategory } from '@/types'
+import { USAGE_TAG_LABELS, UNIT_TYPE_LABELS } from '@/types'
+import { getUnitsForType, getDefaultUnit, inferUnitType } from '@/lib/units'
 
 // ---- Tab configuration ----
 
@@ -66,7 +67,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент',
 }
 
-const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'min_stock_threshold'])
+const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'min_stock_threshold', 'molecular_weight', 'content_per_package'])
 
 // ---- Component ----
 
@@ -208,7 +209,17 @@ export default function ReferencesPage() {
       return
     }
     setEditItem(item)
-    setForm({ ...item })
+    // Автоподстановка unit_type для существующих записей без unit_type (миграция)
+    const formData = { ...item }
+    if (!formData.unit_type) {
+      if (formData.unit) {
+        formData.unit_type = inferUnitType(formData.unit) || (formData.category === 'CONSUMABLE' ? 'COUNT' : 'VOLUME')
+      } else {
+        formData.unit_type = formData.category === 'CONSUMABLE' ? 'COUNT' : 'VOLUME'
+        formData.unit = formData.category === 'CONSUMABLE' ? 'шт' : 'мл'
+      }
+    }
+    setForm(formData)
     setDialogOpen(true)
   }
 
@@ -217,9 +228,9 @@ export default function ReferencesPage() {
       case 'culture_types':
         return { code: '', name: '', description: '', optimal_confluent: '', observe_interval_days: '', feed_interval_days: '', is_active: true }
       case 'media_reagents':
-        return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', usage_tags: [], min_stock_threshold: '', min_stock_threshold_type: 'QTY', is_active: true }
+        return { code: '', name: '', category: 'MEDIUM', unit_type: 'VOLUME', unit: 'мл', container_type_id: '', storage_requirements: '', usage_tags: [], min_stock_threshold: '', min_stock_threshold_type: 'QTY', molecular_weight: '', is_active: true }
       case 'consumables':
-        return { code: '', name: '', surface_area_cm2: '', volume_ml: '', is_cryo: false, optimal_confluent: '', min_stock_threshold: '', min_stock_threshold_type: 'QTY', is_active: true }
+        return { code: '', name: '', category: 'CONSUMABLE', unit_type: 'COUNT', unit: 'шт', surface_area_cm2: '', volume_ml: '', is_cryo: false, optimal_confluent: '', min_stock_threshold: '', min_stock_threshold_type: 'QTY', content_per_package: '', is_active: true }
       case 'morphology_types':
         return { code: '', name: '', description: '' }
       case 'dispose_reasons':
@@ -232,8 +243,8 @@ export default function ReferencesPage() {
   const TABLE_FIELDS: Record<string, string[]> = {
     culture_types: ['code', 'name', 'description', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'is_active'],
     tissue_types: ['code', 'name', 'tissue_form', 'is_active'],
-    media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'usage_tags', 'min_stock_threshold', 'min_stock_threshold_type', 'is_active'],
-    consumables: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'min_stock_threshold', 'min_stock_threshold_type', 'is_active'],
+    media_reagents: ['code', 'name', 'category', 'unit_type', 'unit', 'container_type_id', 'storage_requirements', 'usage_tags', 'min_stock_threshold', 'min_stock_threshold_type', 'molecular_weight', 'is_active'],
+    consumables: ['code', 'name', 'category', 'unit_type', 'unit', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'min_stock_threshold', 'min_stock_threshold_type', 'content_per_package', 'is_active'],
     container_types: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
     morphology_types: ['code', 'name', 'description'],
     dispose_reasons: ['code', 'name', 'description'],
@@ -905,19 +916,57 @@ export default function ReferencesPage() {
               <div><Label>Код *</Label><Input value={form.code || ''} onChange={e => updateForm('code', e.target.value)} placeholder="MED-001" /></div>
               <div><Label>Название *</Label><Input value={form.name || ''} onChange={e => updateForm('name', e.target.value)} placeholder="Среда DMEM" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Категория *</Label>
-                <Select value={form.category || 'MEDIUM'} onValueChange={v => updateForm('category', v)}>
+                <Select value={form.category || 'MEDIUM'} onValueChange={v => {
+                  updateForm('category', v)
+                  // Автоподбор unit_type по категории
+                  const defaults = getDefaultUnit(v as NomenclatureCategory)
+                  updateForm('unit_type', defaults.unitType)
+                  updateForm('unit', defaults.unit)
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {NOM_MEDIA_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Единица измерения</Label><Input value={form.unit || ''} onChange={e => updateForm('unit', e.target.value)} placeholder="мл / г" /></div>
+              <div>
+                <Label>Тип единицы</Label>
+                <Select value={form.unit_type || 'VOLUME'} onValueChange={v => {
+                  updateForm('unit_type', v)
+                  const units = getUnitsForType(v as UnitType)
+                  if (units.length > 0) updateForm('unit', units[0])
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(UNIT_TYPE_LABELS) as [string, string][]).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Единица измерения</Label>
+                <Select value={form.unit || 'мл'} onValueChange={v => updateForm('unit', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {getUnitsForType((form.unit_type || 'VOLUME') as UnitType).map(u => (
+                      <SelectItem key={u} value={u}>{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div><Label>Условия хранения</Label><Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="+2..+8°C" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Условия хранения</Label><Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="+2..+8°C" /></div>
+              <div>
+                <Label>Молекулярная масса (г/моль)</Label>
+                <Input type="number" min={0} step="any" value={form.molecular_weight ?? ''} onChange={e => updateForm('molecular_weight', e.target.value)} placeholder="Опционально" />
+                <p className="text-xs text-muted-foreground mt-1">Для будущей конвертации масса↔моль</p>
+              </div>
+            </div>
             {/* Min stock threshold */}
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -978,7 +1027,7 @@ export default function ReferencesPage() {
               <div><Label>Код *</Label><Input value={form.code || ''} onChange={e => updateForm('code', e.target.value)} placeholder="PL-001" /></div>
               <div><Label>Название *</Label><Input value={form.name || ''} onChange={e => updateForm('name', e.target.value)} placeholder="Флакон Т75" /></div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Тип контейнера (если есть)</Label>
                 <Select value={form.container_type_id || '__none__'} onValueChange={v => updateForm('container_type_id', v === '__none__' ? '' : v)}>
@@ -989,9 +1038,41 @@ export default function ReferencesPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Единица измерения</Label><Input value={form.unit || ''} onChange={e => updateForm('unit', e.target.value)} placeholder="шт" /></div>
+              <div>
+                <Label>Тип единицы</Label>
+                <Select value={form.unit_type || 'COUNT'} onValueChange={v => {
+                  updateForm('unit_type', v)
+                  const units = getUnitsForType(v as UnitType)
+                  if (units.length > 0) updateForm('unit', units[0])
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.entries(UNIT_TYPE_LABELS) as [string, string][]).map(([k, label]) => (
+                      <SelectItem key={k} value={k}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Единица измерения</Label>
+                <Select value={form.unit || 'шт'} onValueChange={v => updateForm('unit', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {getUnitsForType((form.unit_type || 'COUNT') as UnitType).map(u => (
+                      <SelectItem key={u} value={u}>{u}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div><Label>Условия хранения</Label><Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="Комнатная температура" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><Label>Условия хранения</Label><Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="Комнатная температура" /></div>
+              <div>
+                <Label>Штук в упаковке</Label>
+                <Input type="number" min={1} step="1" value={form.content_per_package ?? ''} onChange={e => updateForm('content_per_package', e.target.value)} placeholder="напр. 20" />
+                <p className="text-xs text-muted-foreground mt-1">Сколько штук обычно в 1 упаковке (подсказка при приёмке)</p>
+              </div>
+            </div>
             {/* Min stock threshold for consumables */}
             <div className="grid grid-cols-2 gap-4">
               <div>

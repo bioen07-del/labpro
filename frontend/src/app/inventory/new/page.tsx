@@ -230,63 +230,78 @@ function NewBatchPageInner() {
             </div>
 
             {/* Quantity + Volume per unit + Unit */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Количество *</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={formData.quantity}
-                  onChange={(e) => update('quantity', e.target.value)}
-                  placeholder="5"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Объём / масса на ед.</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="any"
-                  value={formData.volume_per_unit}
-                  onChange={(e) => update('volume_per_unit', e.target.value)}
-                  placeholder="500"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Ед. измерения</Label>
-                <Select value={formData.unit} onValueChange={(v) => update('unit', v)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unitOptions.map((u) => (
-                      <SelectItem key={u.value} value={u.value}>
-                        {u.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {formData.quantity && formData.volume_per_unit && (
-              <p className="text-sm text-muted-foreground">
-                Итого: {Number(formData.quantity)} ед. × {Number(formData.volume_per_unit)} {formData.unit} = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(1)} {formData.unit}</strong>
-              </p>
-            )}
+            {(() => {
+              const selNom = nomenclatures.find((n: any) => n.id === formData.nomenclature_id)
+              const isConsumable = selNom?.category === 'CONSUMABLE'
+              return (
+                <>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>{isConsumable ? 'Кол-во упаковок *' : 'Количество *'}</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={formData.quantity}
+                        onChange={(e) => update('quantity', e.target.value)}
+                        placeholder={isConsumable ? '5' : '5'}
+                        required
+                      />
+                      {isConsumable && <p className="text-xs text-muted-foreground">Сколько закрытых упаковок</p>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{isConsumable ? 'Штук в упаковке' : 'Объём / масса на ед.'}</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={formData.volume_per_unit}
+                        onChange={(e) => update('volume_per_unit', e.target.value)}
+                        placeholder={isConsumable ? (selNom?.content_per_package ? String(selNom.content_per_package) : '20') : '500'}
+                      />
+                      {isConsumable && selNom?.content_per_package && (
+                        <p className="text-xs text-muted-foreground">В номенклатуре: {selNom.content_per_package} шт/уп</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Ед. измерения</Label>
+                      <Select value={formData.unit} onValueChange={(v) => update('unit', v)}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unitOptions.map((u) => (
+                            <SelectItem key={u.value} value={u.value}>
+                              {u.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {formData.quantity && formData.volume_per_unit && (
+                    <p className="text-sm text-muted-foreground">
+                      {isConsumable
+                        ? <>Итого: {Number(formData.quantity)} уп × {Number(formData.volume_per_unit)} шт = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(0)} шт</strong></>
+                        : <>Итого: {Number(formData.quantity)} ед. × {Number(formData.volume_per_unit)} {formData.unit} = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(1)} {formData.unit}</strong></>
+                      }
+                    </p>
+                  )}
 
-            {/* Expiration date */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Срок годности</Label>
-                <Input
-                  type="date"
-                  value={formData.expiration_date}
-                  onChange={(e) => update('expiration_date', e.target.value)}
-                />
-              </div>
-            </div>
+                  {/* Expiration date */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Срок годности</Label>
+                      <Input
+                        type="date"
+                        value={formData.expiration_date}
+                        onChange={(e) => update('expiration_date', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
           </CardContent>
         </Card>
 

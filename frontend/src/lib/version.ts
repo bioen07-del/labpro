@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.26.00"
+export const APP_VERSION = "1.27.00"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,21 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.27.00",
+    date: "12.02.2026",
+    changes: [
+      "Единицы измерения: типы UnitType (MASS/VOLUME/COUNT/ACTIVITY), конвертация единиц (lib/units.ts)",
+      "Номенклатура: unit_type + unit Select (каскадный), molecular_weight, content_per_package",
+      "Физическое состояние: PhysicalState (AS_RECEIVED/STOCK_SOLUTION/WORKING_SOLUTION/ALIQUOT) для готовых сред",
+      "Стоки: отдельная вкладка «Стоки» в инвентаре, концентрация, writeOffReadyMediumVolume",
+      "Калькулятор 3 режима: PERCENT (%) / ABSOLUTE (мг/мкг/мл) / DILUTION (C₁V₁=C₂V₂)",
+      "Разведение: выбор стока, авторасчёт V₁, списание стока + разбавителя, создание рабочего раствора",
+      "Карточка готовой среды: physical_state Badge, концентрация, composition mode (DILUTION/ABSOLUTE)",
+      "Упаковки: per-package tracking для расходников (кол-во упаковок × штук в упаковке)",
+      "Справочник: unit_type + unit Select для расходников по аналогии со средами",
+    ],
+  },
   {
     version: "1.26.00",
     date: "13.02.2026",

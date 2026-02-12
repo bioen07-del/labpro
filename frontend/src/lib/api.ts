@@ -2376,6 +2376,51 @@ export async function writeOffReadyMediumFull(id: string) {
   return data
 }
 
+/**
+ * Частичное списание объёма готовой среды / стока
+ * Используется при разведении стока (DILUTION mode)
+ */
+export async function writeOffReadyMediumVolume(id: string, volumeMl: number) {
+  // 1. Получить текущий объём
+  const { data: medium, error: fetchErr } = await supabase
+    .from('ready_media')
+    .select('id, current_volume_ml, volume_ml, status')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+
+  const currentVol = medium.current_volume_ml ?? medium.volume_ml ?? 0
+  const newVol = Math.max(0, currentVol - volumeMl)
+  const newStatus = newVol <= 0 ? 'USED' : medium.status
+
+  // 2. Обновить
+  const { data, error } = await supabase
+    .from('ready_media')
+    .update({ current_volume_ml: newVol, status: newStatus })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+/**
+ * Получить доступные стоковые растворы (для DILUTION mode калькулятора)
+ */
+export async function getAvailableStocks() {
+  const { data, error } = await supabase
+    .from('ready_media')
+    .select('*')
+    .eq('physical_state', 'STOCK_SOLUTION')
+    .eq('status', 'ACTIVE')
+    .gt('current_volume_ml', 0)
+    .order('name')
+
+  if (error) throw error
+  return data || []
+}
+
 // ==================== EQUIPMENT ====================
 
 export async function getEquipment(filters?: { type?: string; status?: string; includeInactive?: boolean }) {

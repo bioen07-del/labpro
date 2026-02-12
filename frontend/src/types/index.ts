@@ -256,6 +256,34 @@ export interface CryoVial {
   created_at: string
 }
 
+// ==================== UNITS & MEASUREMENT ====================
+
+export type UnitType = 'MASS' | 'VOLUME' | 'COUNT' | 'ACTIVITY'
+
+export type MassUnit = 'мкг' | 'мг' | 'г' | 'кг'
+export type VolumeUnit = 'мкл' | 'мл' | 'л'
+export type CountUnit = 'шт' | 'уп'
+export type ActivityUnit = 'ЕД' | 'МЕ'
+
+export type MeasurementUnit = MassUnit | VolumeUnit | CountUnit | ActivityUnit
+
+export const UNIT_TYPE_LABELS: Record<UnitType, string> = {
+  MASS: 'Масса',
+  VOLUME: 'Объём',
+  COUNT: 'Количество',
+  ACTIVITY: 'Активность',
+}
+
+// Physical state of prepared media / stocks
+export type PhysicalState = 'AS_RECEIVED' | 'STOCK_SOLUTION' | 'WORKING_SOLUTION' | 'ALIQUOT'
+
+export const PHYSICAL_STATE_LABELS: Record<PhysicalState, string> = {
+  AS_RECEIVED: 'Как получено',
+  STOCK_SOLUTION: 'Стоковый раствор',
+  WORKING_SOLUTION: 'Рабочий раствор',
+  ALIQUOT: 'Аликвота',
+}
+
 // Inventory
 export type NomenclatureCategory = 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'CONSUMABLE' | 'EQUIP'
 
@@ -288,6 +316,10 @@ export interface Nomenclature {
   name: string
   category: NomenclatureCategory
   unit: string
+  unit_type?: UnitType
+  packaging_unit?: CountUnit
+  content_per_package?: number
+  molecular_weight?: number
   storage_temp?: number
   storage_requirements?: string
   usage_tags?: UsageTag[]
@@ -347,9 +379,15 @@ export interface ReadyMedium {
   name: string
   category: string
   volume_ml: number
+  current_volume_ml?: number
   status: ReadyMediumStatus
   sterilization_method: SterilizationMethod
   expiration_date: string
+  physical_state?: PhysicalState
+  concentration?: number
+  concentration_unit?: string
+  parent_medium_id?: string
+  parent_medium?: ReadyMedium
   storage_position_id?: string
   storage_position?: Position
   composition?: any

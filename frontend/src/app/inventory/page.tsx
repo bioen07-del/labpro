@@ -63,7 +63,7 @@ import { getBatches, updateBatch, createInventoryMovement, getReadyMedia } from 
 // Note: updateBatch and createInventoryMovement still used by Dispose handler
 import { formatDate, formatNumber, daysUntilExpiration, getExpirationWarningLevel } from '@/lib/utils'
 
-type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'ready_media'
+type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'ready_media' | 'stock_solutions'
 
 const MEDIA_CATEGORIES = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'ENZYME', 'REAGENT'])
 
@@ -148,7 +148,7 @@ export default function InventoryPage() {
   // Filter batches by category, status, and search
   const filteredBatches = batches.filter(batch => {
     // Category filter
-    if (categoryTab === 'ready_media') return false // separate section
+    if (categoryTab === 'ready_media' || categoryTab === 'stock_solutions') return false // separate section
     if (categoryTab === 'MEDIUM') {
       if (!MEDIA_CATEGORIES.has(batch.nomenclature?.category)) return false
     } else if (categoryTab !== 'all' && batch.nomenclature?.category !== categoryTab) return false
@@ -171,9 +171,15 @@ export default function InventoryPage() {
     return true
   })
 
-  // Filtered ready media
+  // Split ready_media into working solutions and stock solutions
+  const workingMedia = readyMedia.filter(m => !m.physical_state || m.physical_state === 'WORKING_SOLUTION' || m.physical_state === 'AS_RECEIVED' || m.physical_state === 'ALIQUOT')
+  const stockMedia = readyMedia.filter(m => m.physical_state === 'STOCK_SOLUTION')
+
+  // Filtered ready media (working solutions for "Готовые среды" tab, stocks for "Стоки" tab)
+  const activeMediaList = categoryTab === 'stock_solutions' ? stockMedia : workingMedia
+
   // Ready media uses ACTIVE instead of AVAILABLE
-  const filteredReadyMedia = readyMedia.filter(media => {
+  const filteredReadyMedia = activeMediaList.filter(media => {
     if (selectedStatus !== 'all') {
       const mediaStatus = selectedStatus === 'AVAILABLE' ? 'ACTIVE' : selectedStatus
       if (media.status !== mediaStatus) return false
@@ -196,29 +202,31 @@ export default function InventoryPage() {
   })
 
   // Stats for current category
+  const isMediaTab = categoryTab === 'ready_media' || categoryTab === 'stock_solutions'
   const categoryBatches = categoryTab === 'all'
     ? batches
-    : categoryTab === 'ready_media'
+    : isMediaTab
       ? []
       : batches.filter(b => b.nomenclature?.category === categoryTab)
 
   const stats = {
-    total: categoryTab === 'ready_media' ? readyMedia.length : categoryBatches.length,
-    available: categoryTab === 'ready_media'
-      ? readyMedia.filter(m => m.status === 'ACTIVE').length
+    total: isMediaTab ? activeMediaList.length : categoryBatches.length,
+    available: isMediaTab
+      ? activeMediaList.filter(m => m.status === 'ACTIVE').length
       : categoryBatches.filter(b => b.status === 'AVAILABLE' || b.status === 'ACTIVE').length,
-    lowStock: categoryTab === 'ready_media'
+    lowStock: isMediaTab
       ? 0
       : categoryBatches.filter(b => isLowStock(b)).length,
-    expired: categoryTab === 'ready_media'
-      ? readyMedia.filter(m => m.status === 'EXPIRED').length
+    expired: isMediaTab
+      ? activeMediaList.filter(m => m.status === 'EXPIRED').length
       : categoryBatches.filter(b => b.status === 'EXPIRED').length,
   }
 
   const categoryStats = {
     consumable: batches.filter(b => b.nomenclature?.category === 'CONSUMABLE').length,
     media: batches.filter(b => MEDIA_CATEGORIES.has(b.nomenclature?.category)).length,
-    readyMedia: readyMedia.length,
+    readyMedia: workingMedia.length,
+    stocks: stockMedia.length,
   }
 
   // ==================== Dispose handler ====================
@@ -299,6 +307,9 @@ export default function InventoryPage() {
         </Button>
         <Button variant={categoryTab === 'ready_media' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('ready_media')} className="gap-1.5">
           <Beaker className="h-4 w-4" />Готовые среды<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.readyMedia}</Badge>
+        </Button>
+        <Button variant={categoryTab === 'stock_solutions' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('stock_solutions')} className="gap-1.5">
+          <FlaskConical className="h-4 w-4" />Стоки<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.stocks}</Badge>
         </Button>
       </div>
 
@@ -387,7 +398,7 @@ export default function InventoryPage() {
             {getCategoryTitle(categoryTab)}
           </CardTitle>
           <CardDescription>
-            {loading ? 'Загрузка...' : categoryTab === 'ready_media' ? `${filteredReadyMedia.length} готовых сред` : `${filteredBatches.length} позиций`}
+            {loading ? 'Загрузка...' : isMediaTab ? `${filteredReadyMedia.length} ${categoryTab === 'stock_solutions' ? 'стоков' : 'готовых сред'}` : `${filteredBatches.length} позиций`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -395,13 +406,14 @@ export default function InventoryPage() {
             <div className="flex justify-center items-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : categoryTab === 'ready_media' ? (
-            /* Ready media table */
+          ) : isMediaTab ? (
+            /* Ready media / Stock solutions table */
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Код</TableHead>
                   <TableHead>Состав</TableHead>
+                  {categoryTab === 'stock_solutions' && <TableHead className="text-center">Концентрация</TableHead>}
                   <TableHead className="text-center">Объём</TableHead>
                   <TableHead>Приготовлено</TableHead>
                   <TableHead>Годность</TableHead>
@@ -423,6 +435,13 @@ export default function InventoryPage() {
                       <div className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</div>
                       {media.notes && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{media.notes}</p>}
                     </TableCell>
+                    {categoryTab === 'stock_solutions' && (
+                      <TableCell className="text-center">
+                        {media.concentration ? (
+                          <span className="font-semibold">{media.concentration}{media.concentration_unit || '×'}</span>
+                        ) : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className="text-center">
                       <span className="font-semibold">{media.current_volume_ml ?? media.volume_ml ?? 0}</span>
                       <span className="text-muted-foreground text-xs ml-1">мл</span>
@@ -452,10 +471,10 @@ export default function InventoryPage() {
                 })}
                 {filteredReadyMedia.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={categoryTab === 'stock_solutions' ? 8 : 7} className="text-center py-8 text-muted-foreground">
                       <Beaker className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                      <p>Готовые среды не найдены</p>
-                      <p className="mt-2 text-sm">Нет приготовленных сред</p>
+                      <p>{categoryTab === 'stock_solutions' ? 'Стоковые растворы не найдены' : 'Готовые среды не найдены'}</p>
+                      <p className="mt-2 text-sm">{categoryTab === 'stock_solutions' ? 'Приготовьте сток через калькулятор' : 'Нет приготовленных сред'}</p>
                     </TableCell>
                   </TableRow>
                 )}
@@ -493,7 +512,14 @@ export default function InventoryPage() {
                         <span className={`font-semibold ${batch.quantity <= 0 ? 'text-red-600' : isLowStock(batch) ? 'text-amber-600' : ''}`}>
                           {formatNumber(batch.quantity)}
                         </span>
-                        {batch.volume_per_unit && batch.nomenclature?.category !== 'CONSUMABLE' ? (
+                        {batch.nomenclature?.category === 'CONSUMABLE' && batch.volume_per_unit ? (
+                          <span className="text-muted-foreground text-xs ml-1">
+                            уп × {batch.volume_per_unit} шт
+                            {batch.current_unit_volume != null && batch.current_unit_volume < batch.volume_per_unit && (
+                              <> + {batch.current_unit_volume} шт (откр.)</>
+                            )}
+                          </span>
+                        ) : batch.volume_per_unit && batch.nomenclature?.category !== 'CONSUMABLE' ? (
                           <span className="text-muted-foreground text-xs ml-1">
                             фл, тек: {batch.current_unit_volume ?? batch.volume_per_unit}/{batch.volume_per_unit} мл
                           </span>
@@ -692,6 +718,7 @@ function getCategoryTitle(tab: CategoryTab): string {
     CONSUMABLE: 'Контейнеры',
     MEDIUM: 'Среды и реагенты',
     ready_media: 'Готовые среды',
+    stock_solutions: 'Стоковые растворы',
   }
   return titles[tab] || 'Позиции'
 }
