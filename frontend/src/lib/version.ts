@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.15"
+export const APP_VERSION = "1.25.16"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,20 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.16",
+    date: "12.02.2026",
+    changes: [
+      "Категорийные фильтры сред: Select «Категория» перед каждым дропдауном среды (Passage, Feed, Freeze, Thaw)",
+      "Фикс PASSAGE: additionalComponents теперь отправляются в API и списываются со склада",
+      "Доп. компоненты (сыворотка, добавки): UI + API списание в Feed, Freeze, Thaw",
+      "Thaw: объём среды, выбор контейнера со склада (consumable_batch_id), доп. компоненты",
+      "Заморозка partial split: при частичной заморозке создаётся новый банковский лот",
+      "Единицы учёта: unit (шт/мл) в inventory_movements для всех операций",
+      "Приготовление среды: свободный выбор компонентов (не только REAGENT/SERUM) + фильтр категории",
+      "SQL-миграция: qc_test_configs, culture_type_qc_requirements, unit в inventory_movements",
+    ],
+  },
   {
     version: "1.25.15",
     date: "12.02.2026",

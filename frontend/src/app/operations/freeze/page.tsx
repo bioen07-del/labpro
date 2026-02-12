@@ -14,6 +14,9 @@ import {
   Scissors,
   TestTubes,
   Package,
+  Beaker,
+  Plus,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -40,6 +43,7 @@ import {
   createOperationFreeze,
 } from '@/lib/api'
 import type { Batch } from '@/types'
+import { NOMENCLATURE_CATEGORY_LABELS } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -136,6 +140,12 @@ function FreezePageInner() {
   const [freezingMediumVolume, setFreezingMediumVolume] = useState('')
   const [freezingMethod, setFreezingMethod] = useState('')
   const [positionId, setPositionId] = useState('')
+  const [mediaCategoryFilter, setMediaCategoryFilter] = useState('all')
+
+  // --- Additional components (serum, reagent, additive) ---
+  const [additionalComponents, setAdditionalComponents] = useState<
+    { id: string; mediumId: string; volumeMl: string }[]
+  >([])
 
   // --- Bank type (auto-determined) ---
   const [bankType, setBankType] = useState<'MCB' | 'WCB' | null>(null)
@@ -162,6 +172,19 @@ function FreezePageInner() {
     () => cryoBatches.find((b) => b.id === cryoBatchId),
     [cryoBatches, cryoBatchId],
   )
+
+  // Filtered media options by category
+  const filteredDissociationOptions = mediaCategoryFilter === 'all'
+    ? dissociationOptions : dissociationOptions.filter(o => o.category === mediaCategoryFilter)
+  const filteredWashOptions = mediaCategoryFilter === 'all'
+    ? washOptions : washOptions.filter(o => o.category === mediaCategoryFilter)
+  const filteredFreezingOptions = mediaCategoryFilter === 'all'
+    ? freezingOptions : freezingOptions.filter(o => o.category === mediaCategoryFilter)
+  // All options combined for additional components dropdown
+  const allMediaOptions = [...dissociationOptions, ...washOptions, ...freezingOptions]
+    .filter((opt, idx, arr) => arr.findIndex(o => o.id === opt.id) === idx)
+  const filteredAllMediaOptions = mediaCategoryFilter === 'all'
+    ? allMediaOptions : allMediaOptions.filter(o => o.category === mediaCategoryFilter)
 
   // Auto-calculated cell metrics
   const totalCells = useMemo(() => {
@@ -385,6 +408,11 @@ function FreezePageInner() {
       const parsedDissociation = dissociationMediumId ? parseMediumId(dissociationMediumId) : null
       const parsedWash = washMediumId ? parseMediumId(washMediumId) : null
 
+      // Build additional components for API
+      const validAdditionalComponents = additionalComponents
+        .filter(c => c.mediumId && parseFloat(c.volumeMl) > 0)
+        .map(c => ({ medium_id: c.mediumId, volume_ml: parseFloat(c.volumeMl) }))
+
       const result = await createOperationFreeze({
         lot_id: selectedLotId,
         container_ids: selectedContainerIds,
@@ -402,6 +430,7 @@ function FreezePageInner() {
         wash_batch_id: parsedWash?.type === 'batch' ? parsedWash.id : undefined,
         wash_volume_ml: washVolume ? Number(washVolume) : undefined,
         cryo_batch_id: cryoBatchId || undefined,
+        additional_components: validAdditionalComponents.length > 0 ? validAdditionalComponents : undefined,
         viability_percent: Number(viability),
         concentration: Number(concentration),
         volume_ml: Number(totalVolume) || undefined,
@@ -668,6 +697,22 @@ function FreezePageInner() {
               </div>
             )}
 
+            {/* Category filter */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Фильтр по категории</Label>
+              <Select value={mediaCategoryFilter} onValueChange={setMediaCategoryFilter}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Все категории" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  {Object.entries(NOMENCLATURE_CATEGORY_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* --- Dissociation & Wash media --- */}
             <div>
               <h3 className="font-medium mb-3">Среды для снятия клеток</h3>
@@ -681,7 +726,7 @@ function FreezePageInner() {
                         <SelectValue placeholder="(необязательно)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {dissociationOptions.map((opt) => (
+                        {filteredDissociationOptions.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
                             {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
@@ -709,7 +754,7 @@ function FreezePageInner() {
                         <SelectValue placeholder="(необязательно)" />
                       </SelectTrigger>
                       <SelectContent>
-                        {washOptions.map((opt) => (
+                        {filteredWashOptions.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
                             {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
@@ -1040,7 +1085,7 @@ function FreezePageInner() {
                     <SelectValue placeholder="Выберите среду..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {freezingOptions.map((opt) => (
+                    {filteredFreezingOptions.map((opt) => (
                       <SelectItem key={opt.id} value={opt.id}>
                         {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       </SelectItem>
@@ -1119,6 +1164,50 @@ function FreezePageInner() {
                 </div>
               </div>
             )}
+
+            {/* Additional components (serum, reagent, additive) */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Beaker className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm">Дополнительные компоненты</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">Сыворотка, добавки — необязательно</p>
+              {additionalComponents.map((comp, idx) => (
+                <div key={comp.id} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">Компонент {idx + 1}</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => setAdditionalComponents(prev => prev.filter(c => c.id !== comp.id))}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-[1fr_100px]">
+                    <Select value={comp.mediumId}
+                      onValueChange={(val) => setAdditionalComponents(prev =>
+                        prev.map(c => c.id === comp.id ? { ...c, mediumId: val } : c))}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Выберите компонент..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredAllMediaOptions.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" min={0} step={0.1} className="h-8 text-xs" placeholder="мл"
+                      value={comp.volumeMl}
+                      onChange={(e) => setAdditionalComponents(prev =>
+                        prev.map(c => c.id === comp.id ? { ...c, volumeMl: e.target.value } : c))} />
+                  </div>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" className="w-full"
+                onClick={() => setAdditionalComponents(prev => [...prev, { id: Math.random().toString(36).substring(2, 9), mediumId: '', volumeMl: '' }])}>
+                <Plus className="h-4 w-4 mr-2" /> Добавить компонент
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

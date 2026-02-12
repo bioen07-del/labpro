@@ -9,6 +9,9 @@ import {
   Snowflake,
   RefreshCw,
   AlertCircle,
+  Beaker,
+  Plus,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -30,8 +33,10 @@ import {
   getContainerTypes,
   getPositions,
   createOperationThaw,
+  getAllConsumableBatches,
 } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { NOMENCLATURE_CATEGORY_LABELS } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -119,10 +124,22 @@ function ThawPageInner() {
   const [selectedBank, setSelectedBank] = useState<BankItem | null>(null)
   const [selectedVials, setSelectedVials] = useState<VialItem[]>([])
   const [thawMediumId, setThawMediumId] = useState('')
+  const [thawMediumVolume, setThawMediumVolume] = useState('')
   const [containerTypeId, setContainerTypeId] = useState('')
   const [positionId, setPositionId] = useState('')
   const [viabilityPercent, setViabilityPercent] = useState('')
   const [notes, setNotes] = useState('')
+  const [mediaCategoryFilter, setMediaCategoryFilter] = useState('all')
+  const [consumableBatches, setConsumableBatches] = useState<any[]>([])
+  const [consumableBatchId, setConsumableBatchId] = useState('')
+  const [additionalComponents, setAdditionalComponents] = useState<
+    { id: string; mediumId: string; volumeMl: string }[]
+  >([])
+
+  // -- derived --
+  const filteredMediaOptions = mediaCategoryFilter === 'all'
+    ? mediaOptions
+    : mediaOptions.filter(opt => opt.category === mediaCategoryFilter)
 
   // -----------------------------------------------------------------------
   // Data loading
@@ -131,14 +148,16 @@ function ThawPageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [banksData, mediaResult, ctData, posData] = await Promise.all([
+        const [banksData, mediaResult, ctData, posData, consumables] = await Promise.all([
           getBanks({ status: 'APPROVED' }),
           getAvailableMediaByUsage('THAW'),
           getContainerTypes(),
           getPositions({ is_active: true }),
+          getAllConsumableBatches(),
         ])
         setBanks(banksData || [])
         setMediaOptions(buildMediaOptions(mediaResult.readyMedia, mediaResult.reagentBatches))
+        setConsumableBatches(consumables || [])
         // Filter out cryo container types
         const nonCryo = (ctData || []).filter(
           (ct: ContainerTypeItem) =>
@@ -257,6 +276,11 @@ function ThawPageInner() {
     setSubmitting(true)
     try {
       const parsed = parseMediumId(thawMediumId)
+      // Build additional components for API
+      const validAdditionalComponents = additionalComponents
+        .filter(c => c.mediumId && parseFloat(c.volumeMl) > 0)
+        .map(c => ({ medium_id: c.mediumId, volume_ml: parseFloat(c.volumeMl) }))
+
       for (const vial of selectedVials) {
         await createOperationThaw({
           cryo_vial_id: vial.id,
@@ -264,6 +288,9 @@ function ThawPageInner() {
           position_id: positionId,
           thaw_medium_id: parsed?.type === 'ready_medium' ? parsed.id : undefined,
           thaw_batch_id: parsed?.type === 'batch' ? parsed.id : undefined,
+          thaw_medium_volume_ml: thawMediumVolume ? Number(thawMediumVolume) : undefined,
+          consumable_batch_id: (consumableBatchId && consumableBatchId !== 'none') ? consumableBatchId : undefined,
+          additional_components: validAdditionalComponents.length > 0 ? validAdditionalComponents : undefined,
           viability_percent: viabilityPercent ? Number(viabilityPercent) : undefined,
           notes: notes || undefined,
         })
@@ -555,24 +582,50 @@ function ThawPageInner() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Category filter */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Фильтр по категории</Label>
+              <Select value={mediaCategoryFilter} onValueChange={setMediaCategoryFilter}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Все категории" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  {Object.entries(NOMENCLATURE_CATEGORY_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Thaw medium (required) */}
             <div className="space-y-2">
               <Label htmlFor="thaw-medium">
                 Среда для разморозки <span className="text-destructive">*</span>
               </Label>
-              <Select value={thawMediumId} onValueChange={setThawMediumId}>
-                <SelectTrigger id="thaw-medium">
-                  <SelectValue placeholder="Выберите среду..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {mediaOptions.map((opt, index) => (
-                    <SelectItem key={opt.id} value={opt.id}>
-                      {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
-                      {index === 0 && ' (FEFO)'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="grid gap-2 grid-cols-[1fr_100px]">
+                <Select value={thawMediumId} onValueChange={setThawMediumId}>
+                  <SelectTrigger id="thaw-medium">
+                    <SelectValue placeholder="Выберите среду..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredMediaOptions.map((opt, index) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
+                        {index === 0 && ' (FEFO)'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  placeholder="мл"
+                  value={thawMediumVolume}
+                  onChange={(e) => setThawMediumVolume(e.target.value)}
+                />
+              </div>
               {mediaOptions.length === 0 && (
                 <p className="text-sm text-destructive">
                   Нет доступных сред. Сначала подготовьте среду.
@@ -624,6 +677,71 @@ function ThawPageInner() {
                 value={viabilityPercent}
                 onChange={(e) => setViabilityPercent(e.target.value)}
               />
+            </div>
+
+            {/* Consumable batch (container from warehouse) */}
+            {consumableBatches.length > 0 && (
+              <div className="space-y-2">
+                <Label>Контейнер со склада</Label>
+                <p className="text-xs text-muted-foreground">Списать расходный контейнер из складских запасов</p>
+                <Select value={consumableBatchId} onValueChange={setConsumableBatchId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Не списывать (необязательно)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Не списывать</SelectItem>
+                    {consumableBatches.map((b: any) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {b.nomenclature?.name || b.batch_number} ({b.quantity} шт.)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Additional components (serum, reagent, additive) */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Beaker className="h-4 w-4 text-muted-foreground" />
+                <Label className="text-sm">Дополнительные компоненты</Label>
+              </div>
+              <p className="text-xs text-muted-foreground">Сыворотка, добавки — необязательно</p>
+              {additionalComponents.map((comp, idx) => (
+                <div key={comp.id} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-muted-foreground">Компонент {idx + 1}</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => setAdditionalComponents(prev => prev.filter(c => c.id !== comp.id))}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-[1fr_100px]">
+                    <Select value={comp.mediumId}
+                      onValueChange={(val) => setAdditionalComponents(prev =>
+                        prev.map(c => c.id === comp.id ? { ...c, mediumId: val } : c))}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Выберите компонент..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {filteredMediaOptions.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input type="number" min={0} step={0.1} className="h-8 text-xs" placeholder="мл"
+                      value={comp.volumeMl}
+                      onChange={(e) => setAdditionalComponents(prev =>
+                        prev.map(c => c.id === comp.id ? { ...c, volumeMl: e.target.value } : c))} />
+                  </div>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" className="w-full"
+                onClick={() => setAdditionalComponents(prev => [...prev, { id: Math.random().toString(36).substring(2, 9), mediumId: '', volumeMl: '' }])}>
+                <Plus className="h-4 w-4 mr-2" /> Добавить компонент
+              </Button>
             </div>
 
             {/* Notes (optional) */}

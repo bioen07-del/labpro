@@ -1529,12 +1529,80 @@ export async function writeOffBatchVolume(
     batch_id: batchId,
     movement_type: 'CONSUME',
     quantity: -volumeMl,
+    unit: 'мл',
     reference_type: 'OPERATION',
     reference_id: operationId,
     notes: `${purpose} (${volumeMl} мл)${unitsOpened > 0 ? ` [открыто ${unitsOpened} нов. ед.]` : ''}`,
   })
 
   return { newQuantity, newCurrentUnitVolume, unitsOpened }
+}
+
+/**
+ * Write off additional components (serum, supplements, etc.) for an operation.
+ * Handles both ready_media and batch sources via composite medium_id (rm:uuid / batch:uuid).
+ */
+export async function writeOffAdditionalComponents(
+  components: { medium_id: string; volume_ml: number }[],
+  operationId: string,
+  purposePrefix: string
+) {
+  for (const comp of components) {
+    const parsed = parseMediumId(comp.medium_id)
+    if (!parsed || comp.volume_ml <= 0) continue
+
+    if (parsed.type === 'ready_medium') {
+      // Ready medium: update current_volume_ml
+      try {
+        const { data: rm } = await supabase
+          .from('ready_media')
+          .select('current_volume_ml, volume_ml, batch_id')
+          .eq('id', parsed.id)
+          .single()
+        if (rm) {
+          const currentVol = rm.current_volume_ml ?? rm.volume_ml ?? 0
+          const newVol = Math.max(0, currentVol - comp.volume_ml)
+          await supabase
+            .from('ready_media')
+            .update({ current_volume_ml: newVol, ...(newVol <= 0 ? { status: 'USED' } : {}) })
+            .eq('id', parsed.id)
+          if (rm.batch_id) {
+            await writeOffBatchVolume(rm.batch_id, comp.volume_ml, operationId, `${purposePrefix} доп. компонент (${comp.volume_ml} мл)`)
+          } else {
+            await createInventoryMovement({
+              batch_id: parsed.id,
+              movement_type: 'CONSUME',
+              quantity: -comp.volume_ml,
+              reference_type: 'OPERATION',
+              reference_id: operationId,
+              notes: `${purposePrefix} доп. компонент (${comp.volume_ml} мл)`,
+            })
+          }
+          await supabase.from('operation_media').insert({
+            operation_id: operationId,
+            ready_medium_id: parsed.id,
+            quantity_ml: comp.volume_ml,
+            purpose: 'ADDITIONAL',
+          })
+        }
+      } catch (err) {
+        console.error(`Failed to write off additional component (ready_media):`, err)
+      }
+    } else if (parsed.type === 'batch') {
+      // Batch: пофлаконный учёт
+      try {
+        await writeOffBatchVolume(parsed.id, comp.volume_ml, operationId, `${purposePrefix} доп. компонент (${comp.volume_ml} мл)`)
+        await supabase.from('operation_media').insert({
+          operation_id: operationId,
+          batch_id: parsed.id,
+          quantity_ml: comp.volume_ml,
+          purpose: 'ADDITIONAL',
+        })
+      } catch (err) {
+        console.error(`Failed to write off additional component (batch):`, err)
+      }
+    }
+  }
 }
 
 export async function getBatchById(id: string) {
@@ -3041,6 +3109,11 @@ export interface PassageResultData {
   position_id: string // позиция для новых контейнеров
 }
 
+export interface AdditionalComponent {
+  medium_id: string   // "rm:uuid" or "batch:uuid"
+  volume_ml: number
+}
+
 export interface PassageMediaData {
   dissociation_batch_id?: string
   dissociation_rm_id?: string
@@ -3051,6 +3124,7 @@ export interface PassageMediaData {
   seed_batch_id?: string
   seed_rm_id?: string
   seed_volume_ml?: number
+  additional_components?: AdditionalComponent[]
 }
 
 export async function createOperationPassage(data: {
@@ -3214,6 +3288,7 @@ export async function createOperationPassage(data: {
         batch_id: batchId,
         movement_type: 'CONSUME',
         quantity: -writeoffQty,
+        unit: 'шт',
         reference_type: 'OPERATION',
         reference_id: operation.id,
         notes: `Контейнеры для пассажа (${writeoffQty} шт.)`,
@@ -3378,6 +3453,11 @@ export async function createOperationPassage(data: {
   }
   if (data.media.seed_batch_id && data.media.seed_volume_ml) {
     await writeOffBatch(data.media.seed_batch_id, data.media.seed_volume_ml, 'посев')
+  }
+
+  // 9c. Списание дополнительных компонентов (сыворотка, добавки)
+  if (data.media.additional_components?.length) {
+    await writeOffAdditionalComponents(data.media.additional_components, operation.id, 'Пассаж:')
   }
 
   // 10. Создать auto-task INSPECT для новых контейнеров
@@ -3644,6 +3724,7 @@ export async function getConsumableBatchesForContainerType(containerTypeName: st
 export async function createOperationFeed(data: {
   lot_id: string
   containers: FeedContainerData[]
+  additional_components?: AdditionalComponent[]
   notes?: string
 }) {
   // FEFO Validation: Check if selected media is the earliest available
@@ -3748,19 +3829,24 @@ export async function createOperationFeed(data: {
     }
   }
   
+  // 5. Списание дополнительных компонентов (сыворотка, добавки)
+  if (data.additional_components?.length) {
+    await writeOffAdditionalComponents(data.additional_components, operation.id, 'Подкормка:')
+  }
+
   // 6. Создать auto-task FEED на следующую смену (через 2-3 дня)
   const lot = await getLotById(data.lot_id)
   if (lot?.culture_id) {
     const culture = await getCultureById(lot.culture_id)
     const intervalDays = culture?.culture_type?.passage_interval_days || 3
-    
+
     await createFeedTask(
       data.lot_id,
       'feed',
       intervalDays
     )
   }
-  
+
   return operation
 }
 
@@ -3925,6 +4011,7 @@ export interface FreezeData {
   wash_batch_id?: string             // batch_id (со склада)
   wash_volume_ml?: number
   cryo_batch_id?: string             // Партия криовиалов со склада
+  additional_components?: AdditionalComponent[]  // Доп. компоненты (сыворотка, добавки)
   viability_percent: number
   concentration: number
   volume_ml?: number                 // Общий объём суспензии (мл)
@@ -4065,15 +4152,80 @@ export async function createOperationFreeze(data: FreezeData) {
       .eq('id', containerId)
   }
 
-  // 7.5. Обновить лот: final_cells, viability, harvest_at (заморозка = harvest)
-  await supabase
-    .from('lots')
-    .update({
-      final_cells: data.total_cells,
-      viability: data.viability_percent,
-      harvest_at: new Date().toISOString(),
-    })
-    .eq('id', data.lot_id)
+  // 7.5. Partial freeze split: если заморожена только ЧАСТЬ контейнеров,
+  // создаём новый лот для замороженных, старый лот остаётся ACTIVE
+  const { data: allLotContainers } = await supabase
+    .from('containers')
+    .select('id, container_status')
+    .eq('lot_id', data.lot_id)
+
+  const remainingInCulture = (allLotContainers ?? []).filter(
+    (c: { id: string; container_status: string }) =>
+      !data.container_ids.includes(c.id) && c.container_status === 'IN_CULTURE'
+  )
+
+  let freezeLotId = data.lot_id
+
+  if (remainingInCulture.length > 0) {
+    // PARTIAL FREEZE: создать новый лот для замороженных контейнеров
+    const culturePrefix = lot.culture?.name || lot.culture_id?.substring(0, 8) || 'UNK'
+    const { count: lotCount } = await supabase
+      .from('lots')
+      .select('*', { count: 'exact', head: true })
+      .eq('culture_id', lot.culture_id)
+    const newLotNumber = `${culturePrefix}-L${(lotCount || 0) + 1}`
+
+    const { data: newFreezeLot, error: newLotErr } = await supabase
+      .from('lots')
+      .insert({
+        lot_number: newLotNumber,
+        culture_id: lot.culture_id,
+        passage_number: lot.passage_number,
+        parent_lot_id: data.lot_id,
+        status: 'ACTIVE',
+        seeded_at: lot.seeded_at || new Date().toISOString(),
+        initial_cells: data.total_cells,
+        final_cells: data.total_cells,
+        viability: data.viability_percent,
+        harvest_at: new Date().toISOString(),
+        notes: `Банковский лот (заморозка из ${lot.lot_number})`,
+      })
+      .select()
+      .single()
+
+    if (newLotErr) throw newLotErr
+    freezeLotId = newFreezeLot.id
+
+    // Перенести замороженные контейнеры в новый лот
+    for (const containerId of data.container_ids) {
+      await supabase
+        .from('containers')
+        .update({ lot_id: newFreezeLot.id })
+        .eq('id', containerId)
+    }
+
+    // Банк → привязать к новому лоту
+    if (bankId) {
+      await supabase.from('banks').update({ lot_id: newFreezeLot.id }).eq('id', bankId)
+    }
+
+    // Криовиалы → привязать к новому лоту
+    for (const vial of cryoVials) {
+      await supabase.from('cryo_vials').update({ lot_id: newFreezeLot.id }).eq('id', vial.id)
+    }
+
+    // Старый лот остаётся ACTIVE с IN_CULTURE контейнерами — ничего не делаем
+  } else {
+    // FULL FREEZE: все контейнеры заморожены — обновляем исходный лот
+    await supabase
+      .from('lots')
+      .update({
+        final_cells: data.total_cells,
+        viability: data.viability_percent,
+        harvest_at: new Date().toISOString(),
+      })
+      .eq('id', data.lot_id)
+  }
 
   // 8. Создать Operation_Metrics
   await supabase
@@ -4193,6 +4345,7 @@ export async function createOperationFreeze(data: FreezeData) {
           batch_id: data.cryo_batch_id,
           movement_type: 'CONSUME',
           quantity: -data.cryo_vial_count,
+          unit: 'шт',
           reference_type: 'OPERATION',
           reference_id: operation.id,
           notes: `Криовиалы для заморозки (${data.cryo_vial_count} шт.)`,
@@ -4201,6 +4354,11 @@ export async function createOperationFreeze(data: FreezeData) {
     } catch (err) {
       console.error('Failed to write off cryo vials:', err)
     }
+  }
+
+  // 11b. Списание дополнительных компонентов (сыворотка, добавки)
+  if (data.additional_components?.length) {
+    await writeOffAdditionalComponents(data.additional_components, operation.id, 'Заморозка:')
   }
 
   // 12. Создать уведомление о необходимости QC
@@ -4234,6 +4392,7 @@ export interface ThawData {
   thaw_batch_id?: string            // Batch from warehouse (batch:uuid → id)
   thaw_medium_volume_ml?: number    // Объём среды для разморозки
   consumable_batch_id?: string      // Партия контейнера со склада
+  additional_components?: AdditionalComponent[]  // Доп. компоненты (сыворотка, добавки)
   viability_percent?: number
   notes?: string
 }
@@ -4446,6 +4605,7 @@ export async function createOperationThaw(data: ThawData) {
           batch_id: data.consumable_batch_id,
           movement_type: 'CONSUME',
           quantity: -1,
+          unit: 'шт',
           reference_type: 'OPERATION',
           reference_id: operation.id,
           notes: 'Контейнер для разморозки (1 шт.)',
@@ -4454,6 +4614,11 @@ export async function createOperationThaw(data: ThawData) {
     } catch (err) {
       console.error('Failed to write off container for thaw:', err)
     }
+  }
+
+  // 9d. Списание дополнительных компонентов (сыворотка, добавки)
+  if (data.additional_components?.length) {
+    await writeOffAdditionalComponents(data.additional_components, operation.id, 'Разморозка:')
   }
 
   // 10. Проверить банк: если все криовиалы THAWED -> status=EXPIRED

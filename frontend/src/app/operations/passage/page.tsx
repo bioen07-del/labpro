@@ -45,7 +45,9 @@ import {
   getContainerStockByType,
   createOperationPassage,
   checkBatchVolumeDeduction,
+  parseMediumId,
 } from '@/lib/api'
+import { NOMENCLATURE_CATEGORY_LABELS } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -177,6 +179,7 @@ function PassagePageInner() {
   const [dissociationMediumId, setDissociationMediumId] = useState<string>('')
   const [washMediumId, setWashMediumId] = useState<string>('')
   const [seedMediumId, setSeedMediumId] = useState<string>('')
+  const [mediaCategoryFilter, setMediaCategoryFilter] = useState<string>('all')
 
   // --- Step 2/4: media volumes ---
   const [dissociationVolume, setDissociationVolume] = useState<string>('')
@@ -409,6 +412,10 @@ function PassagePageInner() {
     return options
   }, [readyMedia, reagentBatches])
 
+  const filteredMediaOptions = mediaCategoryFilter === 'all'
+    ? allMediaOptions
+    : allMediaOptions.filter(opt => opt.category === mediaCategoryFilter)
+
 
   // =========================================================================
   // Step validation
@@ -502,6 +509,14 @@ function PassagePageInner() {
       const wash = parseMediumId(washMediumId)
       const seed = parseMediumId(seedMediumId)
 
+      // Build additional components for API
+      const validAdditionalComponents = additionalComponents
+        .filter(c => c.mediumId && parseFloat(c.volumeMl) > 0)
+        .map(c => ({
+          medium_id: c.mediumId,
+          volume_ml: parseFloat(c.volumeMl) * totalNewContainers, // total = per-container × count
+        }))
+
       await createOperationPassage({
         source_lot_id: selectedLotId,
         source_containers: sourceContainers,
@@ -520,6 +535,7 @@ function PassagePageInner() {
           seed_rm_id: seed?.type === 'ready_medium' ? seed.id : undefined,
           seed_batch_id: seed?.type === 'batch' ? seed.id : undefined,
           seed_volume_ml: totalSeedVolume > 0 ? totalSeedVolume : undefined,
+          additional_components: validAdditionalComponents.length > 0 ? validAdditionalComponents : undefined,
         },
         result: {
           container_groups: resultRows.map(r => ({
@@ -762,6 +778,22 @@ function PassagePageInner() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {/* Category filter */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Фильтр по категории</Label>
+              <Select value={mediaCategoryFilter} onValueChange={setMediaCategoryFilter}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Все категории" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  {Object.entries(NOMENCLATURE_CATEGORY_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Dissociation medium - required */}
             <div className="space-y-2">
               <Label>
@@ -774,7 +806,7 @@ function PassagePageInner() {
                     <SelectValue placeholder="Выберите среду диссоциации..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {allMediaOptions.map((opt) => (
+                    {filteredMediaOptions.map((opt) => (
                       <SelectItem key={opt.id} value={opt.id}>
                         {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       </SelectItem>
@@ -811,7 +843,7 @@ function PassagePageInner() {
                     <SelectValue placeholder="Выберите среду промывки..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {allMediaOptions.map((opt) => (
+                    {filteredMediaOptions.map((opt) => (
                       <SelectItem key={opt.id} value={opt.id}>
                         {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                       </SelectItem>
@@ -1124,7 +1156,7 @@ function PassagePageInner() {
                           <SelectValue placeholder="Выберите среду..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {allMediaOptions.map((opt) => (
+                          {filteredMediaOptions.map((opt) => (
                             <SelectItem key={opt.id} value={opt.id}>
                               {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                             </SelectItem>

@@ -259,6 +259,16 @@ export interface CryoVial {
 // Inventory
 export type NomenclatureCategory = 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPLEMENT' | 'ENZYME' | 'REAGENT' | 'CONSUMABLE' | 'EQUIP'
 
+export const NOMENCLATURE_CATEGORY_LABELS: Record<string, string> = {
+  MEDIUM: 'Среды',
+  SERUM: 'Сыворотки',
+  BUFFER: 'Буферы',
+  ENZYME: 'Ферменты',
+  REAGENT: 'Реагенты',
+  SUPPLEMENT: 'Добавки',
+  CONSUMABLE: 'Расходники',
+}
+
 export type UsageTag = 'FEED' | 'DISSOCIATION' | 'WASH' | 'SEED' | 'FREEZING' | 'THAW'
 
 export const USAGE_TAG_LABELS: Record<UsageTag, string> = {
@@ -315,6 +325,7 @@ export interface InventoryMovement {
   batch?: Batch
   movement_type: InventoryMovementType
   quantity: number
+  unit?: string
   reference_type?: string
   reference_id?: string
   notes?: string

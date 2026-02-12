@@ -62,6 +62,7 @@ export default function NewReadyMediumPage() {
 
   // Components (additives)
   const [components, setComponents] = useState<Component[]>([])
+  const [componentCategoryFilter, setComponentCategoryFilter] = useState('all')
 
   useEffect(() => {
     loadBatches()
@@ -84,11 +85,18 @@ export default function NewReadyMediumPage() {
   const mediaBatches = batches.filter(
     (b) => b.nomenclature?.category === "MEDIUM"
   )
+  // All non-MEDIUM, non-CONSUMABLE batches can be used as components
   const componentBatches = batches.filter(
     (b) =>
-      b.nomenclature?.category === "REAGENT" ||
-      b.nomenclature?.category === "SERUM"
+      b.nomenclature?.category &&
+      b.nomenclature.category !== "MEDIUM" &&
+      b.nomenclature.category !== "CONSUMABLE"
   )
+
+  // Filtered component batches by category
+  const filteredComponentBatches = componentCategoryFilter === 'all'
+    ? componentBatches
+    : componentBatches.filter((b) => b.nomenclature?.category === componentCategoryFilter)
 
   // Calculate volumes
   const totalComponentPercent = components.reduce((s, c) => s + c.percent, 0)
@@ -280,6 +288,24 @@ export default function NewReadyMediumPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Category filter */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Фильтр по категории</Label>
+              <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
+                <SelectTrigger className="w-[200px]">
+                  <SelectValue placeholder="Все категории" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  <SelectItem value="SERUM">Сыворотки</SelectItem>
+                  <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
+                  <SelectItem value="BUFFER">Буферы</SelectItem>
+                  <SelectItem value="ENZYME">Ферменты</SelectItem>
+                  <SelectItem value="REAGENT">Реагенты</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {components.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 Нажмите «Добавить» для добавления компонентов
@@ -296,10 +322,10 @@ export default function NewReadyMediumPage() {
                       onValueChange={(v) => updateComponent(comp.id, "batch_id", v)}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Выберите реагент..." />
+                        <SelectValue placeholder="Выберите компонент..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {componentBatches.map((batch) => (
+                        {filteredComponentBatches.map((batch) => (
                           <SelectItem key={batch.id} value={batch.id}>
                             {batch.nomenclature?.name} — {batch.batch_number} ({batch.quantity} {batch.unit})
                           </SelectItem>

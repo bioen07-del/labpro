@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { getLots, getContainersByLot, getAvailableMediaByUsage, buildMediaOptions, parseMediumId, createOperationFeed } from '@/lib/api'
+import { NOMENCLATURE_CATEGORY_LABELS } from '@/types'
 
 function generateRowId(): string {
   return Math.random().toString(36).substring(2, 9)
@@ -34,6 +35,7 @@ function FeedPageInner() {
 
   const [mediaOptions, setMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [selectedMediumId, setSelectedMediumId] = useState<string>('')
+  const [mediaCategoryFilter, setMediaCategoryFilter] = useState<string>('all')
 
   const [volumeMl, setVolumeMl] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
@@ -52,6 +54,9 @@ function FeedPageInner() {
   const [initialLoading, setInitialLoading] = useState(true)
 
   // --- derived ---
+  const filteredMediaOptions = mediaCategoryFilter === 'all'
+    ? mediaOptions
+    : mediaOptions.filter(opt => opt.category === mediaCategoryFilter)
   const selectedMedium = mediaOptions.find((m) => m.id === selectedMediumId)
   const isFefo = selectedMediumId !== '' && mediaOptions.length > 0 && mediaOptions[0].id === selectedMediumId
   const earliestMedium = mediaOptions.length > 0 ? mediaOptions[0] : null
@@ -177,9 +182,18 @@ function FeedPageInner() {
         }
       })
 
+      // Build additional components for API
+      const validAdditionalComponents = additionalComponents
+        .filter((c: { mediumId: string; volumeMl: string }) => c.mediumId && parseFloat(c.volumeMl) > 0)
+        .map((c: { mediumId: string; volumeMl: string }) => ({
+          medium_id: c.mediumId,
+          volume_ml: parseFloat(c.volumeMl) * selectedContainers.length,
+        }))
+
       await createOperationFeed({
         lot_id: selectedLotId,
         containers: containersPayload,
+        additional_components: validAdditionalComponents.length > 0 ? validAdditionalComponents : undefined,
         notes: notes || undefined,
       })
 
@@ -357,19 +371,32 @@ function FeedPageInner() {
               {/* 3a. Shared medium selection (ready_media + batches) */}
               <div className="space-y-2">
                 <Label htmlFor="medium">Среда / реагент</Label>
-                <Select value={selectedMediumId} onValueChange={setSelectedMediumId}>
-                  <SelectTrigger id="medium">
-                    <SelectValue placeholder="Выберите среду..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mediaOptions.map((opt, index) => (
-                      <SelectItem key={opt.id} value={opt.id}>
-                        {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
-                        {index === 0 && ' (FEFO)'}
-                      </SelectItem>
-                    ))}
+                <div className="flex gap-2">
+                  <Select value={mediaCategoryFilter} onValueChange={setMediaCategoryFilter}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Категория" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Все категории</SelectItem>
+                      {Object.entries(NOMENCLATURE_CATEGORY_LABELS).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={selectedMediumId} onValueChange={setSelectedMediumId}>
+                    <SelectTrigger id="medium" className="flex-1">
+                      <SelectValue placeholder="Выберите среду..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredMediaOptions.map((opt, index) => (
+                        <SelectItem key={opt.id} value={opt.id}>
+                          {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
+                          {index === 0 && ' (FEFO)'}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
+                </div>
 
                 {/* FEFO indicator */}
                 {selectedMediumId && (
