@@ -52,6 +52,7 @@ interface Component {
   batch_id: string
   percent: number
   volume_ml: number
+  categoryFilter: string
 }
 
 let componentCounter = 0
@@ -72,7 +73,6 @@ export default function NewReadyMediumPage() {
 
   // Components (additives)
   const [components, setComponents] = useState<Component[]>([])
-  const [componentCategoryFilter, setComponentCategoryFilter] = useState('all')
 
   useEffect(() => {
     loadBatches()
@@ -103,10 +103,12 @@ export default function NewReadyMediumPage() {
       b.nomenclature.category !== "CONSUMABLE"
   )
 
-  // Filtered component batches by category
-  const filteredComponentBatches = componentCategoryFilter === 'all'
-    ? componentBatches
-    : componentBatches.filter((b) => b.nomenclature?.category === componentCategoryFilter)
+  /** Фильтрация компонентов по категории (per-component) */
+  function getFilteredComponents(catFilter: string) {
+    return catFilter === 'all'
+      ? componentBatches
+      : componentBatches.filter((b) => b.nomenclature?.category === catFilter)
+  }
 
   // Calculate volumes
   const totalComponentPercent = components.reduce((s, c) => s + c.percent, 0)
@@ -140,7 +142,7 @@ export default function NewReadyMediumPage() {
     componentCounter++
     setComponents((prev) => [
       ...prev,
-      { id: `comp-${componentCounter}`, batch_id: "", percent: 0, volume_ml: 0 },
+      { id: `comp-${componentCounter}`, batch_id: "", percent: 0, volume_ml: 0, categoryFilter: 'all' },
     ])
   }
 
@@ -148,11 +150,15 @@ export default function NewReadyMediumPage() {
     setComponents((prev) => prev.filter((c) => c.id !== id))
   }
 
-  function updateComponent(id: string, field: "batch_id" | "percent", value: string | number) {
+  function updateComponent(id: string, field: "batch_id" | "percent" | "categoryFilter", value: string | number) {
     setComponents((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, [field]: field === "percent" ? Number(value) : value } : c
-      )
+      prev.map((c) => {
+        if (c.id !== id) return c
+        const updated = { ...c, [field]: field === "percent" ? Number(value) : value }
+        // При смене категории сбрасываем выбранную партию
+        if (field === "categoryFilter") updated.batch_id = ""
+        return updated
+      })
     )
   }
 
@@ -298,51 +304,51 @@ export default function NewReadyMediumPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {/* Category filter */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Фильтр по категории</Label>
-              <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Все категории" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Все категории</SelectItem>
-                  <SelectItem value="SERUM">Сыворотки</SelectItem>
-                  <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
-                  <SelectItem value="BUFFER">Буферы</SelectItem>
-                  <SelectItem value="ENZYME">Ферменты</SelectItem>
-                  <SelectItem value="REAGENT">Реагенты</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             {components.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 Нажмите «Добавить» для добавления компонентов
               </p>
             ) : (
-              components.map((comp, idx) => (
-                <div key={comp.id} className="flex items-end gap-3 border-b pb-3">
-                  <div className="flex-1 space-y-1">
-                    <Label className="text-xs text-muted-foreground">
-                      Компонент {idx + 1}
-                    </Label>
-                    <Select
-                      value={comp.batch_id}
-                      onValueChange={(v) => updateComponent(comp.id, "batch_id", v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите компонент..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredComponentBatches.map((batch) => (
-                          <SelectItem key={batch.id} value={batch.id}>
-                            {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              components.map((comp, idx) => {
+                const filtered = getFilteredComponents(comp.categoryFilter)
+                return (
+                <div key={comp.id} className="border-b pb-3 space-y-2">
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1 space-y-1">
+                      <Label className="text-xs text-muted-foreground">
+                        Компонент {idx + 1}
+                      </Label>
+                      <div className="flex gap-2">
+                        <Select value={comp.categoryFilter} onValueChange={(v) => updateComponent(comp.id, "categoryFilter", v)}>
+                          <SelectTrigger className="w-[160px]">
+                            <SelectValue placeholder="Категория" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Все</SelectItem>
+                            <SelectItem value="SERUM">Сыворотки</SelectItem>
+                            <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
+                            <SelectItem value="BUFFER">Буферы</SelectItem>
+                            <SelectItem value="ENZYME">Ферменты</SelectItem>
+                            <SelectItem value="REAGENT">Реагенты</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={comp.batch_id}
+                          onValueChange={(v) => updateComponent(comp.id, "batch_id", v)}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Выберите компонент..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {filtered.map((batch) => (
+                              <SelectItem key={batch.id} value={batch.id}>
+                                {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
 
                   <div className="w-24 space-y-1">
                     <Label className="text-xs text-muted-foreground">%</Label>
@@ -374,8 +380,10 @@ export default function NewReadyMediumPage() {
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
+                  </div>
                 </div>
-              ))
+                )
+              })
             )}
 
             {/* Summary */}
