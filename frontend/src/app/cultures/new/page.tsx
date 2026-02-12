@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical, TestTubes, Package, AlertTriangle, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Beaker, CheckCircle2, FlaskConical, TestTubes, Package, AlertTriangle, Plus, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { PositionTreeSelect } from '@/components/position-tree-select'
@@ -28,7 +28,11 @@ import {
   getCultureTypes,
   getContainerTypes,
   getPositions,
+  getAvailableMediaByUsage,
   getAvailableMediaForFeed,
+  getReagentBatches,
+  buildMediaOptions,
+  parseMediumId,
   getAllConsumableBatches,
   getContainerStockByType,
   createCultureFromDonation,
@@ -142,7 +146,8 @@ function NewCultureForm() {
   const [cultureTypeOptions, setCultureTypeOptions] = useState<CultureTypeOption[]>([])
   const [containerTypes, setContainerTypes] = useState<ContainerType[]>([])
   const [positions, setPositions] = useState<Position[]>([])
-  const [availableMedia, setAvailableMedia] = useState<ReadyMediumOption[]>([])
+  const [mediaOptions, setMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
+  const [allMediaOptions, setAllMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [allConsumableBatches, setAllConsumableBatches] = useState<ConsumableBatch[]>([])
 
   // ---------- form state ----------
@@ -150,6 +155,7 @@ function NewCultureForm() {
   const [cultureTypeId, setCultureTypeId] = useState('')
   const [extractionMethod, setExtractionMethod] = useState('')
   const [notes, setNotes] = useState('')
+  const [mediaCategoryFilter, setMediaCategoryFilter] = useState('all')
 
   // Multiple container rows
   const [containerRows, setContainerRows] = useState<ContainerRow[]>([
@@ -161,9 +167,9 @@ function NewCultureForm() {
   const [perRowMedia, setPerRowMedia] = useState<Record<string, string>>({})
   const [perRowVolume, setPerRowVolume] = useState<Record<string, string>>({})
 
-  // Additional components (serum, reagent, additive)
+  // Additional components (serum, reagent, additive) — with per-component categoryFilter
   const [additionalComponents, setAdditionalComponents] = useState<
-    { id: string; mediumId: string; volumeMl: string }[]
+    { id: string; mediumId: string; volumeMl: string; categoryFilter: string }[]
   >([])
 
   // Media write-off
@@ -180,11 +186,13 @@ function NewCultureForm() {
   useEffect(() => {
     async function load() {
       try {
-        const [donationsData, containerTypesData, positionsData, mediaData, batchesData] = await Promise.all([
+        const [donationsData, containerTypesData, positionsData, seedMediaResult, allRM, allReagents, batchesData] = await Promise.all([
           getDonations({ statuses: ['APPROVED', 'QUARANTINE'] }),
           getContainerTypes(),
           getPositions(),
+          getAvailableMediaByUsage('SEED'),
           getAvailableMediaForFeed(),
+          getReagentBatches(),
           getContainerStockByType(),
         ])
         setDonations((donationsData || []) as Donation[])
@@ -194,7 +202,9 @@ function NewCultureForm() {
         )
         setContainerTypes(nonCryo)
         setPositions((positionsData || []) as Position[])
-        setAvailableMedia((mediaData || []) as ReadyMediumOption[])
+        // Media: SEED-filtered for main + ALL for additional components
+        setMediaOptions(buildMediaOptions(seedMediaResult.readyMedia, seedMediaResult.reagentBatches))
+        setAllMediaOptions(buildMediaOptions(allRM, allReagents))
         setAllConsumableBatches((batchesData || []) as ConsumableBatch[])
 
         // Auto-select donation from URL params
@@ -306,11 +316,13 @@ function NewCultureForm() {
 
   // ---------- derived ----------
   const selectedDonation = donations.find((d) => d.id === donationId)
-  const selectedMedium = availableMedia.find((m) => m.id === readyMediumId)
+  const filteredMediaOptions = mediaCategoryFilter === 'all'
+    ? mediaOptions
+    : mediaOptions.filter(opt => opt.category === mediaCategoryFilter)
+  const selectedMediumOpt = mediaOptions.find((m) => m.id === readyMediumId)
   const totalContainerCount = containerRows.reduce((sum, row) => sum + (row.count || 0), 0)
   const totalMediumVolume = mediumVolumePerContainer * totalContainerCount
-  const mediumAvailable = selectedMedium?.current_volume_ml ?? selectedMedium?.volume_ml ?? 0
-  const mediumOverflow = selectedMedium && totalMediumVolume > mediumAvailable
+  const mediumOverflow = false // Volume overflow checked at API level now
 
   // Stock batches for container selection — non-cryo
   const containerStockOptions = allConsumableBatches.filter((b: any) => {
@@ -351,11 +363,22 @@ function NewCultureForm() {
         consumable_batch_id: row.stockBatchId || undefined,
       }))
 
-      // Собрать дополнительные компоненты для списания
+      // Parse main medium (rm:uuid or batch:uuid)
+      let parsedMainMedium: { ready_medium_id?: string; batch_id?: string } = {}
+      if (readyMediumId) {
+        const parsed = parseMediumId(readyMediumId)
+        if (parsed && parsed.type === 'ready_medium') {
+          parsedMainMedium.ready_medium_id = parsed.id
+        } else if (parsed) {
+          parsedMainMedium.batch_id = parsed.id
+        }
+      }
+
+      // Собрать дополнительные компоненты для списания (с поддержкой rm:/batch:)
       const validComponents = additionalComponents
         .filter(c => c.mediumId && c.volumeMl && parseFloat(c.volumeMl) > 0)
         .map(c => ({
-          ready_medium_id: c.mediumId,
+          medium_id: c.mediumId,
           volume_ml: parseFloat(c.volumeMl) * totalContainerCount,
         }))
 
@@ -365,7 +388,7 @@ function NewCultureForm() {
         extraction_method: extractionMethod,
         containers_list: containersList,
         notes: notes || undefined,
-        ready_medium_id: readyMediumId || undefined,
+        ...parsedMainMedium,
         medium_volume_ml: readyMediumId && totalMediumVolume > 0 ? totalMediumVolume : undefined,
         additional_components: validComponents.length > 0 ? validComponents : undefined,
       })
@@ -700,18 +723,33 @@ function NewCultureForm() {
 
               {!perContainerMediaMode ? (
                 <>
-                  <div className="grid gap-4 md:grid-cols-[1fr_140px]">
+                  <div className="grid gap-4 md:grid-cols-[auto_1fr_140px]">
+                    {/* Category filter */}
                     <div className="space-y-2">
-                      <Label>Готовая среда</Label>
+                      <Label>Категория</Label>
+                      <Select value={mediaCategoryFilter} onValueChange={(val) => { setMediaCategoryFilter(val); setReadyMediumId('') }}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Все</SelectItem>
+                          <SelectItem value="MEDIUM">Среды</SelectItem>
+                          <SelectItem value="SERUM">Сыворотки</SelectItem>
+                          <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
+                          <SelectItem value="BUFFER">Буферы</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Среда для посева</Label>
                       <Select value={readyMediumId} onValueChange={setReadyMediumId}>
                         <SelectTrigger>
                           <SelectValue placeholder="Не выбрано" />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableMedia.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
-                              {m.name} ({m.code}) — {m.current_volume_ml ?? m.volume_ml} мл
-                              {m.expiration_date ? ` (до ${m.expiration_date})` : ''}
+                          {filteredMediaOptions.map((opt) => (
+                            <SelectItem key={opt.id} value={opt.id}>
+                              {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -719,7 +757,7 @@ function NewCultureForm() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Объём / конт. (мл)</Label>
+                      <Label>мл / конт.</Label>
                       <Input
                         type="number"
                         min={0}
@@ -732,17 +770,9 @@ function NewCultureForm() {
                   </div>
 
                   {readyMediumId && mediumVolumePerContainer > 0 && (
-                    <div className="flex items-center gap-4 text-sm">
-                      <span className="text-muted-foreground">
-                        Итого: <strong>{totalMediumVolume.toFixed(1)} мл</strong> ({totalContainerCount} шт. × {mediumVolumePerContainer} мл)
-                      </span>
-                      {mediumOverflow && (
-                        <span className="flex items-center gap-1 text-yellow-600">
-                          <AlertTriangle className="h-4 w-4" />
-                          Превышает остаток ({mediumAvailable} мл)
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Итого: <strong>{totalMediumVolume.toFixed(1)} мл</strong> ({totalContainerCount} шт. × {mediumVolumePerContainer} мл)
+                    </p>
                   )}
                 </>
               ) : (
@@ -769,9 +799,9 @@ function NewCultureForm() {
                               <SelectValue placeholder="Выберите среду..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {availableMedia.map((m) => (
-                                <SelectItem key={m.id} value={m.id}>
-                                  {m.name} ({m.code}) — {m.current_volume_ml ?? m.volume_ml} мл
+                              {filteredMediaOptions.map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -809,7 +839,11 @@ function NewCultureForm() {
               <CardDescription>Сыворотка, реагенты, добавки — необязательно</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {additionalComponents.map((comp, idx) => (
+              {additionalComponents.map((comp, idx) => {
+                const compOptions = comp.categoryFilter === 'all'
+                  ? allMediaOptions
+                  : allMediaOptions.filter(o => o.category === comp.categoryFilter)
+                return (
                 <div key={comp.id} className="border rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-muted-foreground">Компонент {idx + 1}</span>
@@ -819,10 +853,29 @@ function NewCultureForm() {
                       className="h-7 w-7 text-muted-foreground hover:text-destructive"
                       onClick={() => setAdditionalComponents(prev => prev.filter(c => c.id !== comp.id))}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="grid gap-2 md:grid-cols-[1fr_120px]">
+                  <div className="grid gap-2 md:grid-cols-[auto_1fr_120px]">
+                    <Select
+                      value={comp.categoryFilter}
+                      onValueChange={(val) => setAdditionalComponents(prev =>
+                        prev.map(c => c.id === comp.id ? { ...c, categoryFilter: val, mediumId: '' } : c)
+                      )}
+                    >
+                      <SelectTrigger className="h-8 text-xs w-[140px]">
+                        <SelectValue placeholder="Категория" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Все</SelectItem>
+                        <SelectItem value="SERUM">Сыворотки</SelectItem>
+                        <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
+                        <SelectItem value="BUFFER">Буферы</SelectItem>
+                        <SelectItem value="ENZYME">Ферменты</SelectItem>
+                        <SelectItem value="REAGENT">Реагенты</SelectItem>
+                        <SelectItem value="MEDIUM">Среды</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Select
                       value={comp.mediumId}
                       onValueChange={(val) => setAdditionalComponents(prev =>
@@ -833,9 +886,9 @@ function NewCultureForm() {
                         <SelectValue placeholder="Выберите компонент..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {availableMedia.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name} ({m.code}) — {m.current_volume_ml ?? m.volume_ml} мл
+                        {compOptions.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -858,12 +911,13 @@ function NewCultureForm() {
                     </p>
                   )}
                 </div>
-              ))}
+                )
+              })}
               <Button
                 variant="outline"
                 size="sm"
                 className="w-full"
-                onClick={() => setAdditionalComponents(prev => [...prev, { id: generateRowId(), mediumId: '', volumeMl: '' }])}
+                onClick={() => setAdditionalComponents(prev => [...prev, { id: generateRowId(), mediumId: '', volumeMl: '', categoryFilter: 'all' }])}
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Добавить компонент

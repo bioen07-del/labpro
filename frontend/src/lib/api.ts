@@ -403,12 +403,15 @@ export async function createCultureFromDonation(data: {
   }>
   position_id?: string
   notes?: string
-  // Списание среды
+  // Списание среды (ready_medium_id ИЛИ batch_id)
   ready_medium_id?: string
+  batch_id?: string
   medium_volume_ml?: number
   // Дополнительные компоненты (сыворотка, реагенты, добавки)
+  // Поддержка нового формата (medium_id: "rm:uuid" / "batch:uuid") и legacy (ready_medium_id)
   additional_components?: Array<{
-    ready_medium_id: string
+    ready_medium_id?: string
+    medium_id?: string
     volume_ml: number
   }>
   // Списание контейнеров со склада (deprecated — used with single container_type_id)
@@ -567,28 +570,65 @@ export async function createCultureFromDonation(data: {
     }
   }
 
-  // Списание основной среды
-  if (data.ready_medium_id && data.medium_volume_ml && data.medium_volume_ml > 0) {
-    await supabase.from('operation_media').insert({
-      operation_id: seedOp.id,
-      ready_medium_id: data.ready_medium_id,
-      quantity_ml: data.medium_volume_ml,
-      purpose: 'SEED',
-    })
-    await writeOffReadyMediumSeed(data.ready_medium_id, data.medium_volume_ml, 'посев')
+  // Списание основной среды (поддержка ready_medium_id ИЛИ batch_id)
+  if (data.medium_volume_ml && data.medium_volume_ml > 0) {
+    if (data.ready_medium_id) {
+      await supabase.from('operation_media').insert({
+        operation_id: seedOp.id,
+        ready_medium_id: data.ready_medium_id,
+        quantity_ml: data.medium_volume_ml,
+        purpose: 'SEED',
+      })
+      await writeOffReadyMediumSeed(data.ready_medium_id, data.medium_volume_ml, 'посев')
+    } else if (data.batch_id) {
+      await supabase.from('operation_media').insert({
+        operation_id: seedOp.id,
+        batch_id: data.batch_id,
+        quantity_ml: data.medium_volume_ml,
+        purpose: 'SEED',
+      })
+      await writeOffBatchVolume(data.batch_id, data.medium_volume_ml, seedOp.id, 'посев первичной культуры')
+    }
   }
 
   // 7b2. Списание дополнительных компонентов (сыворотка, реагенты, добавки)
+  // Поддержка готовых сред (rm:uuid), партий (batch:uuid) и legacy (ready_medium_id)
   if (data.additional_components && data.additional_components.length > 0) {
     for (const comp of data.additional_components) {
-      if (comp.ready_medium_id && comp.volume_ml > 0) {
+      const vol = comp.volume_ml
+      if (vol <= 0) continue
+
+      if (comp.medium_id) {
+        // Новый формат: rm:uuid или batch:uuid
+        const parsed = parseMediumId(comp.medium_id)
+        if (!parsed) continue
+        const { type, id: resolvedId } = parsed
+        if (type === 'ready_medium') {
+          await supabase.from('operation_media').insert({
+            operation_id: seedOp.id,
+            ready_medium_id: resolvedId,
+            quantity_ml: vol,
+            purpose: 'COMPONENT',
+          })
+          await writeOffReadyMediumSeed(resolvedId, vol, 'компонент')
+        } else {
+          await supabase.from('operation_media').insert({
+            operation_id: seedOp.id,
+            batch_id: resolvedId,
+            quantity_ml: vol,
+            purpose: 'COMPONENT',
+          })
+          await writeOffBatchVolume(resolvedId, vol, seedOp.id, 'компонент первичной культуры')
+        }
+      } else if (comp.ready_medium_id && vol > 0) {
+        // Legacy формат
         await supabase.from('operation_media').insert({
           operation_id: seedOp.id,
           ready_medium_id: comp.ready_medium_id,
-          quantity_ml: comp.volume_ml,
+          quantity_ml: vol,
           purpose: 'COMPONENT',
         })
-        await writeOffReadyMediumSeed(comp.ready_medium_id, comp.volume_ml, 'компонент')
+        await writeOffReadyMediumSeed(comp.ready_medium_id, vol, 'компонент')
       }
     }
   }
@@ -975,6 +1015,23 @@ export async function createOperationObserve(data: {
         console.error('Failed to create contamination notification:', notifErr)
       }
     }
+  }
+
+  // Сохранить среднюю конфлюэнтность в operation_metrics (для аналитики)
+  try {
+    const nonContaminated = data.containers.filter(c => !c.contaminated)
+    if (nonContaminated.length > 0) {
+      const avgConfluence = nonContaminated.reduce((sum, c) => sum + c.confluent_percent, 0) / nonContaminated.length
+      await supabase
+        .from('operation_metrics')
+        .insert({
+          operation_id: operation.id,
+          confluent_percent_avg: Math.round(avgConfluence * 10) / 10,
+          containers_observed: data.containers.length,
+        })
+    }
+  } catch (metricsErr) {
+    console.error('Failed to save observe metrics (non-critical):', metricsErr)
   }
 
   return operation
@@ -2251,6 +2308,70 @@ export async function disposeReadyMedium(id: string) {
     .select()
     .single()
   
+  if (error) throw error
+  return data
+}
+
+export async function updateReadyMedium(id: string, updates: Record<string, unknown>) {
+  const { data, error } = await supabase
+    .from('ready_media')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function deleteReadyMedium(id: string) {
+  // 1. Получить среду с composition для возможного возврата объёмов
+  const { data: medium, error: fetchErr } = await supabase
+    .from('ready_media')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+
+  // 2. Попытка вернуть объём в batch-источник (если он ещё существует)
+  if (medium.batch_id && medium.current_volume_ml > 0) {
+    try {
+      const { data: batch } = await supabase
+        .from('batches')
+        .select('id, quantity, current_unit_volume, volume_per_unit, status')
+        .eq('id', medium.batch_id)
+        .single()
+      if (batch) {
+        const restoreVol = medium.current_volume_ml || 0
+        const newCurrentVol = (batch.current_unit_volume || 0) + restoreVol
+        await supabase
+          .from('batches')
+          .update({ current_unit_volume: newCurrentVol })
+          .eq('id', batch.id)
+      }
+    } catch (e) {
+      console.error('Failed to restore batch volume (non-critical):', e)
+    }
+  }
+
+  // 3. Удалить запись
+  const { error: delErr } = await supabase
+    .from('ready_media')
+    .delete()
+    .eq('id', id)
+  if (delErr) throw delErr
+
+  return { success: true }
+}
+
+export async function writeOffReadyMediumFull(id: string) {
+  const { data, error } = await supabase
+    .from('ready_media')
+    .update({ current_volume_ml: 0, status: 'USED' })
+    .eq('id', id)
+    .select()
+    .single()
+
   if (error) throw error
   return data
 }

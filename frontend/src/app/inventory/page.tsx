@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-// import { useRouter } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import {
   Package,
   Plus,
@@ -107,6 +107,7 @@ function isLowStock(batch: any): boolean {
 }
 
 export default function InventoryPage() {
+  const router = useRouter()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedStatus, setSelectedStatus] = useState<string>('AVAILABLE')
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('all')
@@ -412,7 +413,7 @@ export default function InventoryPage() {
                 {filteredReadyMedia.map((media) => {
                   const expInfo = getMediaExpiration(media)
                   return (
-                  <TableRow key={media.id}>
+                  <TableRow key={media.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/ready-media/${media.id}`)}>
                     <TableCell>
                       <span className="font-medium">
                         {media.code || media.id?.slice(0, 8)}
@@ -423,7 +424,7 @@ export default function InventoryPage() {
                       {media.notes && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{media.notes}</p>}
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className="font-semibold">{media.volume_ml || media.current_volume_ml || 0}</span>
+                      <span className="font-semibold">{media.current_volume_ml ?? media.volume_ml ?? 0}</span>
                       <span className="text-muted-foreground text-xs ml-1">мл</span>
                     </TableCell>
                     <TableCell>{media.created_at ? formatDate(media.created_at) : '—'}</TableCell>
@@ -442,7 +443,9 @@ export default function InventoryPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <span className="text-muted-foreground"><Eye className="h-4 w-4" /></span>
+                      <Link href={`/ready-media/${media.id}`} onClick={e => e.stopPropagation()}>
+                        <Eye className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+                      </Link>
                     </TableCell>
                   </TableRow>
                   )
@@ -780,9 +783,13 @@ function getDisposeReasonLabel(reason: string): string {
 }
 
 function getMediaExpiresAt(media: any): Date | null {
-  if (!media.created_at || !media.expiration_hours) return null
-  const prepared = new Date(media.created_at)
-  return new Date(prepared.getTime() + media.expiration_hours * 60 * 60 * 1000)
+  // Приоритет: expiration_date (ISO строка) > created_at + expiration_hours
+  if (media.expiration_date) return new Date(media.expiration_date)
+  if (media.created_at && media.expiration_hours) {
+    const prepared = new Date(media.created_at)
+    return new Date(prepared.getTime() + media.expiration_hours * 60 * 60 * 1000)
+  }
+  return null
 }
 
 function getMediaExpiration(media: any): { level: 'ok' | 'warning' | 'expired'; label: string } {
@@ -790,8 +797,9 @@ function getMediaExpiration(media: any): { level: 'ok' | 'warning' | 'expired'; 
   if (!expires) return { level: 'ok', label: '—' }
   const now = new Date()
   const hoursLeft = (expires.getTime() - now.getTime()) / (1000 * 60 * 60)
-  if (hoursLeft < 0) return { level: 'expired', label: 'Просрочена' }
-  if (hoursLeft < 6) return { level: 'warning', label: `${hoursLeft.toFixed(1)} ч` }
-  if (hoursLeft < 24) return { level: 'ok', label: `${hoursLeft.toFixed(0)} ч` }
-  return { level: 'ok', label: `${(hoursLeft / 24).toFixed(0)} дн` }
+  const dateStr = formatDate(expires.toISOString())
+  if (hoursLeft < 0) return { level: 'expired', label: `Просрочена (${dateStr})` }
+  if (hoursLeft < 6) return { level: 'warning', label: `${hoursLeft.toFixed(1)} ч (до ${dateStr})` }
+  if (hoursLeft < 24) return { level: 'ok', label: `${hoursLeft.toFixed(0)} ч (до ${dateStr})` }
+  return { level: 'ok', label: `${(hoursLeft / 24).toFixed(0)} дн (до ${dateStr})` }
 }

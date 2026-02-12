@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.17"
+export const APP_VERSION = "1.26.00"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,21 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.26.00",
+    date: "13.02.2026",
+    changes: [
+      "Карточка готовой среды (/ready-media/[id]): просмотр состава, QR, редактирование, полное списание, удаление с возвратом объёма",
+      "API: updateReadyMedium, deleteReadyMedium (возврат объёма в batch), writeOffReadyMediumFull",
+      "Фикс срока годности готовых сред: используется expiration_date вместо expiration_hours, показывает дату + относительное время",
+      "Inventory: клик по строке готовой среды открывает карточку, Eye icon → ссылка",
+      "Форма первичной культуры: фильтрация основной среды по тегу SEED (getAvailableMediaByUsage + buildMediaOptions)",
+      "Форма первичной культуры: batch + ready_media в дропдауне (rm:/batch: формат), per-component categoryFilter для доп. компонентов",
+      "API createCultureFromDonation: поддержка batch_id для основной среды, medium_id для доп. компонентов",
+      "OBSERVE: средняя конфлюэнтность сохраняется в operation_metrics (для аналитики)",
+      "Компонент alert-dialog (shadcn) для подтверждений удаления/списания",
+    ],
+  },
   {
     version: "1.25.17",
     date: "12.02.2026",
