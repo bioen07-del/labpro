@@ -490,7 +490,7 @@ export default function InventoryPage() {
                         <span className={`font-semibold ${batch.quantity <= 0 ? 'text-red-600' : isLowStock(batch) ? 'text-amber-600' : ''}`}>
                           {formatNumber(batch.quantity)}
                         </span>
-                        {batch.volume_per_unit ? (
+                        {batch.volume_per_unit && batch.nomenclature?.category !== 'CONSUMABLE' ? (
                           <span className="text-muted-foreground text-xs ml-1">
                             фл, тек: {batch.current_unit_volume ?? batch.volume_per_unit}/{batch.volume_per_unit} мл
                           </span>

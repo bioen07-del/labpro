@@ -39,9 +39,9 @@ interface BatchOption {
   expiration_date?: string
 }
 
-/** Формат остатка партии: учитывает пофлаконный учёт */
+/** Формат остатка партии: учитывает пофлаконный учёт (только для сред/реагентов) */
 function formatBatchStock(b: BatchOption): string {
-  if (b.volume_per_unit && b.volume_per_unit > 0) {
+  if (b.volume_per_unit && b.volume_per_unit > 0 && b.nomenclature?.category !== 'CONSUMABLE') {
     return `${b.quantity} фл, тек: ${b.current_unit_volume ?? b.volume_per_unit}/${b.volume_per_unit} мл`
   }
   return `${b.quantity} ${b.unit}`
