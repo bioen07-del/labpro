@@ -463,15 +463,28 @@
   - Кнопка «Готово» → отметка выполнения задачи
 - [x] TypeScript: 0 ошибок
 
+#### Фаза 25.14: Категорийные фильтры, доп. компоненты, partial freeze split (v1.25.16, 12.02.2026)
+- [x] **SQL-миграция**: qc_test_configs + culture_type_qc_requirements + unit в inventory_movements (выполнена через Management API)
+- [x] **Категорийные фильтры сред**: Select «Категория» (Все / Среды / Сыворотки / Буферы / Ферменты / Реагенты / Добавки) перед каждым dropdown в формах Passage, Feed, Freeze, Thaw
+- [x] **Fix PASSAGE: additionalComponents**: доп. компоненты (сыворотка, добавки) собирались в UI, но НЕ отправлялись в API — исправлено, теперь списываются через writeOffAdditionalComponents
+- [x] **Feed: доп. компоненты**: UI (динамические строки) + API-списание через writeOffAdditionalComponents
+- [x] **Freeze: доп. компоненты**: UI + API-списание + категорийный фильтр для всех 3 сред
+- [x] **Thaw: расширение формы**: поле объёма среды, выбор контейнера для посева со склада (consumable_batch_id), доп. компоненты (UI + API)
+- [x] **Partial freeze split**: при заморозке ЧАСТИ контейнеров лота — создаётся новый банковский лот для замороженных, исходный лот остаётся ACTIVE с оставшимися IN_CULTURE
+- [x] **Unit accounting**: колонка `unit` в inventory_movements, 'мл' для сред, 'шт' для расходников
+- [x] **Ready-media/new**: компонент-фильтр расширен (не только REAGENT/SERUM, а все категории кроме MEDIUM и CONSUMABLE) + категорийный фильтр Select
+- [x] **API: writeOffAdditionalComponents()**: универсальный хелпер для списания доп. компонентов (RM или batch) с operation_media + inventory_movement
+- [x] TypeScript: 0 ошибок
+
 ### Статистика
 
 | Метрика | Значение |
 |---------|----------|
 | Страницы | 50 маршрутов |
 | UI-компоненты | 22 (shadcn/ui + QRLabel + Switch) |
-| API (api.ts) | ~4750 строк |
-| Типы (index.ts) | ~810 строк |
-| SQL миграции | 16 файлов |
+| API (api.ts) | ~4800 строк |
+| Типы (index.ts) | ~820 строк |
+| SQL миграции | 17 файлов |
 | npm-зависимости | +qrcode, react-qr-code, recharts |
 
 ### Стек: Next.js 16.1.6 + TypeScript 5.9.3 + React 19.2.3 + Tailwind 4 + Supabase + Vercel
