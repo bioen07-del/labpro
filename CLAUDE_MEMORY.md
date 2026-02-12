@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Stack**: Next.js 16 + TypeScript 5.9 + React 19 + Tailwind 4 + Supabase + Vercel
-- **Version**: 1.25.12
+- **Version**: 1.25.13
 - **Two workstations**: Work PC (C:\AICoding\Cline\LabPro master, C:\Users\volchkov.se\.claude-worktrees silly-tu) and Home PC (C:\VSCline\LabPro master, C:\Users\bioen\.claude-worktrees awesome-bohr)
 - **User tests on**: awesome-bohr preview URL (labpro-git-awesome-bohr-bioen07s-projects.vercel.app)
 - **Build cmd**: `cd frontend && node_modules/.bin/next build`
@@ -38,23 +38,24 @@
 - **OBSERVE**: only updates containers (confluent_percent), NO operation_metrics yet
 - **FEED**: only writes off media, no metrics
 
-## Session 12.02.2026 Changes (v1.25.11 + v1.25.12)
+## Session 12.02.2026 Changes (v1.25.11 → v1.25.13)
 - Freeze: lot update (final_cells, viability, harvest_at)
 - Freeze: cryovials filtered by FREEZING usage_tag
 - Freeze: working volume (unified/individual per vial)
-- Freeze: volume_ml = real suspension volume
 - Thaw: initial_cells from cryo_vial.cells_count + operation_metrics
 - Lot page: bank badge (MCB/WCB) with code and QC status
-- Removed concentration (cells/ml) from lot/culture cards (technical metric)
+- Removed concentration (cells/ml) from lot/culture cards
+- Culture page: closed lots grouped into collapsible block
+- Culture page: bank badge on each lot card
+- Culture page: parent lot info in lot headers
+- Culture page: total cells includes initial_cells fallback
+- Culture page: Td card in Row 3 metrics
+- Reverted unnecessary CONSUMABLE changes (cryovials = container_types with is_cryo)
 
-## TODO for Next Session (Work PC, 13.02.2026)
-1. Sync: `git fetch origin && git merge origin/awesome-bohr` into working branch
-2. Test freeze: metrics on lot card, bank badge
-3. Tag cryovials as FREEZING in nomenclature references
-4. Test thaw: initial_cells transferred to new lot
-5. Test working volume UI in freeze form
-6. OBSERVE: consider adding operation_metrics for confluence history
-7. RBAC: permission matrix (low priority)
+## TODO for Next Session
+1. OBSERVE: consider adding operation_metrics for confluence history
+2. RBAC: permission matrix (low priority)
+3. Test all culture page changes on live data
 
 ## Current Status
 - All 25 phases + 12 iterations complete

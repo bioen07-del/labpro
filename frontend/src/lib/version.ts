@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.12"
+export const APP_VERSION = "1.25.13"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.13",
+    date: "12.02.2026",
+    changes: [
+      "Культура: закрытые лоты сгруппированы в сворачиваемый блок «Закрытые лоты»",
+      "Культура: бейдж «Банк» (MCB/WCB + код + статус QC) на карточке каждого лота",
+      "Культура: информация о родительском лоте в заголовке (← от L3 P2)",
+      "Культура: общее кол-во клеток учитывает initial_cells лотов без операций",
+      "Культура: карточка «Время удвоения (Td)» в сводных метриках",
+      "Справочники: откат ненужных CONSUMABLE-изменений (расходники = контейнеры)",
+    ],
+  },
   {
     version: "1.25.12",
     date: "12.02.2026",

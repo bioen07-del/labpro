@@ -173,6 +173,7 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
   const [metrics, setMetrics] = useState<CultureMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedLots, setExpandedLots] = useState<Set<string>>(new Set())
+  const [showClosedLots, setShowClosedLots] = useState(false)
   const [showInactiveContainers, setShowInactiveContainers] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -480,10 +481,14 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
         for (const lot of activeLots) {
           const lotOps = operations.filter((op: Operation) => op.lot_id === lot.id)
 
-          // Latest total_cells for this lot
+          // Latest total_cells for this lot (fallback: lot.initial_cells)
+          let lotCellsFound = false
           for (const op of lotOps) {
             const m = (op as any).operation_metrics?.[0]
-            if (m?.total_cells) { cultureTotalCells += m.total_cells; break }
+            if (m?.total_cells) { cultureTotalCells += m.total_cells; lotCellsFound = true; break }
+          }
+          if (!lotCellsFound && lot.initial_cells) {
+            cultureTotalCells += lot.initial_cells
           }
           // Latest viability for this lot
           for (const op of lotOps) {
@@ -564,7 +569,7 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
           ? Math.round(lotDaysTo80.reduce((s, v) => s + v, 0) / lotDaysTo80.length)
           : null
 
-        const hasRow3 = cultureTotalCells > 0 || cultureAvgViability != null || cultureTotalPDL > 0 || cultureAvgProlifRate != null || cultureAvgDaysTo80 != null
+        const hasRow3 = cultureTotalCells > 0 || cultureAvgViability != null || cultureTotalPDL > 0 || cultureAvgProlifRate != null || cultureAvgDaysTo80 != null || (metrics?.currentTd != null)
 
         return (
           <>
@@ -781,6 +786,24 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
                   </CardContent>
                 </Card>
               )}
+              {metrics?.currentTd != null && (
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-indigo-50 p-2.5">
+                        <TrendingUp className="h-5 w-5 text-indigo-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Время удвоения (Td)</p>
+                        <p className="font-semibold text-lg">{metrics.currentTd} ч</p>
+                        {metrics.averageTd != null && metrics.averageTd !== metrics.currentTd && (
+                          <p className="text-xs text-muted-foreground">сред. {metrics.averageTd} ч</p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
           </>
@@ -930,307 +953,377 @@ export default function CultureDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* ==================== LOTS SECTION (INLINE) ==================== */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            <Boxes className="h-5 w-5" />
-            Лоты ({lots.length})
-          </h2>
-        </div>
+      {(() => {
+        const sortedLots = [...lots].sort((a, b) => (b.passage_number || 0) - (a.passage_number || 0))
+        const closedLots = sortedLots.filter(l => l.status !== 'ACTIVE')
 
-        {lots.length > 0 ? (
-          <div className="space-y-3">
-            {lots
-              .sort((a, b) => (b.passage_number || 0) - (a.passage_number || 0))
-              .map((lot) => {
-                const containers = (lot.containers || []) as Container[]
-                const isOpen = expandedLots.has(lot.id)
-                const activeConts = containers.filter(c => c.container_status === 'IN_CULTURE')
+        // Helper: render a single lot card
+        const renderLotCard = (lot: Lot) => {
+          const containers = (lot.containers || []) as Container[]
+          const isOpen = expandedLots.has(lot.id)
+          const activeConts = containers.filter(c => c.container_status === 'IN_CULTURE')
+          const lotBanks = banks.filter(b => b.lot_id === lot.id)
+          const parentLot = lot.parent_lot_id ? lots.find(l => l.id === lot.parent_lot_id) : null
 
-                return (
-                  <Collapsible key={lot.id} open={isOpen} onOpenChange={() => toggleLot(lot.id)}>
-                    <Card className={lot.status === 'ACTIVE' ? 'border-green-200' : ''}>
-                      {/* Lot header - always visible */}
+          return (
+            <Collapsible key={lot.id} open={isOpen} onOpenChange={() => toggleLot(lot.id)}>
+              <Card className={lot.status === 'ACTIVE' ? 'border-green-200' : ''}>
+                {/* Lot header - always visible */}
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <CardTitle className="text-base">
+                          {lot.lot_number || lot.id.slice(0, 8)}
+                        </CardTitle>
+                        <Badge variant="outline" className="font-mono">P{lot.passage_number}</Badge>
+                        <Badge className={getLotStatusColor(lot.status)}>
+                          {getLotStatusLabel(lot.status)}
+                        </Badge>
+                        {lotBanks.map((bank: Bank) => (
+                          <Badge
+                            key={bank.id}
+                            variant="outline"
+                            className="bg-blue-100 text-blue-800 border-blue-300"
+                          >
+                            <Snowflake className="mr-1 h-3 w-3" />
+                            {bank.bank_type} — {bank.code}
+                            {bank.status === 'QUARANTINE' && ' (QC)'}
+                            {bank.status === 'APPROVED' && ' \u2713'}
+                          </Badge>
+                        ))}
+                        {parentLot && (
+                          <span className="text-xs text-muted-foreground">
+                            \u2190 {parentLot.lot_number} (P{parentLot.passage_number})
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {/* Quick summary */}
+                        <div className="hidden md:flex items-center gap-4 text-sm text-muted-foreground">
+                          {lot.initial_cells && (
+                            <span className="flex items-center gap-1" title="Начальные клетки">
+                              {formatCellsCount(lot.initial_cells)}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Package className="h-3.5 w-3.5" />
+                            {activeConts.length}/{containers.length}
+                          </span>
+                          {lot.seeded_at && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              {formatDate(lot.seeded_at)}
+                            </span>
+                          )}
+                        </div>
+                        {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </div>
+                    </div>
+                  </CardHeader>
+                </CollapsibleTrigger>
+
+                {/* Expanded content */}
+                <CollapsibleContent>
+                  <CardContent className="pt-0 space-y-4">
+                    <Separator />
+
+                    {/* Lot details + per-lot metrics */}
+                    {(() => {
+                      // Per-lot metrics: find operations for this lot
+                      const lotOps = operations.filter((op: Operation) => op.lot_id === lot.id)
+                      let lotViability: number | null = null
+                      let lotTotalCells: number | null = null
+                      let lotLastObserve: string | null = null
+
+                      for (const op of lotOps) {
+                        const m = (op as any).operation_metrics?.[0]
+                        if (m?.viability_percent != null && lotViability === null) lotViability = m.viability_percent
+                        if (m?.total_cells != null && lotTotalCells === null) lotTotalCells = m.total_cells
+                        if (!lotLastObserve && (op.type === 'OBSERVE' || op.type === 'PASSAGE')) {
+                          lotLastObserve = op.started_at || op.created_at
+                        }
+                      }
+
+                      // Max confluency in this lot's containers
+                      const lotMaxConfluent = activeConts.reduce((max: number, c: Container) => Math.max(max, (c as any).confluent_percent ?? 0), 0)
+
+                      return (
+                        <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Дата посева</p>
+                            <p className="font-medium">{lot.seeded_at ? formatDate(lot.seeded_at) : '---'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Конфлюэнтность (макс.)</p>
+                            <p className={`font-medium ${lotMaxConfluent >= 80 ? 'text-green-600' : lotMaxConfluent >= 50 ? 'text-yellow-600' : ''}`}>
+                              {lotMaxConfluent > 0 ? `${lotMaxConfluent}%` : '---'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Кол-во клеток (нач.)</p>
+                            <p className="font-medium">{lot.initial_cells ? formatCellsCount(lot.initial_cells) : '---'}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Кол-во клеток (кон.)</p>
+                            <p className="font-medium">{lot.final_cells ? formatCellsCount(lot.final_cells) : '---'}</p>
+                          </div>
+                        </div>
+
+                        {/* Per-lot bio metrics from operations */}
+                        {(lotViability != null || lotTotalCells != null || lotLastObserve) && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm p-3 rounded-lg bg-muted/30 border">
+                            {lotViability != null && (
+                              <div>
+                                <p className="text-muted-foreground">Жизнеспособность</p>
+                                <p className="font-medium">{lotViability}%</p>
+                              </div>
+                            )}
+                            {lotTotalCells != null && (
+                              <div>
+                                <p className="text-muted-foreground">Общее кол-во клеток</p>
+                                <p className="font-medium">{(lotTotalCells / 1e6).toFixed(2)} млн</p>
+                              </div>
+                            )}
+                            {lotLastObserve && (
+                              <div>
+                                <p className="text-muted-foreground">Последний осмотр</p>
+                                <p className="font-medium">{formatDate(lotLastObserve)}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        </>
+                      )
+                    })()}
+
+                    {/* Containers grid */}
+                    {containers.length > 0 && (() => {
+                      const activeConts2 = containers.filter((c: Container) =>
+                        c.container_status !== 'DISPOSE' && c.container_status !== 'USED'
+                      )
+                      const inactiveConts = containers.filter((c: Container) =>
+                        c.container_status === 'DISPOSE' || c.container_status === 'USED'
+                      )
+                      const showInactive = showInactiveContainers.has(lot.id)
+                      const displayedContainers = showInactive ? containers : activeConts2
+
+                      return (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-sm font-medium text-muted-foreground">
+                              Контейнеры ({activeConts2.length} активных{inactiveConts.length > 0 ? `, ${inactiveConts.length} завершённых` : ''})
+                            </h4>
+                            {inactiveConts.length > 0 && (
+                              <button
+                                type="button"
+                                className="text-xs text-primary hover:underline"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setShowInactiveContainers(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(lot.id)) next.delete(lot.id)
+                                    else next.add(lot.id)
+                                    return next
+                                  })
+                                }}
+                              >
+                                {showInactive ? 'Скрыть завершённые' : `Показать завершённые (${inactiveConts.length})`}
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {displayedContainers.map((container: Container) => (
+                              <div
+                                key={container.id}
+                                className={`flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors ${
+                                  container.container_status === 'DISPOSE' || container.container_status === 'USED' ? 'opacity-60' : ''
+                                }`}
+                                onClick={() => router.push(`/containers/${container.id}`)}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-sm truncate">{container.code}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {container.container_type?.name || 'Тип N/A'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {container.confluent_percent != null && (
+                                    <span className="text-xs font-medium text-muted-foreground">
+                                      {container.confluent_percent}%
+                                    </span>
+                                  )}
+                                  {(container as any).contaminated && (
+                                    <Badge variant="destructive" className="text-xs">
+                                      Контаминация
+                                    </Badge>
+                                  )}
+                                  <Badge className={`text-xs ${getContainerStatusColor(container.container_status)}`}>
+                                    {getContainerStatusLabel(container.container_status)}
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {containers.length === 0 && (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        Нет контейнеров в данном лоте
+                      </p>
+                    )}
+
+                    {/* Quick actions for active lots */}
+                    {lot.status === 'ACTIVE' && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/operations/observe?lot_id=${lot.id}`)
+                          }}
+                        >
+                          <Eye className="mr-1.5 h-3.5 w-3.5" />
+                          Наблюдение
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/operations/feed?lot_id=${lot.id}`)
+                          }}
+                        >
+                          <Droplets className="mr-1.5 h-3.5 w-3.5" />
+                          Кормление
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/operations/passage?lot_id=${lot.id}`)
+                          }}
+                        >
+                          <GitBranch className="mr-1.5 h-3.5 w-3.5" />
+                          Пассаж
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/operations/freeze?lot_id=${lot.id}`)
+                          }}
+                        >
+                          <Snowflake className="mr-1.5 h-3.5 w-3.5" />
+                          Заморозка
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            router.push(`/operations/dispose?lot_id=${lot.id}`)
+                          }}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Утилизация
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Link to lot detail */}
+                    <div className="flex justify-end pt-1">
+                      <Link href={`/lots/${lot.id}`}>
+                        <Button variant="ghost" size="sm" className="text-blue-600">
+                          Открыть лот
+                          <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Card>
+            </Collapsible>
+          )
+        }
+
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Boxes className="h-5 w-5" />
+                Лоты ({lots.length})
+              </h2>
+            </div>
+
+            {lots.length > 0 ? (
+              <div className="space-y-3">
+                {/* Active lots — always shown individually */}
+                {activeLots
+                  .sort((a, b) => (b.passage_number || 0) - (a.passage_number || 0))
+                  .map(renderLotCard)}
+
+                {/* Closed lots — grouped in a collapsible block */}
+                {closedLots.length > 0 && (
+                  <Collapsible open={showClosedLots} onOpenChange={setShowClosedLots}>
+                    <Card className="border-dashed">
                       <CollapsibleTrigger asChild>
-                        <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors pb-3">
+                        <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors py-3">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <CardTitle className="text-base">
-                                {lot.lot_number || lot.id.slice(0, 8)}
-                              </CardTitle>
-                              <Badge variant="outline" className="font-mono">P{lot.passage_number}</Badge>
-                              <Badge className={getLotStatusColor(lot.status)}>
-                                {getLotStatusLabel(lot.status)}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              {/* Quick summary */}
-                              <div className="hidden md:flex items-center gap-4 text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Package className="h-3.5 w-3.5" />
-                                  {activeConts.length}/{containers.length}
-                                </span>
-                                {lot.seeded_at && (
-                                  <span className="flex items-center gap-1">
-                                    <Calendar className="h-3.5 w-3.5" />
-                                    {formatDate(lot.seeded_at)}
-                                  </span>
+                            <div className="flex items-center gap-3">
+                              <Archive className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm font-medium text-muted-foreground">
+                                Закрытые лоты ({closedLots.length})
+                              </span>
+                              <div className="flex gap-1.5">
+                                {closedLots.slice(0, 5).map(l => (
+                                  <Badge key={l.id} variant="outline" className="text-xs font-mono opacity-60">
+                                    P{l.passage_number}
+                                  </Badge>
+                                ))}
+                                {closedLots.length > 5 && (
+                                  <Badge variant="outline" className="text-xs opacity-60">
+                                    +{closedLots.length - 5}
+                                  </Badge>
                                 )}
                               </div>
-                              {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                             </div>
+                            {showClosedLots ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </div>
                         </CardHeader>
                       </CollapsibleTrigger>
-
-                      {/* Expanded content */}
                       <CollapsibleContent>
-                        <CardContent className="pt-0 space-y-4">
-                          <Separator />
-
-                          {/* Lot details + per-lot metrics */}
-                          {(() => {
-                            // Per-lot metrics: find operations for this lot
-                            const lotOps = operations.filter((op: Operation) => op.lot_id === lot.id)
-                            let lotViability: number | null = null
-                            let lotConcentration: number | null = null
-                            let lotTotalCells: number | null = null
-                            let lotLastObserve: string | null = null
-
-                            for (const op of lotOps) {
-                              const metrics = (op as any).operation_metrics?.[0]
-                              if (metrics?.viability_percent != null && lotViability === null) lotViability = metrics.viability_percent
-                              if (metrics?.concentration != null && lotConcentration === null) lotConcentration = metrics.concentration
-                              if (metrics?.total_cells != null && lotTotalCells === null) lotTotalCells = metrics.total_cells
-                              if (!lotLastObserve && (op.type === 'OBSERVE' || op.type === 'PASSAGE')) {
-                                lotLastObserve = op.started_at || op.created_at
-                              }
-                            }
-
-                            // Max confluency in this lot's containers
-                            const lotMaxConfluent = activeConts.reduce((max: number, c: Container) => Math.max(max, (c as any).confluent_percent ?? 0), 0)
-
-                            return (
-                              <>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                <div>
-                                  <p className="text-muted-foreground">Дата посева</p>
-                                  <p className="font-medium">{lot.seeded_at ? formatDate(lot.seeded_at) : '---'}</p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">Конфлюэнтность (макс.)</p>
-                                  <p className={`font-medium ${lotMaxConfluent >= 80 ? 'text-green-600' : lotMaxConfluent >= 50 ? 'text-yellow-600' : ''}`}>
-                                    {lotMaxConfluent > 0 ? `${lotMaxConfluent}%` : '---'}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">Кол-во клеток (нач.)</p>
-                                  <p className="font-medium">{lot.initial_cells ? formatCellsCount(lot.initial_cells) : '---'}</p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground">Кол-во клеток (кон.)</p>
-                                  <p className="font-medium">{lot.final_cells ? formatCellsCount(lot.final_cells) : '---'}</p>
-                                </div>
-                              </div>
-
-                              {/* Per-lot bio metrics from operations */}
-                              {(lotViability != null || lotConcentration != null || lotTotalCells != null || lotLastObserve) && (
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm p-3 rounded-lg bg-muted/30 border">
-                                  {lotViability != null && (
-                                    <div>
-                                      <p className="text-muted-foreground">Жизнеспособность</p>
-                                      <p className="font-medium">{lotViability}%</p>
-                                    </div>
-                                  )}
-                                  {/* Концентрация — технический показатель, не отображается */}
-                                  {lotTotalCells != null && (
-                                    <div>
-                                      <p className="text-muted-foreground">Общее кол-во клеток</p>
-                                      <p className="font-medium">{(lotTotalCells / 1e6).toFixed(2)} млн</p>
-                                    </div>
-                                  )}
-                                  {lotLastObserve && (
-                                    <div>
-                                      <p className="text-muted-foreground">Последний осмотр</p>
-                                      <p className="font-medium">{formatDate(lotLastObserve)}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                              </>
-                            )
-                          })()}
-
-                          {/* Containers grid */}
-                          {containers.length > 0 && (() => {
-                            const activeConts2 = containers.filter((c: Container) =>
-                              c.container_status !== 'DISPOSE' && c.container_status !== 'USED'
-                            )
-                            const inactiveConts = containers.filter((c: Container) =>
-                              c.container_status === 'DISPOSE' || c.container_status === 'USED'
-                            )
-                            const showInactive = showInactiveContainers.has(lot.id)
-                            const displayedContainers = showInactive ? containers : activeConts2
-
-                            return (
-                              <div>
-                                <div className="flex items-center justify-between mb-2">
-                                  <h4 className="text-sm font-medium text-muted-foreground">
-                                    Контейнеры ({activeConts2.length} активных{inactiveConts.length > 0 ? `, ${inactiveConts.length} завершённых` : ''})
-                                  </h4>
-                                  {inactiveConts.length > 0 && (
-                                    <button
-                                      type="button"
-                                      className="text-xs text-primary hover:underline"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setShowInactiveContainers(prev => {
-                                          const next = new Set(prev)
-                                          if (next.has(lot.id)) next.delete(lot.id)
-                                          else next.add(lot.id)
-                                          return next
-                                        })
-                                      }}
-                                    >
-                                      {showInactive ? 'Скрыть завершённые' : `Показать завершённые (${inactiveConts.length})`}
-                                    </button>
-                                  )}
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                  {displayedContainers.map((container: Container) => (
-                                    <div
-                                      key={container.id}
-                                      className={`flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors ${
-                                        container.container_status === 'DISPOSE' || container.container_status === 'USED' ? 'opacity-60' : ''
-                                      }`}
-                                      onClick={() => router.push(`/containers/${container.id}`)}
-                                    >
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-                                        <div className="min-w-0">
-                                          <p className="font-medium text-sm truncate">{container.code}</p>
-                                          <p className="text-xs text-muted-foreground">
-                                            {container.container_type?.name || 'Тип N/A'}
-                                          </p>
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        {container.confluent_percent != null && (
-                                          <span className="text-xs font-medium text-muted-foreground">
-                                            {container.confluent_percent}%
-                                          </span>
-                                        )}
-                                        {(container as any).contaminated && (
-                                          <Badge variant="destructive" className="text-xs">
-                                            Контаминация
-                                          </Badge>
-                                        )}
-                                        <Badge className={`text-xs ${getContainerStatusColor(container.container_status)}`}>
-                                          {getContainerStatusLabel(container.container_status)}
-                                        </Badge>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          })()}
-
-                          {containers.length === 0 && (
-                            <p className="text-sm text-muted-foreground text-center py-2">
-                              Нет контейнеров в данном лоте
-                            </p>
-                          )}
-
-                          {/* Quick actions for active lots */}
-                          {lot.status === 'ACTIVE' && (
-                            <div className="flex flex-wrap gap-2 pt-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  router.push(`/operations/observe?lot_id=${lot.id}`)
-                                }}
-                              >
-                                <Eye className="mr-1.5 h-3.5 w-3.5" />
-                                Наблюдение
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  router.push(`/operations/feed?lot_id=${lot.id}`)
-                                }}
-                              >
-                                <Droplets className="mr-1.5 h-3.5 w-3.5" />
-                                Кормление
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  router.push(`/operations/passage?lot_id=${lot.id}`)
-                                }}
-                              >
-                                <GitBranch className="mr-1.5 h-3.5 w-3.5" />
-                                Пассаж
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  router.push(`/operations/freeze?lot_id=${lot.id}`)
-                                }}
-                              >
-                                <Snowflake className="mr-1.5 h-3.5 w-3.5" />
-                                Заморозка
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  router.push(`/operations/dispose?lot_id=${lot.id}`)
-                                }}
-                                className="text-red-600 hover:text-red-700"
-                              >
-                                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                                Утилизация
-                              </Button>
-                            </div>
-                          )}
-
-                          {/* Link to lot detail */}
-                          <div className="flex justify-end pt-1">
-                            <Link href={`/lots/${lot.id}`}>
-                              <Button variant="ghost" size="sm" className="text-blue-600">
-                                Открыть лот
-                                <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
-                              </Button>
-                            </Link>
-                          </div>
+                        <CardContent className="pt-0 space-y-3">
+                          {closedLots.map(renderLotCard)}
                         </CardContent>
                       </CollapsibleContent>
                     </Card>
                   </Collapsible>
-                )
-              })}
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="py-12">
-              <div className="text-center text-muted-foreground">
-                <Boxes className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                <p>Лоты ещё не созданы</p>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+            ) : (
+              <Card>
+                <CardContent className="py-12">
+                  <div className="text-center text-muted-foreground">
+                    <Boxes className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                    <p>Лоты ещё не созданы</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )
+      })()}
 
       {/* ==================== BANKS SECTION ==================== */}
       {banks.length > 0 && (

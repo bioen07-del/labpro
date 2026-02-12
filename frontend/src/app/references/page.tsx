@@ -54,7 +54,7 @@ const MEDIA_CATEGORY_SET = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', '
 
 const CATEGORY_LABELS: Record<string, string> = {
   MEDIUM: 'Среда', SERUM: 'Сыворотка', BUFFER: 'Буфер',
-  SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент', CONSUMABLE: 'Пластик',
+  SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент',
 }
 
 const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days'])
@@ -197,7 +197,7 @@ export default function ReferencesPage() {
       case 'media_reagents':
         return { code: '', name: '', category: 'MEDIUM', unit: 'мл', container_type_id: '', storage_requirements: '', usage_tags: [], is_active: true }
       case 'consumables':
-        return { code: '', name: '', category: 'CONSUMABLE', unit: 'шт', container_type_id: '', storage_requirements: '', is_active: true }
+        return { code: '', name: '', surface_area_cm2: '', volume_ml: '', is_cryo: false, optimal_confluent: '', is_active: true }
       case 'morphology_types':
         return { code: '', name: '', description: '' }
       case 'dispose_reasons':
@@ -211,7 +211,7 @@ export default function ReferencesPage() {
     culture_types: ['code', 'name', 'description', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'is_active'],
     tissue_types: ['code', 'name', 'tissue_form', 'is_active'],
     media_reagents: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'usage_tags', 'is_active'],
-    consumables: ['code', 'name', 'category', 'unit', 'container_type_id', 'storage_requirements', 'is_active'],
+    consumables: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
     container_types: ['code', 'name', 'surface_area_cm2', 'volume_ml', 'is_cryo', 'optimal_confluent', 'is_active'],
     morphology_types: ['code', 'name', 'description'],
     dispose_reasons: ['code', 'name', 'description'],
