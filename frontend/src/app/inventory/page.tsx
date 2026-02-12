@@ -67,6 +67,13 @@ type CategoryTab = 'all' | 'CONSUMABLE' | 'MEDIUM' | 'SERUM' | 'BUFFER' | 'SUPPL
 
 const MEDIA_CATEGORIES = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'ENZYME', 'REAGENT'])
 
+/** Суммарный доступный объём (мл) для пофлаконных партий */
+function getTotalVolume(batch: any): number {
+  if (!batch.volume_per_unit || batch.volume_per_unit <= 0) return 0
+  return (batch.quantity - 1) * batch.volume_per_unit
+    + (batch.current_unit_volume ?? batch.volume_per_unit)
+}
+
 /** Проверяет, является ли остаток партии «Мало» по настраиваемому порогу номенклатуры */
 function isLowStock(batch: any): boolean {
   if (batch.quantity <= 0) return false
@@ -74,24 +81,29 @@ function isLowStock(batch: any): boolean {
 
   const nom = batch.nomenclature
   const threshold = nom?.min_stock_threshold
+  const thresholdType = nom?.min_stock_threshold_type
 
   // Если порог не задан или 0 — fallback: quantity <= 5
   if (!threshold || threshold <= 0) return batch.quantity <= 5
 
-  if (nom?.min_stock_threshold_type === 'PERCENT') {
-    const initial = batch.initial_quantity ?? batch.quantity
-    if (initial <= 0) return false
-    const percentLeft = (batch.quantity / initial) * 100
-    return percentLeft <= threshold
+  switch (thresholdType) {
+    case 'VOLUME': {
+      // Сравнение по суммарному доступному объёму (мл)
+      const vol = getTotalVolume(batch)
+      // Если нет пофлаконного учёта — fallback на quantity
+      return vol > 0 ? vol <= threshold : batch.quantity <= threshold
+    }
+    case 'PERCENT': {
+      // Процент от начального кол-ва
+      const initial = batch.initial_quantity ?? batch.quantity
+      if (initial <= 0) return false
+      const percentLeft = (batch.quantity / initial) * 100
+      return percentLeft <= threshold
+    }
+    default: // 'QTY' или legacy 'ABSOLUTE'
+      // Сравнение по кол-ву штук/упаковок
+      return batch.quantity <= threshold
   }
-
-  // ABSOLUTE: для пофлаконных — общий доступный объём
-  if (batch.volume_per_unit && batch.volume_per_unit > 0) {
-    const totalVolume = (batch.quantity - 1) * batch.volume_per_unit
-      + (batch.current_unit_volume ?? batch.volume_per_unit)
-    return totalVolume <= threshold
-  }
-  return batch.quantity <= threshold
 }
 
 export default function InventoryPage() {

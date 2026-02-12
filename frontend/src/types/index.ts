@@ -269,7 +269,7 @@ export const NOMENCLATURE_CATEGORY_LABELS: Record<string, string> = {
   CONSUMABLE: 'Расходники',
 }
 
-export type MinStockThresholdType = 'ABSOLUTE' | 'PERCENT'
+export type MinStockThresholdType = 'QTY' | 'VOLUME' | 'PERCENT'
 
 export type UsageTag = 'FEED' | 'DISSOCIATION' | 'WASH' | 'SEED' | 'FREEZING' | 'THAW'
 

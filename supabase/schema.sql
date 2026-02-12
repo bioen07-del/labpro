@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS nomenclatures (
     storage_requirements TEXT,
     usage_tags TEXT[] DEFAULT '{}',
     min_stock_threshold NUMERIC DEFAULT 0,
-    min_stock_threshold_type TEXT DEFAULT 'ABSOLUTE', -- 'ABSOLUTE' | 'PERCENT'
+    min_stock_threshold_type TEXT DEFAULT 'QTY', -- 'QTY' | 'VOLUME' | 'PERCENT'
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now()
 );
