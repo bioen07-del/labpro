@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.25.13"
+export const APP_VERSION = "1.25.14"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.25.14",
+    date: "12.02.2026",
+    changes: [
+      "QC: авто-создание 4 тестов (Микоплазма, Стерильность, LAL, VIA) при заморозке банка",
+      "QC: баннер для банков на карантине без тестов + кнопка «Создать 4 теста»",
+      "QC: ссылка на банк в списке тестов",
+    ],
+  },
   {
     version: "1.25.13",
     date: "12.02.2026",

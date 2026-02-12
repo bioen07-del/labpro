@@ -3750,6 +3750,25 @@ export async function createQCTask(bankId: string) {
   })
 }
 
+// Auto-create standard QC tests for a new bank
+export async function createAutoQCTests(bankId: string) {
+  const testTypes = ['MYCOPLASMA', 'STERILITY', 'LAL', 'VIA'] as const
+  const tests = testTypes.map(test_type => ({
+    test_type,
+    target_type: 'BANK',
+    target_id: bankId,
+    status: 'PENDING',
+  }))
+
+  const { data, error } = await supabase
+    .from('qc_tests')
+    .insert(tests)
+    .select()
+
+  if (error) throw error
+  return data
+}
+
 // Create feed task based on media type and schedule
 export async function createFeedTask(lotId: string, mediaType: string, scheduleDays: number = 2) {
   return createAutoTask({
@@ -3944,9 +3963,14 @@ export async function createOperationFreeze(data: FreezeData) {
       volume_ml: data.volume_ml || null
     })
   
-  // 9. Создать QC-задачу через createQCTask()
+  // 9. Создать QC-задачу и авто-тесты
   if (bankId) {
     await createQCTask(bankId)
+    try {
+      await createAutoQCTests(bankId)
+    } catch (e) {
+      console.error('Failed to auto-create QC tests:', e)
+    }
   }
   
   // 10. Списание сред (пофлаконный учёт)

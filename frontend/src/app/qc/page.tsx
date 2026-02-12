@@ -18,7 +18,8 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { getQCTests, submitQCResult } from "@/lib/api"
+import { getQCTests, submitQCResult, getBanks, createAutoQCTests } from "@/lib/api"
+import type { Bank } from "@/types"
 import { format } from "date-fns"
 import { ru } from "date-fns/locale"
 
@@ -59,6 +60,8 @@ export default function QCPage() {
   const [result, setResult] = useState<"PASSED" | "FAILED">("PASSED")
   const [resultNotes, setResultNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [quarantineBanks, setQuarantineBanks] = useState<Bank[]>([])
+  const [creatingTests, setCreatingTests] = useState(false)
 
   useEffect(() => {
     loadTests()
@@ -66,12 +69,32 @@ export default function QCPage() {
 
   const loadTests = async () => {
     try {
-      const data = await getQCTests()
+      const [data, banksData] = await Promise.all([
+        getQCTests(),
+        getBanks({ status: 'QUARANTINE' }),
+      ])
       setTests(data || [])
+      // Banks on quarantine without any QC tests
+      const testTargetIds = new Set((data || []).map((t: any) => t.target_id))
+      setQuarantineBanks(
+        ((banksData || []) as Bank[]).filter(b => !testTargetIds.has(b.id))
+      )
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleCreateTestsForBank = async (bankId: string) => {
+    setCreatingTests(true)
+    try {
+      await createAutoQCTests(bankId)
+      await loadTests()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setCreatingTests(false)
     }
   }
 
@@ -194,6 +217,39 @@ export default function QCPage() {
         </Card>
       </div>
 
+      {/* Quarantine banks without tests */}
+      {quarantineBanks.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {quarantineBanks.map(bank => (
+            <div key={bank.id} className="flex items-center justify-between p-4 rounded-lg border border-yellow-300 bg-yellow-50">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="h-5 w-5 text-yellow-600" />
+                <div>
+                  <p className="font-medium text-sm">
+                    Банк {bank.code || bank.id.slice(0, 8)} ({bank.bank_type}) — на карантине без QC-тестов
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Создан {format(new Date(bank.created_at), "dd MMM yyyy", { locale: ru })}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Link href={`/banks/${bank.id}`}>
+                  <Button variant="outline" size="sm">Банк</Button>
+                </Link>
+                <Button
+                  size="sm"
+                  disabled={creatingTests}
+                  onClick={() => handleCreateTestsForBank(bank.id)}
+                >
+                  {creatingTests ? "Создание..." : "Создать 4 теста"}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Filters & Search */}
       <div className="flex gap-4 mb-6">
         <div className="relative flex-1 max-w-sm">
@@ -247,7 +303,13 @@ export default function QCPage() {
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Объект: {test.target_type} → {test.target_id.slice(0, 8)}...
+                        {test.target_type === 'BANK' ? (
+                          <Link href={`/banks/${test.target_id}`} className="text-blue-600 hover:underline">
+                            Банк → {test.target_id.slice(0, 8)}
+                          </Link>
+                        ) : (
+                          <>Объект: {test.target_type} → {test.target_id.slice(0, 8)}</>
+                        )}
                       </p>
                     </div>
                   </div>
