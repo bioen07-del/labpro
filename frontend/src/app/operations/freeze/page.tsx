@@ -35,6 +35,8 @@ import {
   getLots,
   getContainersByLot,
   getAvailableMediaByUsage,
+  getAvailableMediaForFeed,
+  getReagentBatches,
   buildMediaOptions,
   parseMediumId,
   getPositions,
@@ -142,9 +144,10 @@ function FreezePageInner() {
   const [positionId, setPositionId] = useState('')
   const [mediaCategoryFilter, setMediaCategoryFilter] = useState('all')
 
-  // --- Additional components (serum, reagent, additive) ---
+  // --- Additional components (serum, reagent, additive) — use ALL media, not usage-filtered ---
+  const [allMediaOptions, setAllMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [additionalComponents, setAdditionalComponents] = useState<
-    { id: string; mediumId: string; volumeMl: string }[]
+    { id: string; mediumId: string; volumeMl: string; categoryFilter: string }[]
   >([])
 
   // --- Bank type (auto-determined) ---
@@ -180,11 +183,7 @@ function FreezePageInner() {
     ? washOptions : washOptions.filter(o => o.category === mediaCategoryFilter)
   const filteredFreezingOptions = mediaCategoryFilter === 'all'
     ? freezingOptions : freezingOptions.filter(o => o.category === mediaCategoryFilter)
-  // All options combined for additional components dropdown
-  const allMediaOptions = [...dissociationOptions, ...washOptions, ...freezingOptions]
-    .filter((opt, idx, arr) => arr.findIndex(o => o.id === opt.id) === idx)
-  const filteredAllMediaOptions = mediaCategoryFilter === 'all'
-    ? allMediaOptions : allMediaOptions.filter(o => o.category === mediaCategoryFilter)
+  // NOTE: allMediaOptions is loaded separately (unfiltered) for additional components
 
   // Auto-calculated cell metrics
   const totalCells = useMemo(() => {
@@ -223,13 +222,15 @@ function FreezePageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [lotsData, dissResult, washResult, freezeResult, positionsData, cryoBatchesData] = await Promise.all([
+        const [lotsData, dissResult, washResult, freezeResult, positionsData, cryoBatchesData, allRM, allReagents] = await Promise.all([
           getLots({ status: 'ACTIVE' }),
           getAvailableMediaByUsage('DISSOCIATION'),
           getAvailableMediaByUsage('WASH'),
           getAvailableMediaByUsage('FREEZING'),
           getPositions({ is_active: true }),
           getBatches({ status: 'AVAILABLE', category: 'CONSUMABLE', usage_tag: 'FREEZING' }),
+          getAvailableMediaForFeed(),   // all ready media (for additional components)
+          getReagentBatches(),           // all batches (for additional components)
         ])
         // Filter out banked lots (all containers IN_BANK)
         const selectableLots = (lotsData || []).filter((lot: any) => {
@@ -243,6 +244,7 @@ function FreezePageInner() {
         setFreezingOptions(buildMediaOptions(freezeResult.readyMedia, freezeResult.reagentBatches))
         setPositions(positionsData || [])
         setCryoBatches(cryoBatchesData || [])
+        setAllMediaOptions(buildMediaOptions(allRM, allReagents))
 
         // Auto-bind from URL params
         const paramLotId = searchParams.get('lot_id')
@@ -1172,7 +1174,11 @@ function FreezePageInner() {
                 <Label className="text-sm">Дополнительные компоненты</Label>
               </div>
               <p className="text-xs text-muted-foreground">Сыворотка, добавки — необязательно</p>
-              {additionalComponents.map((comp, idx) => (
+              {additionalComponents.map((comp, idx) => {
+                const compOptions = comp.categoryFilter === 'all'
+                  ? allMediaOptions
+                  : allMediaOptions.filter(o => o.category === comp.categoryFilter)
+                return (
                 <div key={comp.id} className="border rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-muted-foreground">Компонент {idx + 1}</span>
@@ -1181,7 +1187,26 @@ function FreezePageInner() {
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="grid gap-2 md:grid-cols-[1fr_100px]">
+                  <div className="grid gap-2 md:grid-cols-[auto_1fr_100px]">
+                    <Select
+                      value={comp.categoryFilter}
+                      onValueChange={(val) => setAdditionalComponents(prev =>
+                        prev.map(c => c.id === comp.id ? { ...c, categoryFilter: val, mediumId: '' } : c)
+                      )}
+                    >
+                      <SelectTrigger className="h-8 text-xs w-[140px]">
+                        <SelectValue placeholder="Категория" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Все</SelectItem>
+                        <SelectItem value="SERUM">Сыворотки</SelectItem>
+                        <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
+                        <SelectItem value="BUFFER">Буферы</SelectItem>
+                        <SelectItem value="ENZYME">Ферменты</SelectItem>
+                        <SelectItem value="REAGENT">Реагенты</SelectItem>
+                        <SelectItem value="MEDIUM">Среды</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <Select value={comp.mediumId}
                       onValueChange={(val) => setAdditionalComponents(prev =>
                         prev.map(c => c.id === comp.id ? { ...c, mediumId: val } : c))}>
@@ -1189,7 +1214,7 @@ function FreezePageInner() {
                         <SelectValue placeholder="Выберите компонент..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {filteredAllMediaOptions.map((opt) => (
+                        {compOptions.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
                             {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                           </SelectItem>
@@ -1202,9 +1227,10 @@ function FreezePageInner() {
                         prev.map(c => c.id === comp.id ? { ...c, volumeMl: e.target.value } : c))} />
                   </div>
                 </div>
-              ))}
+                )
+              })}
               <Button type="button" variant="outline" size="sm" className="w-full"
-                onClick={() => setAdditionalComponents(prev => [...prev, { id: Math.random().toString(36).substring(2, 9), mediumId: '', volumeMl: '' }])}>
+                onClick={() => setAdditionalComponents(prev => [...prev, { id: Math.random().toString(36).substring(2, 9), mediumId: '', volumeMl: '', categoryFilter: 'all' }])}>
                 <Plus className="h-4 w-4 mr-2" /> Добавить компонент
               </Button>
             </div>

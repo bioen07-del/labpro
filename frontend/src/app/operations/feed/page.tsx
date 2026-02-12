@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { getLots, getContainersByLot, getAvailableMediaByUsage, buildMediaOptions, parseMediumId, createOperationFeed } from '@/lib/api'
+import { getLots, getContainersByLot, getAvailableMediaByUsage, getAvailableMediaForFeed, getReagentBatches, buildMediaOptions, parseMediumId, createOperationFeed } from '@/lib/api'
 import { NOMENCLATURE_CATEGORY_LABELS } from '@/types'
 
 function generateRowId(): string {
@@ -45,9 +45,10 @@ function FeedPageInner() {
   const [perContainerMedia, setPerContainerMedia] = useState<Record<string, string>>({})  // containerId -> mediumId
   const [perContainerVolume, setPerContainerVolume] = useState<Record<string, string>>({}) // containerId -> volume
 
-  // Additional components (serum, reagent, additive)
+  // Additional components (serum, reagent, additive) — use ALL media, not usage-filtered
+  const [allMediaOptions, setAllMediaOptions] = useState<{ id: string; label: string; type: 'ready_medium' | 'batch'; category?: string }[]>([])
   const [additionalComponents, setAdditionalComponents] = useState<
-    { id: string; mediumId: string; volumeMl: string }[]
+    { id: string; mediumId: string; volumeMl: string; categoryFilter: string }[]
   >([])
 
   const [submitting, setSubmitting] = useState(false)
@@ -65,9 +66,11 @@ function FeedPageInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [lotsData, mediaResult] = await Promise.all([
+        const [lotsData, mediaResult, allRM, allReagents] = await Promise.all([
           getLots({ status: 'ACTIVE' }),
           getAvailableMediaByUsage('FEED'),
+          getAvailableMediaForFeed(),   // all ready media (for additional components)
+          getReagentBatches(),           // all batches (for additional components)
         ])
         // Filter out banked lots (all containers IN_BANK)
         const selectableLots = (lotsData || []).filter((lot: any) => {
@@ -77,6 +80,7 @@ function FeedPageInner() {
         })
         setLots(selectableLots)
         setMediaOptions(buildMediaOptions(mediaResult.readyMedia, mediaResult.reagentBatches))
+        setAllMediaOptions(buildMediaOptions(allRM, allReagents))
 
         // Auto-bind from URL params
         const paramLotId = searchParams.get('lot_id')
@@ -520,7 +524,11 @@ function FeedPageInner() {
             </div>
             <p className="text-xs text-muted-foreground">Сыворотка, реагенты, добавки — необязательно</p>
 
-            {additionalComponents.map((comp, idx) => (
+            {additionalComponents.map((comp, idx) => {
+              const compOptions = comp.categoryFilter === 'all'
+                ? allMediaOptions
+                : allMediaOptions.filter(o => o.category === comp.categoryFilter)
+              return (
               <div key={comp.id} className="border rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-muted-foreground">Компонент {idx + 1}</span>
@@ -533,7 +541,26 @@ function FeedPageInner() {
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="grid gap-2 md:grid-cols-[1fr_120px]">
+                <div className="grid gap-2 md:grid-cols-[auto_1fr_120px]">
+                  <Select
+                    value={comp.categoryFilter}
+                    onValueChange={(val) => setAdditionalComponents(prev =>
+                      prev.map(c => c.id === comp.id ? { ...c, categoryFilter: val, mediumId: '' } : c)
+                    )}
+                  >
+                    <SelectTrigger className="h-8 text-xs w-[140px]">
+                      <SelectValue placeholder="Категория" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Все</SelectItem>
+                      <SelectItem value="SERUM">Сыворотки</SelectItem>
+                      <SelectItem value="SUPPLEMENT">Добавки</SelectItem>
+                      <SelectItem value="BUFFER">Буферы</SelectItem>
+                      <SelectItem value="ENZYME">Ферменты</SelectItem>
+                      <SelectItem value="REAGENT">Реагенты</SelectItem>
+                      <SelectItem value="MEDIUM">Среды</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Select
                     value={comp.mediumId}
                     onValueChange={(val) => setAdditionalComponents(prev =>
@@ -544,7 +571,7 @@ function FeedPageInner() {
                       <SelectValue placeholder="Выберите компонент..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {mediaOptions.map((opt) => (
+                      {compOptions.map((opt) => (
                         <SelectItem key={opt.id} value={opt.id}>
                           {opt.type === 'batch' ? '📦 ' : '🧪 '}{opt.label}
                         </SelectItem>
@@ -569,13 +596,14 @@ function FeedPageInner() {
                   </p>
                 )}
               </div>
-            ))}
+              )
+            })}
 
             <Button
               variant="outline"
               size="sm"
               className="w-full"
-              onClick={() => setAdditionalComponents(prev => [...prev, { id: generateRowId(), mediumId: '', volumeMl: '' }])}
+              onClick={() => setAdditionalComponents(prev => [...prev, { id: generateRowId(), mediumId: '', volumeMl: '', categoryFilter: 'all' }])}
             >
               <Plus className="h-4 w-4 mr-2" />
               Добавить компонент
