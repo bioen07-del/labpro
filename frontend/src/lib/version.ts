@@ -21,6 +21,9 @@ export const CHANGELOG: ChangelogEntry[] = [
       "isLowStock(): замена хардкода quantity≤5 на настраиваемый порог (QTY / VOLUME / PERCENT)",
       "Начальное кол-во (initial_quantity) сохраняется при приёмке партии — для расчёта % порога",
       "Фикс отображения остатка в ready-media/new: пофлаконный формат (2 фл, тек: 2/500 мл) вместо «2 мл»",
+      "Фикс отображения расходников: шт вместо мл (category !== CONSUMABLE)",
+      "Per-component category filter в ready-media/new (каждый компонент — свой фильтр)",
+      "Фикс доп. компонентов: Feed/Freeze/Thaw используют ВСЕ среды (не по usage_tag) + per-component categoryFilter",
     ],
   },
   {

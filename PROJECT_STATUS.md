@@ -1,8 +1,8 @@
 # LabPro — Статус проекта
 
 **Дата обновления:** 12.02.2026
-**Версия:** 1.25.16
-**Реализовано:** ~97% от ТЗ (25 фаз + 14 итераций)
+**Версия:** 1.25.17
+**Реализовано:** ~97% от ТЗ (25 фаз + 15 итераций)
 **Стек:** Next.js 16 + TypeScript 5.9 + React 19 + Tailwind 4 + Supabase + Vercel
 
 ---
@@ -15,6 +15,7 @@
 | `PROGRESS.md` | История разработки (25 фаз + итерации) |
 | `PROJECT_STATUS.md` | Текущий статус, нерешённые позиции, бэклог (этот файл) |
 | `CULTURE_METRICS.md` | Формулы метрик культур (8 вариантов) |
+| `TODO_UNITS_CALCULATOR.md` | Архитектура единиц измерения и калькулятора растворов |
 | `CLAUDE_MEMORY.md` | AI-контекст для межсессионной работы |
 | `rules.md` | Правила разработки |
 
@@ -94,7 +95,7 @@
 
 ---
 
-## Сессия 12.02.2026 (работа, silly-tu) — v1.25.15 → v1.25.16
+## Сессия 12.02.2026 (работа, silly-tu) — v1.25.15 → v1.25.17
 
 ### v1.25.16
 - [x] SQL-миграция: qc_test_configs, culture_type_qc_requirements, unit в inventory_movements
@@ -106,24 +107,49 @@
 - [x] Unit accounting (мл/шт) во всех inventory_movements
 - [x] Ready-media/new: свободный выбор компонентов + фильтр
 
+### v1.25.17
+- [x] SQL-миграция: nomenclatures +min_stock_threshold/type, batches +initial_quantity
+- [x] Настраиваемый порог «Мало»: 3 типа — QTY (шт), VOLUME (мл суммарно), PERCENT (% от начального)
+- [x] isLowStock() вместо хардкода quantity≤5
+- [x] Порог «Мало» для расходников (consumables)
+- [x] Фикс отображения расходников: шт, не мл (category !== 'CONSUMABLE')
+- [x] Per-component category filter в ready-media/new
+- [x] Фикс usage_tags: доп. компоненты в Feed/Freeze/Thaw используют ВСЕ среды (allMediaOptions)
+- [x] Каждый доп. компонент имеет свой categoryFilter (не общий)
+
 ---
 
 ## TODO на следующую сессию
 
-### Приоритет: Высокий
-1. **Тестирование v1.25.16**: проверить все формы операций (Passage, Feed, Freeze, Thaw) — фильтры, доп. компоненты, списание
-2. **Partial freeze**: заморозить часть контейнеров, убедиться что создаётся новый лот для банка, старый лот ACTIVE
-3. **Unit в inventory_movements**: проверить что 'мл'/'шт' сохраняется при списании
+### Приоритет: Высокий — Единицы измерения и калькулятор (v1.26.xx)
+> Подробный план: `TODO_UNITS_CALCULATOR.md`
 
-### Приоритет: Средний
-4. **QC-справочник**: проверить CRUD qc_test_configs через UI (/references, таб QC-тесты)
-5. **culture_type_qc_requirements**: привязать тесты к типам культур
-6. **Thaw consumable**: проверить выбор контейнера из склада при разморозке
+1. **Фаза 1**: Единицы измерения и упаковки в справочнике
+   - unit_type (MASS/VOLUME/COUNT/ACTIVITY), packaging_unit, content_per_package
+   - Select вместо свободного текстового поля для единиц
+   - Авто-единицы при приёмке на склад
+2. **Фаза 2**: Физическое состояние и сток-растворы
+   - physical_state (AS_RECEIVED/STOCK_SOLUTION/WORKING_SOLUTION/ALIQUOT)
+   - parent_batch_id (генеалогия партий), concentration
+   - STOCK не попадает в дропдауны операций
+3. **Фаза 3**: Расширение калькулятора готовых сред
+   - Режим «Абсолютный» (мг/мл вместо %)
+   - Режим «Разведение» (C1V1=C2V2)
+4. **Фаза 4**: Списание в нативных единицах + конвертация
+
+### Приоритет: Средний — Карточка готовой среды
+5. **Карточка готовой среды**: просмотр, редактирование, удаление (возврат компонентов), полное списание
+6. **Срок годности** в таблице готовых сред: fix `expiration_date` display (показывает "—")
+
+### Приоритет: Обычный — Тестирование
+7. **Тестирование v1.25.17**: проверить пороги «Мало» в QTY/VOLUME/PERCENT режимах
+8. **Тестирование фильтров**: доп. компоненты в Feed/Freeze/Thaw — per-component category filter
+9. **QC-справочник**: проверить CRUD и привязку к типам культур
 
 ### Приоритет: Низкий (бэклог)
-7. OBSERVE: добавить запись средней конфлюэнтности в operation_metrics
-8. RBAC: реализовать permission matrix и role-based route protection
-9. Проверить ТЗ на оставшиеся нереализованные пункты
+10. OBSERVE: запись средней конфлюэнтности в operation_metrics
+11. RBAC: permission matrix и role-based route protection
+12. Молярные расчёты, шаблоны рецептов, серийные разведения
 
 ---
 
@@ -147,13 +173,13 @@
 
 | Метрика | Значение |
 |---------|----------|
-| Версия | 1.25.16 |
+| Версия | 1.25.17 |
 | Страницы | 50 маршрутов |
 | UI-компоненты | 22 (shadcn/ui + QRLabel + Switch) |
 | API (api.ts) | ~4800 строк |
-| Типы (index.ts) | ~820 строк |
-| SQL миграции | 17 файлов |
-| Фаз разработки | 25 + 14 итераций |
+| Типы (index.ts) | ~827 строк |
+| SQL миграции | 19 файлов |
+| Фаз разработки | 25 + 15 итераций |
 | npm-зависимости | +qrcode, react-qr-code, recharts |
 
 ---
@@ -171,20 +197,23 @@
 
 ### Ключевые паттерны кода
 - **Пофлаконный учёт**: `writeOffBatchVolume()` — списывает из текущего флакона, авто-открытие следующего
-- **Списание сред**: SEED, Passage, Freeze — все через writeOffBatchVolume
+- **Списание доп. компонентов**: `writeOffAdditionalComponents()` — универсальный хелпер для всех операций
 - **Кодогенерация**: `{CultureCode}-L{N}` для лотов, `BK-XXXX` для банков
-- **Usage tags**: FEED/DISSOCIATION/WASH/SEED/FREEZING/THAW — фильтрация сред по назначению
+- **Usage tags**: FEED/DISSOCIATION/WASH/SEED/FREEZING/THAW — фильтрация основных сред по назначению
+- **allMediaOptions**: дополнительные компоненты грузят ВСЕ среды (не по usage_tag) + per-component categoryFilter
 - **Метрики**: concentration/volume — технические (только в operation_metrics), НЕ на UI
+- **Порог «Мало»**: isLowStock(batch) — 3 режима (QTY/VOLUME/PERCENT), fallback: quantity≤5
 - **Версионирование**: `frontend/src/lib/version.ts` — обновлять после каждого изменения!
 
 ### Ключевые файлы
 | Файл | Строк | Назначение |
 |------|-------|------------|
-| `frontend/src/lib/api.ts` | ~4625 | Все API-функции (Supabase) |
-| `frontend/src/types/index.ts` | ~786 | TypeScript-типы |
+| `frontend/src/lib/api.ts` | ~4800 | Все API-функции (Supabase) |
+| `frontend/src/types/index.ts` | ~827 | TypeScript-типы |
 | `frontend/src/app/page.tsx` | ~650 | Дашборд |
-| `frontend/src/lib/version.ts` | ~215 | Версия + changelog |
+| `frontend/src/lib/version.ts` | ~268 | Версия + changelog |
 | `CULTURE_METRICS.md` | Формулы | Td, PD, CPD, forecast |
+| `TODO_UNITS_CALCULATOR.md` | Архитектура | Единицы, калькулятор, сток-растворы |
 
 ---
 

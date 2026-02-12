@@ -476,6 +476,21 @@
 - [x] **API: writeOffAdditionalComponents()**: универсальный хелпер для списания доп. компонентов (RM или batch) с operation_media + inventory_movement
 - [x] TypeScript: 0 ошибок
 
+#### Фаза 25.15: Настраиваемый порог «Мало», фильтры компонентов (v1.25.17, 12.02.2026)
+- [x] **SQL-миграция**: nomenclatures +min_stock_threshold, +min_stock_threshold_type; batches +initial_quantity
+- [x] **Настраиваемый порог «Мало»**: 3 режима — QTY (шт), VOLUME (суммарный мл), PERCENT (% от начального)
+- [x] **isLowStock()**: замена хардкода `quantity<=5` на настраиваемый порог в inventory/page.tsx
+- [x] **Порог для расходников**: те же настройки в карточке номенклатуры CONSUMABLE (QTY + PERCENT)
+- [x] **initial_quantity**: сохраняется при приёмке партии для расчёта процентного порога
+- [x] **Фикс пофлаконного отображения**: category !== 'CONSUMABLE' — расходники показываются в шт, не мл
+- [x] **Per-component category filter**: в ready-media/new каждый компонент имеет свой фильтр категории (не общий)
+- [x] **Фикс usage_tags для доп. компонентов**: Feed, Freeze, Thaw — доп. компоненты используют ВСЕ среды (без фильтрации по usage_tag), с per-component category filter
+  - Feed: allMediaOptions (getAvailableMediaForFeed + getReagentBatches) для доп. компонентов
+  - Freeze: аналогично
+  - Thaw: аналогично
+  - Passage: уже был корректно реализован
+- [x] TypeScript: 0 ошибок
+
 ### Статистика
 
 | Метрика | Значение |
@@ -483,8 +498,8 @@
 | Страницы | 50 маршрутов |
 | UI-компоненты | 22 (shadcn/ui + QRLabel + Switch) |
 | API (api.ts) | ~4800 строк |
-| Типы (index.ts) | ~820 строк |
-| SQL миграции | 17 файлов |
+| Типы (index.ts) | ~827 строк |
+| SQL миграции | 19 файлов |
 | npm-зависимости | +qrcode, react-qr-code, recharts |
 
 ### Стек: Next.js 16.1.6 + TypeScript 5.9.3 + React 19.2.3 + Tailwind 4 + Supabase + Vercel
