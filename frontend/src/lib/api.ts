@@ -742,14 +742,26 @@ export async function getBankById(id: string) {
         *,
         culture_type:culture_types(*)
       ),
-      lot:lots(*),
+      lot:lots(*, culture:cultures(*, culture_type:culture_types(*))),
       cryo_vials:cryo_vials(*),
       qc_tests:qc_tests(*)
     `)
     .eq('id', id)
     .single()
-  
+
   if (error) throw error
+
+  // Self-heal: if bank has no culture_id but lot has culture_id, fix it
+  if (data && !data.culture_id && data.lot?.culture_id) {
+    await supabase
+      .from('banks')
+      .update({ culture_id: data.lot.culture_id })
+      .eq('id', id)
+    // Use culture from lot for current response
+    data.culture = data.lot.culture
+    data.culture_id = data.lot.culture_id
+  }
+
   return data
 }
 
