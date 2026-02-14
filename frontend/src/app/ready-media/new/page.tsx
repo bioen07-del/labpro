@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Loader2, Plus, Trash2, Calculator, Beaker, FlaskConical } from "lucide-react"
+import { ArrowLeft, Loader2, Plus, Trash2, Calculator, Beaker, FlaskConical, Info } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,11 @@ import { PHYSICAL_STATE_LABELS } from "@/types"
 
 // ==================== TYPES ====================
 
-type CalculatorMode = 'PERCENT' | 'ABSOLUTE' | 'DILUTION'
+/** Режим ввода количества для отдельного компонента */
+type ComponentMode = 'PERCENT' | 'VOLUME' | 'MASS' | 'ACTIVITY'
+
+/** Режим формы: приготовление рецепта или разведение стока */
+type FormMode = 'RECIPE' | 'DILUTION'
 
 interface BatchOption {
   id: string
@@ -53,21 +57,22 @@ interface StockOption {
   physical_state?: string
 }
 
-interface PercentComponent {
+interface RecipeComponent {
   id: string
   batch_id: string
+  categoryFilter: string
+  mode: ComponentMode
+  // PERCENT
   percent: number
-  volume_ml: number
-  categoryFilter: string
-}
-
-interface AbsoluteComponent {
-  id: string
-  batch_id: string
-  amount: number
-  amount_unit: string
-  volume_ml: number
-  categoryFilter: string
+  // VOLUME (мкл / мл / л)
+  volume: number
+  volumeUnit: string
+  // MASS (мкг / мг / г)
+  mass: number
+  massUnit: string
+  // ACTIVITY (ЕД / МЕ)
+  activity: number
+  activityUnit: string
 }
 
 // ==================== HELPERS ====================
@@ -79,8 +84,9 @@ function formatBatchStock(b: BatchOption): string {
   return `${b.quantity} ${b.unit}`
 }
 
-const COMPONENT_CATEGORIES = [
+const ALL_CATEGORIES = [
   { value: 'all', label: 'Все' },
+  { value: 'MEDIUM', label: 'Среды' },
   { value: 'SERUM', label: 'Сыворотки' },
   { value: 'SUPPLEMENT', label: 'Добавки' },
   { value: 'BUFFER', label: 'Буферы' },
@@ -88,9 +94,65 @@ const COMPONENT_CATEGORIES = [
   { value: 'REAGENT', label: 'Реагенты' },
 ]
 
-const AMOUNT_UNITS = ['мкг', 'мг', 'г', 'мкл', 'мл', 'ЕД', 'МЕ']
+const COMPONENT_MODE_LABELS: Record<ComponentMode, string> = {
+  PERCENT: '%',
+  VOLUME: 'мл',
+  MASS: 'мг',
+  ACTIVITY: 'ЕД',
+}
+
+const VOLUME_UNITS = ['мкл', 'мл', 'л']
+const MASS_UNITS = ['мкг', 'мг', 'г']
+const ACTIVITY_UNITS = ['ЕД', 'МЕ']
+
+/** Получить объём компонента в мл */
+function getComponentVolumeMl(comp: RecipeComponent, totalVolume: number): number {
+  switch (comp.mode) {
+    case 'PERCENT':
+      return (comp.percent / 100) * totalVolume
+    case 'VOLUME': {
+      const factors: Record<string, number> = { 'мкл': 0.001, 'мл': 1, 'л': 1000 }
+      return comp.volume * (factors[comp.volumeUnit] || 1)
+    }
+    case 'MASS':
+      // Масса не конвертируется в объём напрямую — пользователь вводит объём вручную если нужно
+      return 0
+    case 'ACTIVITY':
+      return 0
+    default:
+      return 0
+  }
+}
+
+/** Получить label количества для сводки */
+function getComponentAmountLabel(comp: RecipeComponent): string {
+  switch (comp.mode) {
+    case 'PERCENT': return `${comp.percent}%`
+    case 'VOLUME': return `${comp.volume} ${comp.volumeUnit}`
+    case 'MASS': return `${comp.mass} ${comp.massUnit}`
+    case 'ACTIVITY': return `${comp.activity} ${comp.activityUnit}`
+    default: return ''
+  }
+}
 
 let componentCounter = 0
+
+function makeComponent(): RecipeComponent {
+  componentCounter++
+  return {
+    id: `comp-${componentCounter}`,
+    batch_id: '',
+    categoryFilter: 'all',
+    mode: 'PERCENT',
+    percent: 0,
+    volume: 0,
+    volumeUnit: 'мл',
+    mass: 0,
+    massUnit: 'мг',
+    activity: 0,
+    activityUnit: 'ЕД',
+  }
+}
 
 // ==================== MAIN COMPONENT ====================
 
@@ -101,33 +163,32 @@ export default function NewReadyMediumPage() {
   const [stocks, setStocks] = useState<StockOption[]>([])
   const [batchesLoading, setBatchesLoading] = useState(true)
 
-  // Calculator mode
-  const [calcMode, setCalcMode] = useState<CalculatorMode>('PERCENT')
+  // Form mode: RECIPE (приготовление) or DILUTION (разведение стока)
+  const [formMode, setFormMode] = useState<FormMode>('RECIPE')
 
   // Physical state & concentration
   const [physicalState, setPhysicalState] = useState<PhysicalState>('WORKING_SOLUTION')
   const [concentration, setConcentration] = useState<number>(0)
   const [concentrationUnit, setConcentrationUnit] = useState<string>('×')
 
-  // Common form fields
+  // Common fields
   const [name, setName] = useState("")
-  const [baseBatchId, setBaseBatchId] = useState("")
   const [totalVolume, setTotalVolume] = useState(500)
   const [prepDate, setPrepDate] = prepDateState()
   const [expDate, setExpDate] = useState("")
   const [notes, setNotes] = useState("")
 
-  // PERCENT mode components
-  const [pctComponents, setPctComponents] = useState<PercentComponent[]>([])
-
-  // ABSOLUTE mode components
-  const [absComponents, setAbsComponents] = useState<AbsoluteComponent[]>([])
+  // RECIPE mode: растворитель (опционально) + компоненты
+  const [solventBatchId, setSolventBatchId] = useState("")
+  const [solventCategoryFilter, setSolventCategoryFilter] = useState("all")
+  const [components, setComponents] = useState<RecipeComponent[]>([])
 
   // DILUTION mode
   const [sourceStockId, setSourceStockId] = useState("")
   const [targetConc, setTargetConc] = useState<number>(0)
   const [targetConcUnit, setTargetConcUnit] = useState<string>('×')
   const [diluentBatchId, setDiluentBatchId] = useState("")
+  const [diluentCategoryFilter, setDiluentCategoryFilter] = useState("all")
 
   function prepDateState(): [string, (v: string) => void] {
     const [val, set] = useState(new Date().toISOString().split("T")[0])
@@ -159,38 +220,26 @@ export default function NewReadyMediumPage() {
 
   // ==================== BATCH FILTERS ====================
 
-  const mediaBatches = batches.filter(b => b.nomenclature?.category === "MEDIUM")
-  const componentBatches = batches.filter(
-    b => b.nomenclature?.category && b.nomenclature.category !== "MEDIUM" && b.nomenclature.category !== "CONSUMABLE"
-  )
-
-  function getFilteredComponents(catFilter: string) {
+  /** Все партии (кроме расходников), фильтрованные по категории */
+  function getFilteredBatches(catFilter: string) {
+    const nonConsumable = batches.filter(b => b.nomenclature?.category && b.nomenclature.category !== 'CONSUMABLE')
     return catFilter === 'all'
-      ? componentBatches
-      : componentBatches.filter(b => b.nomenclature?.category === catFilter)
+      ? nonConsumable
+      : nonConsumable.filter(b => b.nomenclature?.category === catFilter)
   }
 
-  // ==================== PERCENT CALCULATIONS ====================
+  // ==================== RECIPE CALCULATIONS ====================
 
-  const totalPctPercent = pctComponents.reduce((s, c) => s + c.percent, 0)
-  const basePctPercent = 100 - totalPctPercent
-  const basePctVolume = (basePctPercent / 100) * totalVolume
-
-  const pctWithVolume = pctComponents.map(c => ({
-    ...c,
-    volume_ml: (c.percent / 100) * totalVolume,
-  }))
-
-  // ==================== ABSOLUTE CALCULATIONS ====================
-
-  const totalAbsComponentVolume = absComponents.reduce((s, c) => s + (c.volume_ml || 0), 0)
-  const baseAbsVolume = totalVolume - totalAbsComponentVolume
+  // Суммарный объём компонентов, выраженных в % или мл
+  const totalComponentsVolume = components.reduce((s, c) => s + getComponentVolumeMl(c, totalVolume), 0)
+  const totalComponentsPercent = components.reduce((s, c) => c.mode === 'PERCENT' ? s + c.percent : s, 0)
+  const solventVolume = totalVolume - totalComponentsVolume
+  const solventPercent = totalVolume > 0 ? (solventVolume / totalVolume) * 100 : 0
 
   // ==================== DILUTION CALCULATIONS ====================
 
   const sourceStock = stocks.find(s => s.id === sourceStockId)
   const sourceConc = sourceStock?.concentration || 0
-  // C1*V1 = C2*V2 → V1 = C2*V2/C1
   const dilutionV1 = sourceConc > 0 && targetConc > 0
     ? (targetConc * totalVolume) / sourceConc
     : 0
@@ -201,60 +250,48 @@ export default function NewReadyMediumPage() {
   // ==================== AUTO-NAME ====================
 
   const autoName = useMemo(() => {
-    if (calcMode === 'DILUTION') {
+    if (formMode === 'DILUTION') {
       if (!sourceStock) return ""
       return `${sourceStock.name} ${targetConc}${targetConcUnit}`
     }
 
-    const baseBatch = mediaBatches.find(b => b.id === baseBatchId)
-    const baseName = baseBatch?.nomenclature?.name || ""
-    if (!baseName) return ""
+    const parts: string[] = []
 
-    const parts = [baseName]
-    const comps = calcMode === 'PERCENT' ? pctComponents : absComponents
-    for (const c of comps) {
+    // Растворитель
+    const solventBatch = batches.find(b => b.id === solventBatchId)
+    if (solventBatch?.nomenclature?.name) {
+      parts.push(solventBatch.nomenclature.name)
+    }
+
+    // Компоненты
+    for (const c of components) {
       const cb = batches.find(b => b.id === c.batch_id)
       if (cb?.nomenclature?.name) {
-        if (calcMode === 'PERCENT' && 'percent' in c && c.percent > 0) {
-          parts.push(`${c.percent}% ${cb.nomenclature.name}`)
-        } else if (calcMode === 'ABSOLUTE' && 'amount' in c && c.amount > 0) {
-          parts.push(`${c.amount}${(c as AbsoluteComponent).amount_unit} ${cb.nomenclature.name}`)
+        const label = getComponentAmountLabel(c)
+        if (label && label !== '0%' && label !== '0 мл' && label !== '0 мг' && label !== '0 ЕД') {
+          parts.push(`${label} ${cb.nomenclature.name}`)
         }
       }
     }
     return parts.join(" + ")
-  }, [calcMode, baseBatchId, pctComponents, absComponents, sourceStockId, targetConc, targetConcUnit, mediaBatches, batches, stocks, sourceStock])
+  }, [formMode, solventBatchId, components, sourceStockId, targetConc, targetConcUnit, batches, stocks, sourceStock])
 
   // ==================== COMPONENT ACTIONS ====================
 
-  function addPctComponent() {
-    componentCounter++
-    setPctComponents(prev => [...prev, { id: `pct-${componentCounter}`, batch_id: "", percent: 0, volume_ml: 0, categoryFilter: 'all' }])
-  }
-  function removePctComponent(id: string) {
-    setPctComponents(prev => prev.filter(c => c.id !== id))
-  }
-  function updatePctComponent(id: string, field: keyof PercentComponent, value: string | number) {
-    setPctComponents(prev => prev.map(c => {
-      if (c.id !== id) return c
-      const updated = { ...c, [field]: field === "percent" ? Number(value) : value }
-      if (field === "categoryFilter") updated.batch_id = ""
-      return updated
-    }))
+  function addComponent() {
+    setComponents(prev => [...prev, makeComponent()])
   }
 
-  function addAbsComponent() {
-    componentCounter++
-    setAbsComponents(prev => [...prev, { id: `abs-${componentCounter}`, batch_id: "", amount: 0, amount_unit: 'мг', volume_ml: 0, categoryFilter: 'all' }])
+  function removeComponent(id: string) {
+    setComponents(prev => prev.filter(c => c.id !== id))
   }
-  function removeAbsComponent(id: string) {
-    setAbsComponents(prev => prev.filter(c => c.id !== id))
-  }
-  function updateAbsComponent(id: string, field: keyof AbsoluteComponent, value: string | number) {
-    setAbsComponents(prev => prev.map(c => {
+
+  function updateComponent(id: string, updates: Partial<RecipeComponent>) {
+    setComponents(prev => prev.map(c => {
       if (c.id !== id) return c
-      const updated = { ...c, [field]: field === "amount" || field === "volume_ml" ? Number(value) : value }
-      if (field === "categoryFilter") updated.batch_id = ""
+      const updated = { ...c, ...updates }
+      // Сброс batch_id при смене категории
+      if ('categoryFilter' in updates) updated.batch_id = ''
       return updated
     }))
   }
@@ -266,10 +303,8 @@ export default function NewReadyMediumPage() {
     setLoading(true)
 
     try {
-      if (calcMode === 'PERCENT') {
-        await submitPercent()
-      } else if (calcMode === 'ABSOLUTE') {
-        await submitAbsolute()
+      if (formMode === 'RECIPE') {
+        await submitRecipe()
       } else {
         await submitDilution()
       }
@@ -283,65 +318,32 @@ export default function NewReadyMediumPage() {
     }
   }
 
-  async function submitPercent() {
-    if (totalPctPercent > 100) throw new Error("Сумма компонентов превышает 100%")
+  async function submitRecipe() {
+    if (solventVolume < -0.01) throw new Error("Объём компонентов превышает общий объём")
+    if (totalComponentsPercent > 100) throw new Error("Сумма процентных компонентов превышает 100%")
 
-    const baseBatch = mediaBatches.find(b => b.id === baseBatchId)
+    const solventBatch = batches.find(b => b.id === solventBatchId)
+
     const composition = {
-      mode: 'PERCENT',
-      base: {
-        batch_id: baseBatchId,
-        nomenclature: baseBatch?.nomenclature?.name,
-        percent: basePctPercent,
-        volume_ml: basePctVolume,
-      },
-      components: pctWithVolume
-        .filter(c => c.batch_id && c.percent > 0)
-        .map(c => {
-          const cb = batches.find(b => b.id === c.batch_id)
-          return { batch_id: c.batch_id, nomenclature: cb?.nomenclature?.name, percent: c.percent, volume_ml: c.volume_ml }
-        }),
-      total_volume_ml: totalVolume,
-    }
-
-    await createReadyMedium({
-      name: name || autoName,
-      batch_id: baseBatchId || null,
-      nomenclature_id: baseBatch?.nomenclature?.id || null,
-      volume_ml: totalVolume,
-      current_volume_ml: totalVolume,
-      physical_state: physicalState,
-      concentration: physicalState === 'STOCK_SOLUTION' && concentration > 0 ? concentration : null,
-      concentration_unit: physicalState === 'STOCK_SOLUTION' && concentration > 0 ? concentrationUnit : null,
-      composition,
-      prepared_at: prepDate || null,
-      expiration_date: expDate || null,
-      notes: notes || null,
-      status: "ACTIVE",
-    })
-  }
-
-  async function submitAbsolute() {
-    if (baseAbsVolume < 0) throw new Error("Объём компонентов превышает общий объём")
-
-    const baseBatch = mediaBatches.find(b => b.id === baseBatchId)
-    const composition = {
-      mode: 'ABSOLUTE',
-      base: {
-        batch_id: baseBatchId,
-        nomenclature: baseBatch?.nomenclature?.name,
-        volume_ml: baseAbsVolume,
-      },
-      components: absComponents
-        .filter(c => c.batch_id && c.amount > 0)
+      mode: 'RECIPE',
+      solvent: solventBatchId ? {
+        batch_id: solventBatchId,
+        nomenclature: solventBatch?.nomenclature?.name,
+        volume_ml: Math.round(solventVolume * 100) / 100,
+      } : null,
+      components: components
+        .filter(c => c.batch_id)
         .map(c => {
           const cb = batches.find(b => b.id === c.batch_id)
           return {
             batch_id: c.batch_id,
             nomenclature: cb?.nomenclature?.name,
-            amount: c.amount,
-            amount_unit: c.amount_unit,
-            volume_ml: c.volume_ml,
+            mode: c.mode,
+            ...(c.mode === 'PERCENT' && { percent: c.percent }),
+            ...(c.mode === 'VOLUME' && { volume: c.volume, volume_unit: c.volumeUnit }),
+            ...(c.mode === 'MASS' && { mass: c.mass, mass_unit: c.massUnit }),
+            ...(c.mode === 'ACTIVITY' && { activity: c.activity, activity_unit: c.activityUnit }),
+            volume_ml: getComponentVolumeMl(c, totalVolume),
           }
         }),
       total_volume_ml: totalVolume,
@@ -349,8 +351,8 @@ export default function NewReadyMediumPage() {
 
     await createReadyMedium({
       name: name || autoName,
-      batch_id: baseBatchId || null,
-      nomenclature_id: baseBatch?.nomenclature?.id || null,
+      batch_id: solventBatchId || null,
+      nomenclature_id: solventBatch?.nomenclature?.id || null,
       volume_ml: totalVolume,
       current_volume_ml: totalVolume,
       physical_state: physicalState,
@@ -368,7 +370,7 @@ export default function NewReadyMediumPage() {
     if (!sourceStockId) throw new Error("Выберите стоковый раствор")
     if (!dilutionValid) throw new Error("Невалидные параметры разведения")
 
-    const diluentBatch = mediaBatches.find(b => b.id === diluentBatchId)
+    const diluentBatch = batches.find(b => b.id === diluentBatchId)
     const composition = {
       mode: 'DILUTION',
       source: {
@@ -392,8 +394,7 @@ export default function NewReadyMediumPage() {
     await writeOffReadyMediumVolume(sourceStockId, dilutionV1)
 
     // 2. Списать разбавитель из batch (если есть)
-    if (diluentBatchId && dilutionVDiluent > 0) {
-      // Создаём фиктивную операцию для трекинга
+    if (diluentBatchId && diluentBatchId !== '__none__' && dilutionVDiluent > 0) {
       await writeOffBatchVolume(diluentBatchId, dilutionVDiluent, '', 'Разбавитель для разведения стока')
     }
 
@@ -418,9 +419,12 @@ export default function NewReadyMediumPage() {
 
   const canSubmit = (() => {
     if (loading) return false
-    if (calcMode === 'PERCENT') return !!baseBatchId && totalPctPercent <= 100
-    if (calcMode === 'ABSOLUTE') return !!baseBatchId && baseAbsVolume >= 0
-    if (calcMode === 'DILUTION') return !!sourceStockId && dilutionValid
+    if (formMode === 'RECIPE') {
+      // Нужен хотя бы растворитель ИЛИ хотя бы один компонент
+      const hasContent = !!solventBatchId || components.some(c => c.batch_id)
+      return hasContent && solventVolume >= -0.01 && totalComponentsPercent <= 100
+    }
+    if (formMode === 'DILUTION') return !!sourceStockId && dilutionValid
     return false
   })()
 
@@ -428,7 +432,7 @@ export default function NewReadyMediumPage() {
 
   return (
     <div className="container mx-auto py-6 max-w-3xl space-y-6">
-      {/* Back link */}
+      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/inventory"><ArrowLeft className="h-4 w-4" /></Link>
@@ -441,36 +445,35 @@ export default function NewReadyMediumPage() {
         </div>
       </div>
 
-      {/* Mode selector */}
+      {/* Mode selector: Recipe vs Dilution */}
       <Card>
         <CardContent className="pt-6">
           <div className="space-y-4">
-            <Label className="text-base font-medium">Режим калькулятора</Label>
-            <Tabs value={calcMode} onValueChange={v => setCalcMode(v as CalculatorMode)}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="PERCENT" className="gap-1.5">
-                  <span className="text-lg">%</span> Процент
-                </TabsTrigger>
-                <TabsTrigger value="ABSOLUTE" className="gap-1.5">
-                  <span className="text-sm font-bold">mg</span> Абсолют
+            <Label className="text-base font-medium">Режим</Label>
+            <Tabs value={formMode} onValueChange={v => setFormMode(v as FormMode)}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="RECIPE" className="gap-1.5">
+                  <Beaker className="h-4 w-4" /> Приготовление
                 </TabsTrigger>
                 <TabsTrigger value="DILUTION" className="gap-1.5">
-                  C<sub>1</sub>V<sub>1</sub> Разведение
+                  <FlaskConical className="h-4 w-4" /> Разведение стока
                 </TabsTrigger>
               </TabsList>
             </Tabs>
 
-            {/* Physical state (for PERCENT and ABSOLUTE only) */}
-            {calcMode !== 'DILUTION' && (
+            {/* Physical state (RECIPE only) */}
+            {formMode === 'RECIPE' && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Тип раствора</Label>
                   <Select value={physicalState} onValueChange={v => setPhysicalState(v as PhysicalState)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(Object.entries(PHYSICAL_STATE_LABELS) as [PhysicalState, string][]).map(([k, label]) => (
-                        <SelectItem key={k} value={k}>{label}</SelectItem>
-                      ))}
+                      {(Object.entries(PHYSICAL_STATE_LABELS) as [PhysicalState, string][])
+                        .filter(([k]) => k !== 'AS_RECEIVED')
+                        .map(([k, label]) => (
+                          <SelectItem key={k} value={k}>{label}</SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -506,30 +509,47 @@ export default function NewReadyMediumPage() {
 
       <form onSubmit={handleSubmit} className="space-y-6">
 
-        {/* ==================== PERCENT MODE ==================== */}
-        {calcMode === 'PERCENT' && (
+        {/* ==================== RECIPE MODE ==================== */}
+        {formMode === 'RECIPE' && (
           <>
-            {/* Базовая среда */}
+            {/* Растворитель / базовая среда */}
             <Card>
               <CardHeader>
-                <CardTitle>Базовая среда</CardTitle>
-                <CardDescription>Выберите партию базовой среды</CardDescription>
+                <CardTitle>Растворитель / Базовая среда</CardTitle>
+                <CardDescription>
+                  {physicalState === 'STOCK_SOLUTION'
+                    ? 'Вода, DMSO, PBS или другой растворитель для стока. Можно не указывать, если растворитель не со склада.'
+                    : 'Базовая среда (DMEM, RPMI, MEM...). Составит остаток объёма после добавок.'
+                  }
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   <div className="space-y-2">
-                    <Label>Партия базовой среды *</Label>
+                    <Label>Категория</Label>
+                    <Select value={solventCategoryFilter} onValueChange={v => { setSolventCategoryFilter(v); setSolventBatchId('') }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ALL_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Партия {physicalState === 'STOCK_SOLUTION' ? '(опционально)' : ''}</Label>
                     {batchesLoading ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                         <Loader2 className="h-4 w-4 animate-spin" /> Загрузка...
                       </div>
                     ) : (
-                      <Select value={baseBatchId} onValueChange={setBaseBatchId}>
-                        <SelectTrigger><SelectValue placeholder="Выберите партию среды..." /></SelectTrigger>
+                      <Select value={solventBatchId} onValueChange={setSolventBatchId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={physicalState === 'STOCK_SOLUTION' ? 'Без растворителя со склада' : 'Выберите среду...'} />
+                        </SelectTrigger>
                         <SelectContent>
-                          {mediaBatches.length === 0 ? (
-                            <SelectItem value="__empty" disabled>Нет доступных партий сред</SelectItem>
-                          ) : mediaBatches.map(batch => (
+                          {physicalState === 'STOCK_SOLUTION' && (
+                            <SelectItem value="__none__">Без растворителя со склада</SelectItem>
+                          )}
+                          {getFilteredBatches(solventCategoryFilter).map(batch => (
                             <SelectItem key={batch.id} value={batch.id}>
                               {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
                             </SelectItem>
@@ -538,44 +558,52 @@ export default function NewReadyMediumPage() {
                       </Select>
                     )}
                   </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Общий объём (мл) *</Label>
-                    <Input type="number" min={1} step={1} value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} required />
+                    <Input type="number" min={0.1} step="any" value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} required />
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Компоненты % */}
+            {/* Компоненты — per-component mode */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>Компоненты / Добавки</span>
-                  <Button type="button" variant="outline" size="sm" onClick={addPctComponent}>
+                  <span>Компоненты</span>
+                  <Button type="button" variant="outline" size="sm" onClick={addComponent}>
                     <Plus className="mr-1 h-4 w-4" /> Добавить
                   </Button>
                 </CardTitle>
-                <CardDescription>FBS, пенициллин-стрептомицин, L-глутамин, HEPES и другие добавки</CardDescription>
+                <CardDescription>
+                  Каждый компонент — свой режим ввода: %, объём (мл), масса (мг) или активность (ЕД)
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {pctComponents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">Нажмите «Добавить» для добавления компонентов</p>
-                ) : pctComponents.map((comp, idx) => {
-                  const filtered = getFilteredComponents(comp.categoryFilter)
+              <CardContent className="space-y-4">
+                {components.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    Нажмите «Добавить» для добавления компонентов (FBS, P/S, L-глутамин и др.)
+                  </p>
+                ) : components.map((comp, idx) => {
+                  const filtered = getFilteredBatches(comp.categoryFilter)
                   return (
-                    <div key={comp.id} className="border-b pb-3 space-y-2">
-                      <div className="flex items-end gap-3">
+                    <div key={comp.id} className="border rounded-lg p-3 space-y-3">
+                      {/* Row 1: Category + Batch */}
+                      <div className="flex items-end gap-2">
                         <div className="flex-1 space-y-1">
                           <Label className="text-xs text-muted-foreground">Компонент {idx + 1}</Label>
                           <div className="flex gap-2">
-                            <Select value={comp.categoryFilter} onValueChange={v => updatePctComponent(comp.id, "categoryFilter", v)}>
-                              <SelectTrigger className="w-[160px]"><SelectValue placeholder="Категория" /></SelectTrigger>
+                            <Select value={comp.categoryFilter} onValueChange={v => updateComponent(comp.id, { categoryFilter: v })}>
+                              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Категория" /></SelectTrigger>
                               <SelectContent>
-                                {COMPONENT_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                                {ALL_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Select value={comp.batch_id} onValueChange={v => updatePctComponent(comp.id, "batch_id", v)}>
-                              <SelectTrigger className="flex-1"><SelectValue placeholder="Выберите компонент..." /></SelectTrigger>
+                            <Select value={comp.batch_id} onValueChange={v => updateComponent(comp.id, { batch_id: v })}>
+                              <SelectTrigger className="flex-1"><SelectValue placeholder="Выберите..." /></SelectTrigger>
                               <SelectContent>
                                 {filtered.map(batch => (
                                   <SelectItem key={batch.id} value={batch.id}>
@@ -586,152 +614,91 @@ export default function NewReadyMediumPage() {
                             </Select>
                           </div>
                         </div>
-                        <div className="w-24 space-y-1">
-                          <Label className="text-xs text-muted-foreground">%</Label>
-                          <Input type="number" min={0} max={100} step={0.5} value={comp.percent || ""} onChange={e => updatePctComponent(comp.id, "percent", e.target.value)} placeholder="10" />
-                        </div>
-                        <div className="w-24 text-right">
-                          <p className="text-sm font-medium">{((comp.percent / 100) * totalVolume).toFixed(1)} мл</p>
-                        </div>
-                        <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removePctComponent(comp.id)}>
+                        <Button type="button" variant="ghost" size="icon" className="text-destructive shrink-0" onClick={() => removeComponent(comp.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
-                  )
-                })}
 
-                {/* Summary */}
-                <div className="mt-4 p-3 rounded-lg bg-muted/50 space-y-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calculator className="h-4 w-4 text-blue-500" />
-                    <span className="font-medium text-sm">Расчёт объёмов</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Базовая среда ({basePctPercent.toFixed(1)}%)</span>
-                    <span className="font-medium">{basePctVolume.toFixed(1)} мл</span>
-                  </div>
-                  {pctWithVolume.filter(c => c.batch_id && c.percent > 0).map(c => {
-                    const cb = batches.find(b => b.id === c.batch_id)
-                    return (
-                      <div key={c.id} className="flex justify-between text-sm">
-                        <span>{cb?.nomenclature?.name || "?"} ({c.percent}%)</span>
-                        <span className="font-medium">{c.volume_ml.toFixed(1)} мл</span>
-                      </div>
-                    )
-                  })}
-                  <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
-                    <span>ИТОГО</span>
-                    <span>{totalVolume.toFixed(1)} мл</span>
-                  </div>
-                  {totalPctPercent > 100 && (
-                    <p className="text-destructive text-xs mt-1">Сумма компонентов превышает 100%!</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
-
-        {/* ==================== ABSOLUTE MODE ==================== */}
-        {calcMode === 'ABSOLUTE' && (
-          <>
-            <Card>
-              <CardHeader>
-                <CardTitle>Базовая среда (растворитель)</CardTitle>
-                <CardDescription>Выберите среду-основу и задайте общий объём</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Партия базовой среды *</Label>
-                    {batchesLoading ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Загрузка...
-                      </div>
-                    ) : (
-                      <Select value={baseBatchId} onValueChange={setBaseBatchId}>
-                        <SelectTrigger><SelectValue placeholder="Выберите среду..." /></SelectTrigger>
-                        <SelectContent>
-                          {mediaBatches.length === 0 ? (
-                            <SelectItem value="__empty" disabled>Нет доступных партий</SelectItem>
-                          ) : mediaBatches.map(batch => (
-                            <SelectItem key={batch.id} value={batch.id}>
-                              {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Общий объём (мл) *</Label>
-                    <Input type="number" min={1} step={1} value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} required />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Absolute components */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Компоненты (абсолютные количества)</span>
-                  <Button type="button" variant="outline" size="sm" onClick={addAbsComponent}>
-                    <Plus className="mr-1 h-4 w-4" /> Добавить
-                  </Button>
-                </CardTitle>
-                <CardDescription>Укажите точное количество каждого компонента (мг, мкг, мл, ЕД)</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {absComponents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">Нажмите «Добавить» для добавления компонентов</p>
-                ) : absComponents.map((comp, idx) => {
-                  const filtered = getFilteredComponents(comp.categoryFilter)
-                  return (
-                    <div key={comp.id} className="border-b pb-3 space-y-2">
-                      <div className="flex items-end gap-3">
-                        <div className="flex-1 space-y-1">
-                          <Label className="text-xs text-muted-foreground">Компонент {idx + 1}</Label>
-                          <div className="flex gap-2">
-                            <Select value={comp.categoryFilter} onValueChange={v => updateAbsComponent(comp.id, "categoryFilter", v)}>
-                              <SelectTrigger className="w-[140px]"><SelectValue placeholder="Категория" /></SelectTrigger>
-                              <SelectContent>
-                                {COMPONENT_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                            <Select value={comp.batch_id} onValueChange={v => updateAbsComponent(comp.id, "batch_id", v)}>
-                              <SelectTrigger className="flex-1"><SelectValue placeholder="Выберите компонент..." /></SelectTrigger>
-                              <SelectContent>
-                                {filtered.map(batch => (
-                                  <SelectItem key={batch.id} value={batch.id}>
-                                    {batch.nomenclature?.name} — {batch.batch_number} ({formatBatchStock(batch)})
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <div className="w-24 space-y-1">
-                          <Label className="text-xs text-muted-foreground">Кол-во</Label>
-                          <Input type="number" min={0} step="any" value={comp.amount || ""} onChange={e => updateAbsComponent(comp.id, "amount", e.target.value)} placeholder="5" />
-                        </div>
-                        <div className="w-20 space-y-1">
-                          <Label className="text-xs text-muted-foreground">Ед.</Label>
-                          <Select value={comp.amount_unit} onValueChange={v => updateAbsComponent(comp.id, "amount_unit", v)}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
+                      {/* Row 2: Mode + Value */}
+                      <div className="flex items-end gap-2">
+                        {/* Mode selector */}
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Режим</Label>
+                          <Select value={comp.mode} onValueChange={v => updateComponent(comp.id, { mode: v as ComponentMode })}>
+                            <SelectTrigger className="w-[90px]"><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              {AMOUNT_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                              <SelectItem value="PERCENT">%</SelectItem>
+                              <SelectItem value="VOLUME">Объём</SelectItem>
+                              <SelectItem value="MASS">Масса</SelectItem>
+                              <SelectItem value="ACTIVITY">Акт.</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="w-24 space-y-1">
-                          <Label className="text-xs text-muted-foreground">Объём (мл)</Label>
-                          <Input type="number" min={0} step="any" value={comp.volume_ml || ""} onChange={e => updateAbsComponent(comp.id, "volume_ml", e.target.value)} placeholder="0.5" />
-                        </div>
-                        <Button type="button" variant="ghost" size="icon" className="text-destructive" onClick={() => removeAbsComponent(comp.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+
+                        {/* Value input — depends on mode */}
+                        {comp.mode === 'PERCENT' && (
+                          <div className="flex items-end gap-2 flex-1">
+                            <div className="w-24 space-y-1">
+                              <Label className="text-xs text-muted-foreground">%</Label>
+                              <Input type="number" min={0} max={100} step={0.1} value={comp.percent || ''} onChange={e => updateComponent(comp.id, { percent: parseFloat(e.target.value) || 0 })} placeholder="10" />
+                            </div>
+                            <p className="text-sm text-muted-foreground pb-2">= {getComponentVolumeMl(comp, totalVolume).toFixed(1)} мл</p>
+                          </div>
+                        )}
+
+                        {comp.mode === 'VOLUME' && (
+                          <div className="flex items-end gap-2 flex-1">
+                            <div className="w-24 space-y-1">
+                              <Label className="text-xs text-muted-foreground">Объём</Label>
+                              <Input type="number" min={0} step="any" value={comp.volume || ''} onChange={e => updateComponent(comp.id, { volume: parseFloat(e.target.value) || 0 })} placeholder="50" />
+                            </div>
+                            <div className="w-20 space-y-1">
+                              <Label className="text-xs text-muted-foreground">Ед.</Label>
+                              <Select value={comp.volumeUnit} onValueChange={v => updateComponent(comp.id, { volumeUnit: v })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {VOLUME_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
+
+                        {comp.mode === 'MASS' && (
+                          <div className="flex items-end gap-2 flex-1">
+                            <div className="w-24 space-y-1">
+                              <Label className="text-xs text-muted-foreground">Масса</Label>
+                              <Input type="number" min={0} step="any" value={comp.mass || ''} onChange={e => updateComponent(comp.id, { mass: parseFloat(e.target.value) || 0 })} placeholder="5" />
+                            </div>
+                            <div className="w-20 space-y-1">
+                              <Label className="text-xs text-muted-foreground">Ед.</Label>
+                              <Select value={comp.massUnit} onValueChange={v => updateComponent(comp.id, { massUnit: v })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {MASS_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
+
+                        {comp.mode === 'ACTIVITY' && (
+                          <div className="flex items-end gap-2 flex-1">
+                            <div className="w-24 space-y-1">
+                              <Label className="text-xs text-muted-foreground">Кол-во</Label>
+                              <Input type="number" min={0} step="any" value={comp.activity || ''} onChange={e => updateComponent(comp.id, { activity: parseFloat(e.target.value) || 0 })} placeholder="100" />
+                            </div>
+                            <div className="w-20 space-y-1">
+                              <Label className="text-xs text-muted-foreground">Ед.</Label>
+                              <Select value={comp.activityUnit} onValueChange={v => updateComponent(comp.id, { activityUnit: v })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {ACTIVITY_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
@@ -743,25 +710,58 @@ export default function NewReadyMediumPage() {
                     <Calculator className="h-4 w-4 text-blue-500" />
                     <span className="font-medium text-sm">Расчёт объёмов</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Базовая среда (растворитель)</span>
-                    <span className="font-medium">{baseAbsVolume.toFixed(1)} мл</span>
-                  </div>
-                  {absComponents.filter(c => c.batch_id && c.amount > 0).map(c => {
+
+                  {/* Растворитель */}
+                  {(solventBatchId && solventBatchId !== '__none__') && (() => {
+                    const sb = batches.find(b => b.id === solventBatchId)
+                    return (
+                      <div className="flex justify-between text-sm">
+                        <span>{sb?.nomenclature?.name || 'Растворитель'} ({solventPercent.toFixed(1)}%)</span>
+                        <span className="font-medium">{solventVolume.toFixed(1)} мл</span>
+                      </div>
+                    )
+                  })()}
+
+                  {!solventBatchId && (
+                    <div className="flex justify-between text-sm text-muted-foreground">
+                      <span>Растворитель (не выбран)</span>
+                      <span>{solventVolume.toFixed(1)} мл</span>
+                    </div>
+                  )}
+
+                  {/* Компоненты */}
+                  {components.filter(c => c.batch_id).map(c => {
                     const cb = batches.find(b => b.id === c.batch_id)
+                    const volMl = getComponentVolumeMl(c, totalVolume)
                     return (
                       <div key={c.id} className="flex justify-between text-sm">
-                        <span>{cb?.nomenclature?.name || "?"} ({c.amount} {c.amount_unit})</span>
-                        <span className="font-medium">{(c.volume_ml || 0).toFixed(1)} мл</span>
+                        <span>
+                          {cb?.nomenclature?.name || '?'} ({getComponentAmountLabel(c)})
+                        </span>
+                        <span className="font-medium">
+                          {volMl > 0 ? `${volMl.toFixed(1)} мл` : getComponentAmountLabel(c)}
+                        </span>
                       </div>
                     )
                   })}
+
                   <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
                     <span>ИТОГО</span>
                     <span>{totalVolume.toFixed(1)} мл</span>
                   </div>
-                  {baseAbsVolume < 0 && (
+
+                  {solventVolume < -0.01 && (
                     <p className="text-destructive text-xs mt-1">Объём компонентов превышает общий объём!</p>
+                  )}
+                  {totalComponentsPercent > 100 && (
+                    <p className="text-destructive text-xs mt-1">Сумма процентных компонентов превышает 100%!</p>
+                  )}
+
+                  {components.some(c => c.mode === 'MASS' || c.mode === 'ACTIVITY') && (
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                      <Info className="h-3 w-3" />
+                      Компоненты в мг/ЕД не вычитаются из объёма растворителя (навеска/суспензия)
+                    </p>
                   )}
                 </div>
               </CardContent>
@@ -770,7 +770,7 @@ export default function NewReadyMediumPage() {
         )}
 
         {/* ==================== DILUTION MODE ==================== */}
-        {calcMode === 'DILUTION' && (
+        {formMode === 'DILUTION' && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -792,7 +792,7 @@ export default function NewReadyMediumPage() {
                     <SelectTrigger><SelectValue placeholder="Выберите сток..." /></SelectTrigger>
                     <SelectContent>
                       {stocks.length === 0 ? (
-                        <SelectItem value="__empty" disabled>Нет доступных стоков. Приготовьте сток в режиме «Процент» или «Абсолют»</SelectItem>
+                        <SelectItem value="__empty" disabled>Нет доступных стоков. Приготовьте сток в режиме «Приготовление»</SelectItem>
                       ) : stocks.map(s => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.code} — {s.name} ({s.concentration}{s.concentration_unit || '×'}, {s.current_volume_ml ?? s.volume_ml} мл)
@@ -808,8 +808,8 @@ export default function NewReadyMediumPage() {
                 )}
               </div>
 
-              {/* Target concentration */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Target concentration + volume + diluent */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label>Целевая концентрация (C₂) *</Label>
                   <div className="flex gap-2">
@@ -824,15 +824,21 @@ export default function NewReadyMediumPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Целевой объём V₂ (мл) *</Label>
-                  <Input type="number" min={1} step={1} value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} required />
+                  <Input type="number" min={0.1} step="any" value={totalVolume} onChange={e => setTotalVolume(parseFloat(e.target.value) || 0)} required />
                 </div>
                 <div className="space-y-2">
                   <Label>Разбавитель</Label>
+                  <Select value={diluentCategoryFilter} onValueChange={v => { setDiluentCategoryFilter(v); setDiluentBatchId('') }}>
+                    <SelectTrigger className="mb-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {ALL_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                   <Select value={diluentBatchId} onValueChange={setDiluentBatchId}>
                     <SelectTrigger><SelectValue placeholder="Вода / PBS..." /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">Без списания</SelectItem>
-                      {mediaBatches.map(batch => (
+                      {getFilteredBatches(diluentCategoryFilter).map(batch => (
                         <SelectItem key={batch.id} value={batch.id}>
                           {batch.nomenclature?.name} — {batch.batch_number}
                         </SelectItem>
@@ -910,7 +916,7 @@ export default function NewReadyMediumPage() {
             {loading ? (
               <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Создание...</>
             ) : (
-              calcMode === 'DILUTION' ? "Развести и создать" : "Создать среду"
+              formMode === 'DILUTION' ? "Развести и создать" : "Создать среду"
             )}
           </Button>
           <Button type="button" variant="outline" asChild>

@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Stack**: Next.js 16 + TypeScript 5.9 + React 19 + Tailwind 4 + Supabase + Vercel
-- **Version**: 1.25.13
+- **Version**: 1.27.01
 - **Two workstations**: Work PC (C:\AICoding\Cline\LabPro master, C:\Users\volchkov.se\.claude-worktrees silly-tu) and Home PC (C:\VSCline\LabPro master, C:\Users\bioen\.claude-worktrees awesome-bohr)
 - **User tests on**: awesome-bohr preview URL (labpro-git-awesome-bohr-bioen07s-projects.vercel.app)
 - **Build cmd**: `cd frontend && node_modules/.bin/next build`
@@ -38,26 +38,29 @@
 - **OBSERVE**: only updates containers (confluent_percent), NO operation_metrics yet
 - **FEED**: only writes off media, no metrics
 
-## Session 12.02.2026 Changes (v1.25.11 → v1.25.13)
-- Freeze: lot update (final_cells, viability, harvest_at)
-- Freeze: cryovials filtered by FREEZING usage_tag
-- Freeze: working volume (unified/individual per vial)
-- Thaw: initial_cells from cryo_vial.cells_count + operation_metrics
-- Lot page: bank badge (MCB/WCB) with code and QC status
-- Removed concentration (cells/ml) from lot/culture cards
-- Culture page: closed lots grouped into collapsible block
-- Culture page: bank badge on each lot card
-- Culture page: parent lot info in lot headers
-- Culture page: total cells includes initial_cells fallback
-- Culture page: Td card in Row 3 metrics
-- Reverted unnecessary CONSUMABLE changes (cryovials = container_types with is_cryo)
+## Session 14.02.2026 Changes (v1.27.01)
+- Inventory/new: unit auto-fill from nomenclature (unit_type → cascading Select)
+- Inventory/new: content_per_package auto-fills for consumables
+- Calculator: per-component mode (each component has its own %, ml, mg, or ЕД)
+- Calculator: "Base medium" → "Solvent" — optional for stocks (water, DMSO, PBS — any category)
+- Calculator: solvent/diluent with category filter (not only MEDIUM)
+- Calculator: removed AS_RECEIVED from physical state (separate "Add batch" button)
+- Calculator: 2 modes — Recipe (RECIPE) and Stock Dilution (DILUTION)
+- Calculator: mass/activity components don't subtract from solvent volume
+
+## Session 12.02.2026 (v1.25.11 → v1.27.00)
+- v1.25.11-v1.25.17: Freeze/Thaw metrics, usage_tags, category filters, low stock thresholds
+- v1.26.00: Ready media card, expiration fix, primary culture form, OBSERVE metrics
+- v1.27.00: Unit types, physical states, stocks, calculator 3 modes, per-package tracking
 
 ## TODO for Next Session
-1. OBSERVE: consider adding operation_metrics for confluence history
-2. RBAC: permission matrix (low priority)
-3. Test all culture page changes on live data
+1. submitRecipe: actually write off batch volumes for solvent + each component
+2. Test full recipe + stock workflow on live data
+3. Molar calculations (mM/M using molecular_weight from nomenclature)
+4. Recipe templates (save/load)
+5. RBAC: permission matrix (low priority)
 
 ## Current Status
-- All 25 phases + 12 iterations complete
+- All 25 phases + 17 iterations complete
 - RBAC only partially done (roles exist, RLS enabled but USING(true))
 - CULTURE_METRICS.md has full formula documentation

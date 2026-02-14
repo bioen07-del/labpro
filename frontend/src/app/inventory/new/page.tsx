@@ -21,13 +21,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 
 import { createBatch, getNomenclatures } from "@/lib/api"
-
-const unitOptions = [
-  { value: "шт", label: "шт" },
-  { value: "мл", label: "мл" },
-  { value: "г", label: "г" },
-  { value: "л", label: "л" },
-]
+import { getUnitsForType, getDefaultUnit } from "@/lib/units"
+import type { UnitType, MeasurementUnit } from "@/types"
 
 function NewBatchPageInner() {
   const router = useRouter()
@@ -140,6 +135,34 @@ function NewBatchPageInner() {
 
   const update = (key: string, value: string) => setFormData(prev => ({ ...prev, [key]: value }))
 
+  // Автоподтягивание unit + volume_per_unit из номенклатуры
+  const handleNomenclatureChange = (nomId: string) => {
+    const nom = nomenclatures.find((n: any) => n.id === nomId)
+    const updates: Record<string, string> = { nomenclature_id: nomId }
+
+    if (nom) {
+      // unit: берём из номенклатуры, fallback на дефолт по категории
+      if (nom.unit) {
+        updates.unit = nom.unit
+      } else {
+        const defaults = getDefaultUnit(nom.category)
+        updates.unit = defaults.unit
+      }
+
+      // content_per_package → volume_per_unit для CONSUMABLE
+      if (nom.category === 'CONSUMABLE' && nom.content_per_package) {
+        updates.volume_per_unit = String(nom.content_per_package)
+      }
+    }
+
+    setFormData(prev => ({ ...prev, ...updates }))
+  }
+
+  // Список единиц, каскадный от выбранной номенклатуры
+  const selectedNom = nomenclatures.find((n: any) => n.id === formData.nomenclature_id)
+  const activeUnitType: UnitType = selectedNom?.unit_type || (selectedNom ? getDefaultUnit(selectedNom.category).unitType : 'COUNT')
+  const availableUnits = getUnitsForType(activeUnitType)
+
   return (
     <div className="container py-6 space-y-6 max-w-2xl">
       {/* Header */}
@@ -172,7 +195,7 @@ function NewBatchPageInner() {
             {/* Category filter */}
             <div className="space-y-2">
               <Label>Категория</Label>
-              <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); update('nomenclature_id', '') }}>
+              <Select value={categoryFilter} onValueChange={(v) => { setCategoryFilter(v); setFormData(prev => ({ ...prev, nomenclature_id: '', unit: 'шт', volume_per_unit: '' })) }}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Все категории" />
                 </SelectTrigger>
@@ -198,7 +221,7 @@ function NewBatchPageInner() {
                   Загрузка номенклатуры...
                 </div>
               ) : (
-                <Select value={formData.nomenclature_id} onValueChange={(v) => update('nomenclature_id', v)}>
+                <Select value={formData.nomenclature_id} onValueChange={handleNomenclatureChange}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Выберите номенклатуру" />
                   </SelectTrigger>
@@ -270,9 +293,9 @@ function NewBatchPageInner() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {unitOptions.map((u) => (
-                            <SelectItem key={u.value} value={u.value}>
-                              {u.label}
+                          {availableUnits.map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {u}
                             </SelectItem>
                           ))}
                         </SelectContent>
