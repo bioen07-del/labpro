@@ -959,20 +959,27 @@ export default function ReferencesPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Фасовка (на 1 ед.)</Label>
                 <Input type="number" min={0} step="any" value={form.content_per_package ?? ''} onChange={e => updateForm('content_per_package', e.target.value)} placeholder="5" />
                 <p className="text-xs text-muted-foreground mt-1">Объём/масса в 1 флаконе/банке ({form.unit || 'мл'})</p>
               </div>
               <div>
-                <Label>Молекулярная масса (г/моль)</Label>
-                <Input type="number" min={0} step="any" value={form.molecular_weight ?? ''} onChange={e => updateForm('molecular_weight', e.target.value)} placeholder="238.3" />
-                <p className="text-xs text-muted-foreground mt-1">Для пересчёта масса↔моль в калькуляторе</p>
-              </div>
-              <div>
                 <Label>Условия хранения</Label>
                 <Input value={form.storage_requirements || ''} onChange={e => updateForm('storage_requirements', e.target.value)} placeholder="+2..+8°C, −20°C" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Молекулярная масса (г/моль)</Label>
+                <Input type="number" min={0} step="any" value={form.molecular_weight ?? ''} onChange={e => updateForm('molecular_weight', e.target.value)} placeholder="238.3" />
+                <p className="text-xs text-muted-foreground mt-1">Для пересчёта масса↔моль в калькуляторе стока</p>
+              </div>
+              <div>
+                <Label>Удельная активность (ЕД/мг)</Label>
+                <Input type="number" min={0} step="any" value={form.specific_activity ?? ''} onChange={e => updateForm('specific_activity', e.target.value)} placeholder="250" />
+                <p className="text-xs text-muted-foreground mt-1">Для ферментов: пересчёт масса→ЕД в калькуляторе стока</p>
               </div>
             </div>
             {/* Min stock threshold */}

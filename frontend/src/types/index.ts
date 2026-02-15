@@ -322,6 +322,7 @@ export interface Nomenclature {
   packaging_unit?: CountUnit
   content_per_package?: number
   molecular_weight?: number
+  specific_activity?: number
   storage_temp?: number
   storage_requirements?: string
   usage_tags?: UsageTag[]

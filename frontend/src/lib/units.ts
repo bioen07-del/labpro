@@ -204,7 +204,7 @@ export function getConcentrationLabel(concentration: number | undefined, concent
 /**
  * Единицы концентрации для выбора
  */
-export const CONCENTRATION_UNITS = ['×', 'мг/мл', 'мкг/мл', 'мМ', 'М', '%'] as const
+export const CONCENTRATION_UNITS = ['×', 'мг/мл', 'мкг/мл', 'мМ', 'М', '%', 'ЕД/мл'] as const
 export type ConcentrationUnit = typeof CONCENTRATION_UNITS[number]
 
 /**
@@ -282,6 +282,49 @@ export function calcMolarConc(
   if (moles == null || volumeMl <= 0) return null
   const mmol = moles * 1000
   return mmol / volumeMl
+}
+
+// ==================== РАСЧЁТЫ АКТИВНОСТИ ====================
+
+/**
+ * Рассчитать общую активность (ЕД) по массе и удельной активности.
+ * amount — масса (в unit), specificActivity — ЕД/мг
+ */
+export function calcTotalActivity(amount: number, unit: string, specificActivity: number): number | null {
+  const type = getUnitType(unit)
+  if (type !== 'MASS' || specificActivity <= 0) return null
+  const mg = amount * MASS_FACTORS[unit as MassUnit] / MASS_FACTORS['мг'] // конвертируем в мг
+  return mg * specificActivity
+}
+
+/**
+ * Рассчитать объём растворителя для целевой концентрации ЕД/мл.
+ * amount — масса (в unit), specificActivity — ЕД/мг, targetEUml — целевая ЕД/мл.
+ * Возвращает мл или null.
+ */
+export function calcVolumeForActivityConc(
+  amount: number,
+  unit: string,
+  specificActivity: number,
+  targetEUml: number,
+): number | null {
+  const totalEU = calcTotalActivity(amount, unit, specificActivity)
+  if (totalEU == null || targetEUml <= 0) return null
+  return totalEU / targetEUml
+}
+
+/**
+ * Рассчитать концентрацию ЕД/мл при заданном объёме растворителя.
+ */
+export function calcActivityConc(
+  amount: number,
+  unit: string,
+  specificActivity: number,
+  volumeMl: number,
+): number | null {
+  const totalEU = calcTotalActivity(amount, unit, specificActivity)
+  if (totalEU == null || volumeMl <= 0) return null
+  return totalEU / volumeMl
 }
 
 export const ALL_UNITS: MeasurementUnit[] = [

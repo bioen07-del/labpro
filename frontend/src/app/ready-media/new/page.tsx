@@ -23,7 +23,7 @@ import {
   createReadyMedium, getBatches, getAvailableStocks, getAvailableReadyMedia,
   writeOffBatchVolume, writeOffReadyMediumVolume,
 } from "@/lib/api"
-import { CONCENTRATION_UNITS, calcVolumeForMolarConc, calcMolarConc, toMoles } from "@/lib/units"
+import { CONCENTRATION_UNITS, calcVolumeForMolarConc, calcMolarConc, toMoles, calcTotalActivity, calcVolumeForActivityConc, calcActivityConc } from "@/lib/units"
 
 // ==================== TYPES ====================
 
@@ -40,7 +40,7 @@ interface BatchOption {
   unit: string
   volume_per_unit?: number | null
   current_unit_volume?: number | null
-  nomenclature?: { id: string; name: string; category: string; molecular_weight?: number | null } | null
+  nomenclature?: { id: string; name: string; category: string; molecular_weight?: number | null; specific_activity?: number | null } | null
   expiration_date?: string
 }
 
@@ -1025,46 +1025,57 @@ export default function NewReadyMediumPage() {
                 </div>
               </div>
 
-              {/* Подсказка-калькулятор для молярных расчётов */}
+              {/* Подсказка-калькулятор: молярный + активность */}
               {(() => {
                 const srcBatch = stockSourceBatchId ? batches.find((b: BatchOption) => b.id === stockSourceBatchId) : null
-                const mw = srcBatch?.nomenclature?.molecular_weight
-                const batchUnit = srcBatch?.unit || ''
-                const batchQtyPerUnit = srcBatch?.volume_per_unit ?? 0
-                const isMolarConc = stockConcUnit === 'мМ' || stockConcUnit === 'М'
+                if (!srcBatch) return null
 
-                // Кол-во вещества в одной единице (флаконе)
+                const mw = srcBatch.nomenclature?.molecular_weight
+                const sa = srcBatch.nomenclature?.specific_activity // ЕД/мг
+                const batchUnit = srcBatch.unit || ''
+                const batchQtyPerUnit = srcBatch.volume_per_unit ?? 0
                 const amountPerUnit = batchQtyPerUnit > 0 ? batchQtyPerUnit : 1
+
+                const isMolarConc = stockConcUnit === 'мМ' || stockConcUnit === 'М'
+                const isActivityConc = stockConcUnit === 'ЕД/мл'
+                const isMassConc = stockConcUnit === 'мг/мл' || stockConcUnit === 'мкг/мл'
+
+                // Нужна ли подсказка? Да, если есть MW, SA, или молярная единица партии
+                const hasMolarUnit = ['мкмоль', 'ммоль', 'моль'].includes(batchUnit)
+                if (!mw && !sa && !hasMolarUnit) return null
+
                 const moles = toMoles(amountPerUnit, batchUnit, mw)
-
-                // Показываем подсказку если: (a) выбран реагент с MW или молярной единицей, (b) конц. молярная
-                if (!srcBatch || (!mw && !['мкмоль', 'ммоль', 'моль'].includes(batchUnit))) return null
-
+                const totalEU = sa ? calcTotalActivity(amountPerUnit, batchUnit, sa) : null
                 const targetConcMM = stockConcUnit === 'М' ? stockConc * 1000 : stockConcUnit === 'мМ' ? stockConc : 0
 
                 return (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
                     <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
                       <FlaskRound className="h-4 w-4" />
-                      Подсказка: молярный расчёт
+                      Подсказка: расчёт стока
                     </p>
                     <div className="text-sm text-blue-700 space-y-1">
-                      {mw ? (
-                        <p>MW = <span className="font-semibold">{mw} г/моль</span> (из справочника)</p>
-                      ) : null}
+                      {/* Справочные данные */}
+                      {mw ? <p>MW = <span className="font-semibold">{mw} г/моль</span></p> : null}
+                      {sa ? <p>Уд. активность = <span className="font-semibold">{sa} ЕД/мг</span></p> : null}
+
+                      {/* Кол-во вещества */}
                       {moles != null ? (
-                        <p>В 1 ед. реагента ({amountPerUnit} {batchUnit}): <span className="font-semibold">
+                        <p>В 1 ед. ({amountPerUnit} {batchUnit}): <span className="font-semibold">
                           {moles >= 0.001 ? `${(moles * 1000).toFixed(2)} ммоль` : `${(moles * 1e6).toFixed(1)} мкмоль`}
                         </span></p>
-                      ) : mw ? (
-                        <p className="text-blue-500 italic">Укажите объём/массу на единицу в справочнике для расчёта</p>
+                      ) : null}
+                      {totalEU != null ? (
+                        <p>В 1 ед. ({amountPerUnit} {batchUnit}): <span className="font-semibold">
+                          {totalEU >= 1000 ? `${(totalEU / 1000).toFixed(1)} тыс. ЕД` : `${totalEU.toFixed(0)} ЕД`}
+                        </span></p>
                       ) : null}
 
-                      {/* Рассчитываем объём или концентрацию */}
+                      {/* --- МОЛЯРНЫЙ расчёт --- */}
                       {isMolarConc && moles != null && targetConcMM > 0 ? (
                         <>
                           {stockVolume > 0 ? (
-                            <p>При {stockVolume} мл растворителя → конц. = <span className="font-semibold">
+                            <p>При {stockVolume} мл → <span className="font-semibold">
                               {(() => {
                                 const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
                                 if (c == null) return '—'
@@ -1072,29 +1083,66 @@ export default function NewReadyMediumPage() {
                               })()}
                             </span></p>
                           ) : null}
-                          <p>Для {stockConc} {stockConcUnit} → нужно <span className="font-semibold">
+                          <p>Для {stockConc} {stockConcUnit} → <span className="font-semibold">
                             {(() => {
                               const v = calcVolumeForMolarConc(amountPerUnit, batchUnit, targetConcMM, mw)
                               if (v == null) return '—'
-                              return `${v.toFixed(2)} мл`
+                              return `${v.toFixed(2)} мл растворителя`
                             })()}
-                          </span> растворителя</p>
+                          </span></p>
                         </>
                       ) : isMolarConc && moles == null ? (
                         <p className="text-amber-600">
-                          {!mw ? 'Укажите молекулярную массу (MW) в справочнике номенклатуры для пересчёта масса→моли' : 'Невозможно рассчитать — проверьте единицы реагента'}
+                          {!mw ? 'Укажите MW в справочнике для пересчёта масса→моли' : 'Невозможно рассчитать — проверьте единицы'}
                         </p>
                       ) : null}
 
-                      {/* Если конц. не молярная, но есть MW — показываем пересчёт */}
-                      {!isMolarConc && moles != null && stockVolume > 0 ? (
-                        <p>Молярная конц.: <span className="font-semibold">
-                          {(() => {
-                            const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
-                            if (c == null) return '—'
-                            return c >= 1 ? `${c.toFixed(2)} мМ` : `${(c * 1000).toFixed(1)} мкМ`
-                          })()}
-                        </span> (справочно)</p>
+                      {/* --- АКТИВНОСТЬ расчёт --- */}
+                      {isActivityConc && totalEU != null && stockConc > 0 ? (
+                        <>
+                          {stockVolume > 0 ? (
+                            <p>При {stockVolume} мл → <span className="font-semibold">
+                              {(() => {
+                                const c = calcActivityConc(amountPerUnit, batchUnit, sa!, stockVolume)
+                                if (c == null) return '—'
+                                return `${c.toFixed(1)} ЕД/мл`
+                              })()}
+                            </span></p>
+                          ) : null}
+                          <p>Для {stockConc} ЕД/мл → <span className="font-semibold">
+                            {(() => {
+                              const v = calcVolumeForActivityConc(amountPerUnit, batchUnit, sa!, stockConc)
+                              if (v == null) return '—'
+                              return `${v.toFixed(2)} мл растворителя`
+                            })()}
+                          </span></p>
+                        </>
+                      ) : isActivityConc && !sa ? (
+                        <p className="text-amber-600">Укажите удельную активность (ЕД/мг) в справочнике номенклатуры</p>
+                      ) : null}
+
+                      {/* --- Справочные пересчёты (когда конц. другого типа) --- */}
+                      {!isMolarConc && !isActivityConc && stockVolume > 0 ? (
+                        <>
+                          {moles != null ? (
+                            <p>Молярная конц.: <span className="font-semibold">
+                              {(() => {
+                                const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
+                                if (c == null) return '—'
+                                return c >= 1 ? `${c.toFixed(2)} мМ` : `${(c * 1000).toFixed(1)} мкМ`
+                              })()}
+                            </span> (справочно)</p>
+                          ) : null}
+                          {totalEU != null ? (
+                            <p>Активность: <span className="font-semibold">
+                              {(() => {
+                                const c = calcActivityConc(amountPerUnit, batchUnit, sa!, stockVolume)
+                                if (c == null) return '—'
+                                return `${c.toFixed(1)} ЕД/мл`
+                              })()}
+                            </span> (справочно)</p>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                   </div>

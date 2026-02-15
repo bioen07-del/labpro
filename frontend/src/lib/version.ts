@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.29.02"
+export const APP_VERSION = "1.30.00"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,17 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.30.00",
+    date: "15.02.2026",
+    changes: [
+      "STOCK калькулятор: расчёт по удельной активности (ЕД/мг) — масса × ЕД/мг → объём для целевой ЕД/мл",
+      "ЕД/мл добавлен в единицы концентрации (CONCENTRATION_UNITS)",
+      "Справочник: поле «Удельная активность (ЕД/мг)» для ферментов",
+      "units.ts: calcTotalActivity(), calcVolumeForActivityConc(), calcActivityConc()",
+      "STOCK подсказка: единый блок для молярного + активности + справочных пересчётов",
+    ],
+  },
   {
     version: "1.29.02",
     date: "15.02.2026",
