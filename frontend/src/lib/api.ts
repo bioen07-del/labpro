@@ -1515,7 +1515,7 @@ export function checkBatchVolumeDeduction(
 export async function writeOffBatchVolume(
   batchId: string,
   volumeMl: number,
-  operationId: string,
+  operationId: string | null,
   purpose: string
 ): Promise<{ newQuantity: number; newCurrentUnitVolume: number | null; unitsOpened: number }> {
   const { data: batch, error } = await supabase
@@ -1582,15 +1582,18 @@ export async function writeOffBatchVolume(
 
   await supabase.from('batches').update(updateData).eq('id', batchId)
 
-  await createInventoryMovement({
+  const movement: Record<string, unknown> = {
     batch_id: batchId,
     movement_type: 'CONSUME',
     quantity: -volumeMl,
-    unit: 'мл',
-    reference_type: 'OPERATION',
-    reference_id: operationId,
     notes: `${purpose} (${volumeMl} мл)${unitsOpened > 0 ? ` [открыто ${unitsOpened} нов. ед.]` : ''}`,
-  })
+  }
+  if (operationId) {
+    movement.reference_type = 'OPERATION'
+    movement.reference_id = operationId
+  }
+
+  await createInventoryMovement(movement)
 
   return { newQuantity, newCurrentUnitVolume, unitsOpened }
 }
@@ -2271,19 +2274,31 @@ export async function getReadyMediumById(id: string) {
   return data
 }
 
-export async function createReadyMedium(readyMedium: Record<string, unknown>) {
+export async function createReadyMedium(readyMedium: Record<string, unknown>, codeOffset = 0) {
   const { count } = await supabase
     .from('ready_media')
     .select('*', { count: 'exact', head: true })
-  
-  const code = `RM-${String((count || 0) + 1).padStart(4, '0')}`
-  
+
+  const code = `RM-${String((count || 0) + 1 + codeOffset).padStart(4, '0')}`
+
   const { data, error } = await supabase
     .from('ready_media')
     .insert({ ...readyMedium, code })
     .select()
     .single()
-  
+
+  // Retry with incremented code on unique constraint violation
+  if (error && error.code === '23505') {
+    const retryCode = `RM-${String((count || 0) + 2 + codeOffset).padStart(4, '0')}`
+    const { data: retryData, error: retryError } = await supabase
+      .from('ready_media')
+      .insert({ ...readyMedium, code: retryCode })
+      .select()
+      .single()
+    if (retryError) throw retryError
+    return retryData
+  }
+
   if (error) throw error
   return data
 }

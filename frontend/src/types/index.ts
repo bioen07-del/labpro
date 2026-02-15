@@ -370,7 +370,7 @@ export interface InventoryMovement {
 }
 
 // Ready Medium
-export type ReadyMediumStatus = 'QUARANTINE' | 'ACTIVE' | 'EXPIRED' | 'DISPOSE'
+export type ReadyMediumStatus = 'QUARANTINE' | 'ACTIVE' | 'PREPARED' | 'EXPIRED' | 'USED' | 'DISPOSE'
 export type SterilizationMethod = 'FILTRATION' | 'AUTOCLAVE'
 
 export interface ReadyMedium {

@@ -179,8 +179,9 @@ export default function InventoryPage() {
   const activeMediaList = categoryTab === 'stock_solutions' ? stockMedia : workingMedia
 
   // Ready media uses ACTIVE instead of AVAILABLE
+  // LOW_STOCK / USED не применимы к ready_media — трактуем как 'all'
   const filteredReadyMedia = activeMediaList.filter(media => {
-    if (selectedStatus !== 'all') {
+    if (selectedStatus !== 'all' && selectedStatus !== 'LOW_STOCK' && selectedStatus !== 'USED') {
       const mediaStatus = selectedStatus === 'AVAILABLE' ? 'ACTIVE' : selectedStatus
       if (media.status !== mediaStatus) return false
     }
@@ -207,7 +208,9 @@ export default function InventoryPage() {
     ? batches
     : isMediaTab
       ? []
-      : batches.filter(b => b.nomenclature?.category === categoryTab)
+      : categoryTab === 'MEDIUM'
+        ? batches.filter(b => MEDIA_CATEGORIES.has(b.nomenclature?.category))
+        : batches.filter(b => b.nomenclature?.category === categoryTab)
 
   const stats = {
     total: isMediaTab ? activeMediaList.length : categoryBatches.length,

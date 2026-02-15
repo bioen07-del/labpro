@@ -441,12 +441,12 @@ export default function ReadyMediumDetailPage() {
                         <div>
                           <p className="font-medium">{composition.source.name || 'Сток'}</p>
                           <p className="text-xs text-muted-foreground">
-                            Стоковый раствор ({composition.source.concentration}{composition.source.concentration_unit || '×'})
+                            Стоковый раствор{composition.source.concentration ? ` (${composition.source.concentration}${composition.source.concentration_unit || '×'})` : ''}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-semibold">{composition.source.volume_ml} мл</p>
+                        <p className="font-semibold">{composition.source.volume_ml || '—'} мл</p>
                       </div>
                     </div>
                   )}
@@ -466,7 +466,7 @@ export default function ReadyMediumDetailPage() {
                   )}
                   <div className="flex justify-between pt-2 border-t text-sm">
                     <span className="text-muted-foreground">Целевая концентрация</span>
-                    <span className="font-semibold">{composition.target_concentration}{composition.target_concentration_unit || '×'}</span>
+                    <span className="font-semibold">{composition.target_concentration ?? '—'}{composition.target_concentration ? (composition.target_concentration_unit || '×') : ''}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Общий объём</span>
@@ -538,9 +538,14 @@ export default function ReadyMediumDetailPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        {comp.percent != null && <p className="font-semibold">{comp.percent}%</p>}
-                        {comp.amount != null && <p className="font-semibold">{comp.amount} {comp.amount_unit || ''}</p>}
-                        {comp.volume_ml != null && (
+                        {comp.percent != null && comp.mode === 'PERCENT' && <p className="font-semibold">{comp.percent}%</p>}
+                        {comp.volume != null && comp.mode === 'VOLUME' && <p className="font-semibold">{comp.volume} {comp.volume_unit || 'мл'}</p>}
+                        {comp.mass != null && comp.mode === 'MASS' && <p className="font-semibold">{comp.mass} {comp.mass_unit || 'мг'}</p>}
+                        {comp.activity != null && comp.mode === 'ACTIVITY' && <p className="font-semibold">{comp.activity} {comp.activity_unit || 'ЕД'}</p>}
+                        {/* Legacy format without mode */}
+                        {!comp.mode && comp.percent != null && <p className="font-semibold">{comp.percent}%</p>}
+                        {!comp.mode && comp.amount != null && <p className="font-semibold">{comp.amount} {comp.amount_unit || ''}</p>}
+                        {comp.volume_ml != null && comp.volume_ml > 0 && (
                           <p className="text-xs text-muted-foreground">{comp.volume_ml} мл</p>
                         )}
                       </div>

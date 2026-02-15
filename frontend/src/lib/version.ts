@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.28.00"
+export const APP_VERSION = "1.28.01"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,24 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.28.01",
+    date: "15.02.2026",
+    changes: [
+      "CRITICAL Fix: writeOffBatchVolume — пустая строка '' вместо UUID в reference_id (Postgres 22P02 error)",
+      "CRITICAL Fix: генерация кода RM-XXXX — race condition при создании N аликвот (codeOffset + retry на 23505)",
+      "CRITICAL Fix: submitDilution/submitAliquot — create record ПЕРЕД write-off (защита от потери инвентаря)",
+      "Fix: сброс name/notes/totalVolume при переключении режимов калькулятора (data leak между табами)",
+      "Fix: DILUTION — проверка targetConc < sourceConc перед submit",
+      "Fix: ReadyMediumStatus тип — добавлены USED и PREPARED",
+      "Fix: stats «Поступления» считает все 6 категорий (MEDIUM+SERUM+BUFFER+SUPPLEMENT+ENZYME+REAGENT)",
+      "Fix: LOW_STOCK/USED фильтры больше не обнуляют таблицу ready_media/stocks",
+      "Fix: canSubmit RECIPE — проверка totalVolume > 0",
+      "Fix: удалён мёртвый код recipeIsStock/concentration (RECIPE → всегда WORKING_SOLUTION)",
+      "Fix: RECIPE solvent из ready_media — ставит parent_medium_id",
+      "Fix: detail page — корректное отображение VOLUME/MASS/ACTIVITY компонентов + null guards",
+    ],
+  },
   {
     version: "1.28.00",
     date: "15.02.2026",

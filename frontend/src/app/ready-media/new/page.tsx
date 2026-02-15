@@ -184,10 +184,7 @@ export default function NewReadyMediumPage() {
   // Form mode
   const [formMode, setFormMode] = useState<FormMode>('RECIPE')
 
-  // RECIPE: concentration for multi-component stocks
-  const [recipeIsStock, setRecipeIsStock] = useState(false)
-  const [concentration, setConcentration] = useState<number>(0)
-  const [concentrationUnit, setConcentrationUnit] = useState<string>('×')
+  // RECIPE mode не поддерживает создание стоков (для этого есть STOCK mode)
 
   // Common fields
   const [name, setName] = useState("")
@@ -432,8 +429,6 @@ export default function NewReadyMediumPage() {
       total_volume_ml: totalVolume,
     }
 
-    const physicalState = recipeIsStock ? 'STOCK_SOLUTION' : 'WORKING_SOLUTION'
-
     await createReadyMedium({
       name: name || autoName,
       batch_id: hasSolvent && solventParsed?.type === 'batch' ? solventParsed.id : null,
@@ -442,9 +437,8 @@ export default function NewReadyMediumPage() {
         : null,
       volume_ml: totalVolume,
       current_volume_ml: totalVolume,
-      physical_state: physicalState,
-      concentration: recipeIsStock && concentration > 0 ? concentration : null,
-      concentration_unit: recipeIsStock && concentration > 0 ? concentrationUnit : null,
+      physical_state: 'WORKING_SOLUTION',
+      parent_medium_id: hasSolvent && solventParsed?.type === 'rm' ? solventParsed.id : null,
       composition,
       prepared_at: prepDate || null,
       expiration_date: expDate || null,
@@ -457,7 +451,7 @@ export default function NewReadyMediumPage() {
       const vol = Math.max(solventVolume, 0)
       if (vol > 0) {
         if (solventParsed.type === 'batch') {
-          await writeOffBatchVolume(solventParsed.id, vol, '', 'Растворитель для рабочей среды')
+          await writeOffBatchVolume(solventParsed.id, vol, null, 'Растворитель для рабочей среды')
         } else {
           await writeOffReadyMediumVolume(solventParsed.id, vol)
         }
@@ -468,7 +462,7 @@ export default function NewReadyMediumPage() {
       if (volMl > 0) {
         const p = parseSourceId(c.source_id)
         if (p.type === 'batch') {
-          await writeOffBatchVolume(p.id, volMl, '', `Компонент среды (${getComponentAmountLabel(c)})`)
+          await writeOffBatchVolume(p.id, volMl, null, `Компонент среды (${getComponentAmountLabel(c)})`)
         } else {
           await writeOffReadyMediumVolume(p.id, volMl)
         }
@@ -513,15 +507,16 @@ export default function NewReadyMediumPage() {
     })
 
     // Списать 1 ед. реагента
-    await writeOffBatchVolume(stockSourceBatchId, 1, '', 'Реагент для приготовления стока')
+    await writeOffBatchVolume(stockSourceBatchId, 1, null, 'Реагент для приготовления стока')
     // Списать растворитель
     if (hasSolvent && stockVolume > 0) {
-      await writeOffBatchVolume(stockSolventBatchId, stockVolume, '', 'Растворитель для стока')
+      await writeOffBatchVolume(stockSolventBatchId, stockVolume, null, 'Растворитель для стока')
     }
   }
 
   async function submitDilution() {
     if (!sourceStockId) throw new Error("Выберите стоковый раствор")
+    if (targetConc >= sourceConc) throw new Error("Целевая концентрация должна быть меньше исходной")
     if (!dilutionValid) throw new Error("Невалидные параметры разведения")
 
     const hasDiluent = diluentBatchId && diluentBatchId !== '__none__'
@@ -545,11 +540,7 @@ export default function NewReadyMediumPage() {
       total_volume_ml: totalVolume,
     }
 
-    await writeOffReadyMediumVolume(sourceStockId, dilutionV1)
-    if (hasDiluent && dilutionVDiluent > 0) {
-      await writeOffBatchVolume(diluentBatchId, dilutionVDiluent, '', 'Разбавитель для рабочего раствора')
-    }
-
+    // Сначала создаём запись, потом списываем (если create упадёт — инвентарь не пострадает)
     await createReadyMedium({
       name: name || autoName,
       volume_ml: totalVolume,
@@ -564,6 +555,11 @@ export default function NewReadyMediumPage() {
       notes: notes || null,
       status: "ACTIVE",
     })
+
+    await writeOffReadyMediumVolume(sourceStockId, dilutionV1)
+    if (hasDiluent && dilutionVDiluent > 0) {
+      await writeOffBatchVolume(diluentBatchId, dilutionVDiluent, null, 'Разбавитель для рабочего раствора')
+    }
   }
 
   async function submitAliquot() {
@@ -585,14 +581,8 @@ export default function NewReadyMediumPage() {
       aliquot_count: aliquotCount,
     }
 
-    // Списать суммарный объём
-    if (aliquotSourceType === 'batch') {
-      await writeOffBatchVolume(aliquotSourceId, aliquotTotalVolume, '', 'Аликвотирование')
-    } else {
-      await writeOffReadyMediumVolume(aliquotSourceId, aliquotTotalVolume)
-    }
-
-    // Создать N аликвот
+    // Сначала создаём аликвоты, потом списываем (если create упадёт — инвентарь не пострадает)
+    // Создать N аликвот (codeOffset предотвращает коллизию кодов RM-XXXX)
     for (let i = 0; i < aliquotCount; i++) {
       await createReadyMedium({
         name: name || `Аликвота ${srcName} (${aliquotVolume} мл)`,
@@ -609,7 +599,14 @@ export default function NewReadyMediumPage() {
         expiration_date: expDate || null,
         notes: notes ? `${notes} (${i + 1}/${aliquotCount})` : `Аликвота ${i + 1}/${aliquotCount}`,
         status: "ACTIVE",
-      })
+      }, i) // codeOffset = i
+    }
+
+    // Списать суммарный объём ПОСЛЕ создания всех аликвот
+    if (aliquotSourceType === 'batch') {
+      await writeOffBatchVolume(aliquotSourceId, aliquotTotalVolume, null, 'Аликвотирование')
+    } else {
+      await writeOffReadyMediumVolume(aliquotSourceId, aliquotTotalVolume)
     }
   }
 
@@ -620,7 +617,7 @@ export default function NewReadyMediumPage() {
     if (formMode === 'RECIPE') {
       const hasSolvent = !!solventSourceId && solventSourceId !== '__none__'
       const hasContent = hasSolvent || components.some(c => c.source_id)
-      return hasContent && solventVolume >= -0.01 && totalComponentsPercent <= 100
+      return hasContent && totalVolume > 0 && solventVolume >= -0.01 && totalComponentsPercent <= 100
     }
     if (formMode === 'STOCK') {
       return !!stockSourceBatchId && stockVolume > 0 && stockConc > 0
@@ -659,7 +656,14 @@ export default function NewReadyMediumPage() {
       {/* Mode selector: 4 tabs */}
       <Card>
         <CardContent className="pt-6">
-          <Tabs value={formMode} onValueChange={v => setFormMode(v as FormMode)}>
+          <Tabs value={formMode} onValueChange={v => {
+            const newMode = v as FormMode
+            setFormMode(newMode)
+            // Сброс общих полей при переключении режима
+            setName('')
+            setNotes('')
+            setTotalVolume(newMode === 'RECIPE' ? 500 : 0)
+          }}>
             <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
               <TabsTrigger value="RECIPE" className="gap-1">
                 <Beaker className="h-4 w-4" /> <span className="hidden sm:inline">Рабочая</span> среда
