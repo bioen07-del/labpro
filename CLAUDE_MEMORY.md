@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Stack**: Next.js 16 + TypeScript 5.9 + React 19 + Tailwind 4 + Supabase + Vercel
-- **Version**: 1.27.01
+- **Version**: 1.27.02
 - **Two workstations**: Work PC (C:\AICoding\Cline\LabPro master, C:\Users\volchkov.se\.claude-worktrees silly-tu) and Home PC (C:\VSCline\LabPro master, C:\Users\bioen\.claude-worktrees awesome-bohr)
 - **User tests on**: awesome-bohr preview URL (labpro-git-awesome-bohr-bioen07s-projects.vercel.app)
 - **Build cmd**: `cd frontend && node_modules/.bin/next build`
@@ -38,6 +38,15 @@
 - **OBSERVE**: only updates containers (confluent_percent), NO operation_metrics yet
 - **FEED**: only writes off media, no metrics
 
+## Session 15.02.2026 Changes (v1.27.02 — E2E bugfix)
+- Fix: URL prefill (?nomenclature_id=) now triggers handleNomenclatureChange (useEffect)
+- Fix: '__none__' solvent no longer leaks into batch_id (FK violation prevented)
+- Fix: canSubmit excludes '__none__' from valid solvent check
+- Fix: availableUnits/unit sync when unit_type is undefined (effectiveUnit fallback)
+- Fix: diluent.batch_id cleaned from '__none__' in composition JSON
+- Fix: prepDateState replaced with direct useState (Rules of Hooks)
+- Fix: module-level componentCounter replaced with useRef
+
 ## Session 14.02.2026 Changes (v1.27.01)
 - Inventory/new: unit auto-fill from nomenclature (unit_type → cascading Select)
 - Inventory/new: content_per_package auto-fills for consumables
@@ -58,7 +67,8 @@
 2. Test full recipe + stock workflow on live data
 3. Molar calculations (mM/M using molecular_weight from nomenclature)
 4. Recipe templates (save/load)
-5. RBAC: permission matrix (low priority)
+5. submitDilution: non-atomic operations (3 sequential DB writes, no rollback) — needs server-side transaction
+6. RBAC: permission matrix (low priority)
 
 ## Current Status
 - All 25 phases + 17 iterations complete

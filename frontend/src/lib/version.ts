@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.27.01"
+export const APP_VERSION = "1.27.02"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,19 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.27.02",
+    date: "15.02.2026",
+    changes: [
+      "Fix: prefill из URL (?nomenclature_id=) теперь триггерит автоподтягивание единиц",
+      "Fix: '__none__' растворитель больше не утекает в batch_id (FK violation)",
+      "Fix: canSubmit корректно проверяет наличие растворителя (исключает '__none__')",
+      "Fix: синхронизация availableUnits/unit при undefined unit_type в номенклатуре",
+      "Fix: diluent.batch_id в composition JSON очищается от '__none__'",
+      "Fix: prepDateState — устранено нарушение Rules of Hooks (вложенный useState)",
+      "Fix: componentCounter заменён на useRef (не персистирует между навигациями)",
+    ],
+  },
   {
     version: "1.27.01",
     date: "14.02.2026",

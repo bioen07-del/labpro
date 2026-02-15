@@ -1,7 +1,7 @@
 # LabPro — Статус проекта
 
-**Дата обновления:** 14.02.2026
-**Версия:** 1.27.01
+**Дата обновления:** 15.02.2026
+**Версия:** 1.27.02
 **Реализовано:** ~98% от ТЗ (25 фаз + 17 итераций)
 **Стек:** Next.js 16 + TypeScript 5.9 + React 19 + Tailwind 4 + Supabase + Vercel
 
@@ -119,6 +119,19 @@
 
 ---
 
+## Сессия 15.02.2026 (дом) — v1.27.02
+
+### v1.27.02 (E2E bugfix)
+- [x] Fix: prefill из URL (?nomenclature_id=) теперь триггерит автоподтягивание единиц (HIGH)
+- [x] Fix: '__none__' растворитель не утекает в batch_id при submitRecipe (MEDIUM, FK violation)
+- [x] Fix: canSubmit корректно проверяет наличие растворителя (MEDIUM)
+- [x] Fix: синхронизация availableUnits/unit при undefined unit_type (MEDIUM)
+- [x] Fix: diluent.batch_id в composition JSON очищается от '__none__' (LOW)
+- [x] Fix: prepDateState — устранено нарушение Rules of Hooks (LOW)
+- [x] Fix: componentCounter → useRef (не персистирует между навигациями) (LOW)
+
+---
+
 ## Сессия 14.02.2026 (дом) — v1.27.01
 
 ### v1.27.01
@@ -171,7 +184,7 @@
 
 | Метрика | Значение |
 |---------|----------|
-| Версия | 1.27.01 |
+| Версия | 1.27.02 |
 | Страницы | 50 маршрутов |
 | UI-компоненты | 22 (shadcn/ui + QRLabel + Switch) |
 | API (api.ts) | ~5000 строк |
@@ -217,4 +230,4 @@
 
 ---
 
-*Обновлено: 14.02.2026*
+*Обновлено: 15.02.2026*

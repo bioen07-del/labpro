@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Loader2, Plus, Trash2, Calculator, Beaker, FlaskConical, Info } from "lucide-react"
@@ -135,12 +135,10 @@ function getComponentAmountLabel(comp: RecipeComponent): string {
   }
 }
 
-let componentCounter = 0
-
-function makeComponent(): RecipeComponent {
-  componentCounter++
+function makeComponent(counterRef: React.MutableRefObject<number>): RecipeComponent {
+  counterRef.current++
   return {
-    id: `comp-${componentCounter}`,
+    id: `comp-${counterRef.current}`,
     batch_id: '',
     categoryFilter: 'all',
     mode: 'PERCENT',
@@ -158,6 +156,7 @@ function makeComponent(): RecipeComponent {
 
 export default function NewReadyMediumPage() {
   const router = useRouter()
+  const componentCounterRef = useRef(0)
   const [loading, setLoading] = useState(false)
   const [batches, setBatches] = useState<BatchOption[]>([])
   const [stocks, setStocks] = useState<StockOption[]>([])
@@ -174,7 +173,7 @@ export default function NewReadyMediumPage() {
   // Common fields
   const [name, setName] = useState("")
   const [totalVolume, setTotalVolume] = useState(500)
-  const [prepDate, setPrepDate] = prepDateState()
+  const [prepDate, setPrepDate] = useState(new Date().toISOString().split("T")[0])
   const [expDate, setExpDate] = useState("")
   const [notes, setNotes] = useState("")
 
@@ -189,11 +188,6 @@ export default function NewReadyMediumPage() {
   const [targetConcUnit, setTargetConcUnit] = useState<string>('×')
   const [diluentBatchId, setDiluentBatchId] = useState("")
   const [diluentCategoryFilter, setDiluentCategoryFilter] = useState("all")
-
-  function prepDateState(): [string, (v: string) => void] {
-    const [val, set] = useState(new Date().toISOString().split("T")[0])
-    return [val, set]
-  }
 
   // ==================== LOAD DATA ====================
 
@@ -279,7 +273,7 @@ export default function NewReadyMediumPage() {
   // ==================== COMPONENT ACTIONS ====================
 
   function addComponent() {
-    setComponents(prev => [...prev, makeComponent()])
+    setComponents(prev => [...prev, makeComponent(componentCounterRef)])
   }
 
   function removeComponent(id: string) {
@@ -322,11 +316,12 @@ export default function NewReadyMediumPage() {
     if (solventVolume < -0.01) throw new Error("Объём компонентов превышает общий объём")
     if (totalComponentsPercent > 100) throw new Error("Сумма процентных компонентов превышает 100%")
 
-    const solventBatch = batches.find(b => b.id === solventBatchId)
+    const hasSolvent = solventBatchId && solventBatchId !== '__none__'
+    const solventBatch = hasSolvent ? batches.find(b => b.id === solventBatchId) : null
 
     const composition = {
       mode: 'RECIPE',
-      solvent: solventBatchId ? {
+      solvent: hasSolvent ? {
         batch_id: solventBatchId,
         nomenclature: solventBatch?.nomenclature?.name,
         volume_ml: Math.round(solventVolume * 100) / 100,
@@ -351,7 +346,7 @@ export default function NewReadyMediumPage() {
 
     await createReadyMedium({
       name: name || autoName,
-      batch_id: solventBatchId || null,
+      batch_id: hasSolvent ? solventBatchId : null,
       nomenclature_id: solventBatch?.nomenclature?.id || null,
       volume_ml: totalVolume,
       current_volume_ml: totalVolume,
@@ -370,7 +365,8 @@ export default function NewReadyMediumPage() {
     if (!sourceStockId) throw new Error("Выберите стоковый раствор")
     if (!dilutionValid) throw new Error("Невалидные параметры разведения")
 
-    const diluentBatch = batches.find(b => b.id === diluentBatchId)
+    const hasDiluent = diluentBatchId && diluentBatchId !== '__none__'
+    const diluentBatch = hasDiluent ? batches.find(b => b.id === diluentBatchId) : null
     const composition = {
       mode: 'DILUTION',
       source: {
@@ -381,8 +377,8 @@ export default function NewReadyMediumPage() {
         volume_ml: Math.round(dilutionV1 * 100) / 100,
       },
       diluent: {
-        batch_id: diluentBatchId,
-        nomenclature: diluentBatch?.nomenclature?.name,
+        batch_id: hasDiluent ? diluentBatchId : null,
+        nomenclature: diluentBatch?.nomenclature?.name || null,
         volume_ml: Math.round(dilutionVDiluent * 100) / 100,
       },
       target_concentration: targetConc,
@@ -394,7 +390,7 @@ export default function NewReadyMediumPage() {
     await writeOffReadyMediumVolume(sourceStockId, dilutionV1)
 
     // 2. Списать разбавитель из batch (если есть)
-    if (diluentBatchId && diluentBatchId !== '__none__' && dilutionVDiluent > 0) {
+    if (hasDiluent && dilutionVDiluent > 0) {
       await writeOffBatchVolume(diluentBatchId, dilutionVDiluent, '', 'Разбавитель для разведения стока')
     }
 
@@ -421,7 +417,8 @@ export default function NewReadyMediumPage() {
     if (loading) return false
     if (formMode === 'RECIPE') {
       // Нужен хотя бы растворитель ИЛИ хотя бы один компонент
-      const hasContent = !!solventBatchId || components.some(c => c.batch_id)
+      const hasSolvent = !!solventBatchId && solventBatchId !== '__none__'
+      const hasContent = hasSolvent || components.some(c => c.batch_id)
       return hasContent && solventVolume >= -0.01 && totalComponentsPercent <= 100
     }
     if (formMode === 'DILUTION') return !!sourceStockId && dilutionValid

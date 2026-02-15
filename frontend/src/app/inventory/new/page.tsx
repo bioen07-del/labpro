@@ -58,6 +58,14 @@ function NewBatchPageInner() {
     loadNomenclatures()
   }, [])
 
+  // Prefill: когда номенклатуры загрузились и есть prefill из URL — подтянуть unit/volume_per_unit
+  useEffect(() => {
+    if (prefillNomenclatureId && nomenclatures.length > 0) {
+      handleNomenclatureChange(prefillNomenclatureId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nomenclatures, prefillNomenclatureId])
+
   async function loadNomenclatures() {
     setNomenclaturesLoading(true)
     try {
@@ -149,9 +157,11 @@ function NewBatchPageInner() {
         updates.unit = defaults.unit
       }
 
-      // content_per_package → volume_per_unit для CONSUMABLE
+      // content_per_package → volume_per_unit для CONSUMABLE, сброс для остальных
       if (nom.category === 'CONSUMABLE' && nom.content_per_package) {
         updates.volume_per_unit = String(nom.content_per_package)
+      } else if (nom.category === 'CONSUMABLE') {
+        updates.volume_per_unit = ''
       }
     }
 
@@ -162,6 +172,13 @@ function NewBatchPageInner() {
   const selectedNom = nomenclatures.find((n: any) => n.id === formData.nomenclature_id)
   const activeUnitType: UnitType = selectedNom?.unit_type || (selectedNom ? getDefaultUnit(selectedNom.category).unitType : 'COUNT')
   const availableUnits = getUnitsForType(activeUnitType)
+
+  // Гарантируем, что текущая единица входит в доступные
+  const effectiveUnit = availableUnits.includes(formData.unit as MeasurementUnit) ? formData.unit : availableUnits[0] || 'шт'
+  if (effectiveUnit !== formData.unit && selectedNom) {
+    // Отложенная синхронизация — обновим на следующий рендер
+    setTimeout(() => setFormData(prev => ({ ...prev, unit: effectiveUnit })), 0)
+  }
 
   return (
     <div className="container py-6 space-y-6 max-w-2xl">
@@ -288,7 +305,7 @@ function NewBatchPageInner() {
                     </div>
                     <div className="space-y-2">
                       <Label>Ед. измерения</Label>
-                      <Select value={formData.unit} onValueChange={(v) => update('unit', v)}>
+                      <Select value={effectiveUnit} onValueChange={(v) => update('unit', v)}>
                         <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
