@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.30.03"
+export const APP_VERSION = "1.31.00"
 
 export interface ChangelogEntry {
   version: string
@@ -13,10 +13,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: "1.30.03",
+    version: "1.31.00",
     date: "15.02.2026",
     changes: [
-      "STOCK подсказка: переработана в пошаговую инструкцию — навеска (г/мг) + объём растворителя + итог",
+      "Калькулятор: все 4 режима — пошаговая инструкция для оператора вместо абстрактных расчётов",
+      "RECIPE: пронумерованные шаги (добавить компоненты → довести растворителем до объёма)",
+      "STOCK: навеска (г/мг) → растворить → итоговая концентрация",
+      "DILUTION: отобрать V₁ стока → добавить разбавитель → итого",
+      "ALIQUOT: подготовить ёмкости → разлить по V мл → итого",
       "units.ts: calcMassForMolarConc(), calcMassForActivityConc() — обратный расчёт массы из концентрации",
     ],
   },

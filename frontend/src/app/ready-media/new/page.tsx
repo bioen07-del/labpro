@@ -878,57 +878,84 @@ export default function NewReadyMediumPage() {
                   )
                 })}
 
-                {/* Summary */}
-                <div className="mt-4 p-3 rounded-lg bg-muted/50 space-y-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calculator className="h-4 w-4 text-blue-500" />
-                    <span className="font-medium text-sm">Расчёт объёмов</span>
+                {/* Инструкция для оператора */}
+                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                  <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
+                    <FlaskRound className="h-4 w-4" />
+                    Инструкция для приготовления
+                  </p>
+                  <div className="bg-white/70 rounded-md p-3 space-y-2">
+                    {(() => {
+                      let step = 1
+                      const rows: React.ReactNode[] = []
+
+                      // Шаги для каждого компонента (навески / объёмы)
+                      components.filter(c => c.source_id).forEach(c => {
+                        const name = getSourceName(c.source_id, batches, readyMedia) || '?'
+                        const volMl = getComponentVolumeMl(c, totalVolume)
+                        if (c.mode === 'MASS') {
+                          rows.push(
+                            <p key={c.id} className="text-sm text-blue-900">
+                              <span className="font-bold text-base">{step}.</span> Навесить{' '}
+                              <span className="font-bold text-base text-blue-900">{getComponentAmountLabel(c)}</span>{' '}
+                              — {name}
+                            </p>
+                          )
+                        } else if (c.mode === 'ACTIVITY') {
+                          rows.push(
+                            <p key={c.id} className="text-sm text-blue-900">
+                              <span className="font-bold text-base">{step}.</span> Добавить{' '}
+                              <span className="font-bold text-base text-blue-900">{getComponentAmountLabel(c)}</span>{' '}
+                              — {name}
+                            </p>
+                          )
+                        } else {
+                          rows.push(
+                            <p key={c.id} className="text-sm text-blue-900">
+                              <span className="font-bold text-base">{step}.</span> Добавить{' '}
+                              <span className="font-bold text-base text-blue-900">{volMl.toFixed(1)} мл</span>{' '}
+                              — {name}
+                              {c.mode === 'PERCENT' ? ` (${c.percent}%)` : ''}
+                            </p>
+                          )
+                        }
+                        step++
+                      })
+
+                      // Растворитель — последний шаг (довести до объёма)
+                      const solventName = (solventSourceId && solventSourceId !== '__none__')
+                        ? getSourceName(solventSourceId, batches, readyMedia) || 'растворитель'
+                        : 'растворитель'
+                      rows.push(
+                        <p key="solvent" className="text-sm text-blue-900">
+                          <span className="font-bold text-base">{step}.</span> Довести{' '}
+                          <span className="font-bold text-base text-blue-900">{solventName}</span>{' '}
+                          до <span className="font-bold text-base text-blue-900">{totalVolume.toFixed(1)} мл</span>{' '}
+                          ({solventVolume >= 0 ? `+${solventVolume.toFixed(1)} мл` : `${solventVolume.toFixed(1)} мл — ПЕРЕБОР`})
+                        </p>
+                      )
+
+                      return rows
+                    })()}
                   </div>
 
-                  {(solventSourceId && solventSourceId !== '__none__') && (
-                    <div className="flex justify-between text-sm">
-                      <span>{getSourceName(solventSourceId, batches, readyMedia) || 'Растворитель'} ({solventPercent.toFixed(1)}%)</span>
-                      <span className="font-medium">{solventVolume.toFixed(1)} мл</span>
-                    </div>
-                  )}
-
-                  {(!solventSourceId || solventSourceId === '__none__') && (
-                    <div className="flex justify-between text-sm text-muted-foreground">
-                      <span>Растворитель (не выбран)</span>
-                      <span>{solventVolume.toFixed(1)} мл</span>
-                    </div>
-                  )}
-
-                  {components.filter(c => c.source_id).map(c => {
-                    const volMl = getComponentVolumeMl(c, totalVolume)
-                    return (
-                      <div key={c.id} className="flex justify-between text-sm">
-                        <span>
-                          {getSourceName(c.source_id, batches, readyMedia) || '?'} ({getComponentAmountLabel(c)})
-                        </span>
-                        <span className="font-medium">
-                          {volMl > 0 ? `${volMl.toFixed(1)} мл` : getComponentAmountLabel(c)}
-                        </span>
-                      </div>
-                    )
-                  })}
-
-                  <div className="flex justify-between text-sm font-bold border-t pt-1 mt-1">
-                    <span>ИТОГО</span>
+                  {/* Итого */}
+                  <div className="flex justify-between text-sm font-bold text-blue-900 border-t border-blue-200 pt-2">
+                    <span>Итого</span>
                     <span>{totalVolume.toFixed(1)} мл</span>
                   </div>
 
                   {solventVolume < -0.01 && (
-                    <p className="text-destructive text-xs mt-1">Объём компонентов превышает общий объём!</p>
+                    <p className="text-destructive text-xs">Объём компонентов превышает общий объём!</p>
                   )}
                   {totalComponentsPercent > 100 && (
-                    <p className="text-destructive text-xs mt-1">Сумма процентных компонентов превышает 100%!</p>
+                    <p className="text-destructive text-xs">Сумма процентных компонентов превышает 100%!</p>
                   )}
 
                   {components.some(c => c.mode === 'MASS' || c.mode === 'ACTIVITY') && (
-                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                    <p className="text-xs text-blue-600 flex items-center gap-1">
                       <Info className="h-3 w-3" />
-                      Компоненты в мг/ЕД не вычитаются из объёма растворителя (навеска/суспензия)
+                      Навески (мг/ЕД) не вычитаются из объёма растворителя
                     </p>
                   )}
                 </div>
@@ -1259,31 +1286,47 @@ export default function NewReadyMediumPage() {
                 </div>
               </div>
 
-              {/* Dilution calculation */}
-              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 space-y-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Calculator className="h-4 w-4 text-blue-500" />
-                  <span className="font-medium text-sm">Формула: C₁ × V₁ = C₂ × V₂</span>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">V₁ (стока):</span>
-                    <span className="ml-2 font-bold text-lg">{dilutionV1 > 0 ? dilutionV1.toFixed(2) : '—'} мл</span>
+              {/* Инструкция для оператора */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
+                  <FlaskConical className="h-4 w-4" />
+                  Инструкция для приготовления
+                </p>
+                {dilutionV1 > 0 && dilutionVDiluent > 0 ? (
+                  <div className="bg-white/70 rounded-md p-3 space-y-2">
+                    <p className="text-sm text-blue-900">
+                      <span className="font-bold text-base">1.</span> Отобрать{' '}
+                      <span className="font-bold text-base text-blue-900">{dilutionV1.toFixed(2)} мл</span>{' '}
+                      стока ({sourceStock?.name || '—'})
+                    </p>
+                    <p className="text-sm text-blue-900">
+                      <span className="font-bold text-base">2.</span> Добавить{' '}
+                      <span className="font-bold text-base text-blue-900">{dilutionVDiluent.toFixed(2)} мл</span>{' '}
+                      разбавителя
+                    </p>
+                    <p className="text-sm text-blue-900">
+                      <span className="font-bold text-base">3.</span> Итого:{' '}
+                      <span className="font-bold text-blue-900">{targetConc} {targetConcUnit}</span>{' '}
+                      × {totalVolume.toFixed(1)} мл
+                    </p>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">V разбавителя:</span>
-                    <span className="ml-2 font-bold text-lg">{dilutionVDiluent > 0 ? dilutionVDiluent.toFixed(2) : '—'} мл</span>
-                  </div>
-                </div>
-                {sourceStockId && dilutionV1 > 0 && (
-                  <p className={`text-xs mt-1 ${dilutionValid ? 'text-green-600' : 'text-destructive'}`}>
-                    {dilutionValid
-                      ? `Достаточно стока (нужно ${dilutionV1.toFixed(1)} мл из ${sourceStock?.current_volume_ml ?? sourceStock?.volume_ml} мл)`
-                      : dilutionV1 > (sourceStock?.current_volume_ml ?? sourceStock?.volume_ml ?? 0)
-                        ? `Недостаточно стока! Нужно ${dilutionV1.toFixed(1)} мл, есть ${sourceStock?.current_volume_ml ?? sourceStock?.volume_ml} мл`
-                        : 'Невалидные параметры разведения'}
-                  </p>
+                ) : (
+                  <p className="text-sm text-blue-600">Заполните параметры для расчёта</p>
                 )}
+
+                {/* Справка */}
+                <div className="text-xs text-blue-600 space-y-0.5 border-t border-blue-200 pt-2">
+                  <p>Формула: C₁ × V₁ = C₂ × V₂</p>
+                  {sourceStockId && dilutionV1 > 0 && (
+                    <p className={dilutionValid ? 'text-green-600' : 'text-red-600'}>
+                      {dilutionValid
+                        ? `Стока достаточно (${dilutionV1.toFixed(1)} из ${sourceStock?.current_volume_ml ?? sourceStock?.volume_ml} мл)`
+                        : dilutionV1 > (sourceStock?.current_volume_ml ?? sourceStock?.volume_ml ?? 0)
+                          ? `Стока не хватает! Нужно ${dilutionV1.toFixed(1)} мл, есть ${sourceStock?.current_volume_ml ?? sourceStock?.volume_ml} мл`
+                          : 'Невалидные параметры разведения'}
+                    </p>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1365,19 +1408,46 @@ export default function NewReadyMediumPage() {
                   <Label>Объём каждой (мл) *</Label>
                   <Input type="number" min={0.001} step="any" value={aliquotVolume || ''} onChange={e => setAliquotVolume(parseFloat(e.target.value) || 0)} placeholder="50" required />
                 </div>
-                <div className="space-y-2">
-                  <Label>Итого</Label>
-                  <div className={`p-2 rounded text-center font-bold ${aliquotValid ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400' : aliquotTotalVolume > 0 ? 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400' : 'bg-muted text-muted-foreground'}`}>
-                    {aliquotCount} × {aliquotVolume || 0} = {aliquotTotalVolume.toFixed(1)} мл
-                  </div>
-                </div>
               </div>
 
-              {aliquotTotalVolume > 0 && !aliquotValid && (
-                <p className="text-destructive text-xs">
-                  Недостаточно объёма! Нужно {aliquotTotalVolume.toFixed(1)} мл, доступно {aliquotAvailable.toFixed(1)} мл
+              {/* Инструкция для оператора */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
+                  <Pipette className="h-4 w-4" />
+                  Инструкция для аликвотирования
                 </p>
-              )}
+                {aliquotCount >= 1 && aliquotVolume > 0 ? (
+                  <div className="bg-white/70 rounded-md p-3 space-y-2">
+                    <p className="text-sm text-blue-900">
+                      <span className="font-bold text-base">1.</span> Подготовить{' '}
+                      <span className="font-bold text-base text-blue-900">{aliquotCount}</span>{' '}
+                      {aliquotCount === 1 ? 'ёмкость' : aliquotCount <= 4 ? 'ёмкости' : 'ёмкостей'}
+                    </p>
+                    <p className="text-sm text-blue-900">
+                      <span className="font-bold text-base">2.</span> Разлить по{' '}
+                      <span className="font-bold text-base text-blue-900">{aliquotVolume} мл</span>{' '}
+                      в каждую
+                    </p>
+                    <p className="text-sm text-blue-900">
+                      <span className="font-bold text-base">3.</span> Итого:{' '}
+                      <span className="font-bold text-blue-900">{aliquotCount} × {aliquotVolume} = {aliquotTotalVolume.toFixed(1)} мл</span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-blue-600">Укажите количество и объём аликвот</p>
+                )}
+                <div className="text-xs text-blue-600 border-t border-blue-200 pt-2">
+                  {aliquotSource && (
+                    <p className={aliquotValid ? 'text-green-600' : aliquotTotalVolume > 0 ? 'text-red-600' : ''}>
+                      {aliquotValid
+                        ? `Источника достаточно (${aliquotTotalVolume.toFixed(1)} из ${aliquotAvailable.toFixed(1)} мл)`
+                        : aliquotTotalVolume > 0
+                          ? `Не хватает! Нужно ${aliquotTotalVolume.toFixed(1)} мл, есть ${aliquotAvailable.toFixed(1)} мл`
+                          : `Доступно: ${aliquotAvailable.toFixed(1)} мл`}
+                    </p>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
