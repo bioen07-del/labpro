@@ -2421,6 +2421,19 @@ export async function getAvailableStocks() {
   return data || []
 }
 
+/** Все активные готовые среды/растворы/аликвоты с остатком объёма > 0 */
+export async function getAvailableReadyMedia() {
+  const { data, error } = await supabase
+    .from('ready_media')
+    .select('*')
+    .eq('status', 'ACTIVE')
+    .gt('current_volume_ml', 0)
+    .order('name')
+
+  if (error) throw error
+  return data || []
+}
+
 // ==================== EQUIPMENT ====================
 
 export async function getEquipment(filters?: { type?: string; status?: string; includeInactive?: boolean }) {

@@ -344,11 +344,95 @@ export default function ReadyMediumDetailPage() {
             <CardContent>
               {composition.mode && (
                 <Badge variant="outline" className="mb-3 text-xs">
-                  {composition.mode === 'PERCENT' ? '% Процентный' : composition.mode === 'ABSOLUTE' ? 'mg Абсолютный' : composition.mode === 'DILUTION' ? 'C₁V₁ Разведение' : composition.mode}
+                  {composition.mode === 'RECIPE' ? '🧪 Рабочая среда' :
+                   composition.mode === 'STOCK' ? '🧫 Стоковый раствор' :
+                   composition.mode === 'DILUTION' ? 'C₁V₁ Рабочий раствор' :
+                   composition.mode === 'ALIQUOT' ? '📦 Аликвота' :
+                   composition.mode === 'PERCENT' ? '% Процентный' :
+                   composition.mode === 'ABSOLUTE' ? 'mg Абсолютный' :
+                   composition.mode}
                 </Badge>
               )}
-              {composition.mode === 'DILUTION' ? (
-                /* DILUTION mode — source + diluent */
+
+              {/* ---- STOCK mode ---- */}
+              {composition.mode === 'STOCK' ? (
+                <div className="space-y-3">
+                  {composition.source_name && (
+                    <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <FlaskConical className="h-5 w-5 text-purple-500" />
+                        <div>
+                          <p className="font-medium">{composition.source_name}</p>
+                          <p className="text-xs text-muted-foreground">Исходный реагент</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {composition.solvent_name && (
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Droplets className="h-4 w-4 text-blue-500" />
+                        <div>
+                          <p className="font-medium">{composition.solvent_name}</p>
+                          <p className="text-xs text-muted-foreground">Растворитель</p>
+                        </div>
+                      </div>
+                      {composition.solvent_volume_ml && (
+                        <div className="text-right">
+                          <p className="font-semibold">{composition.solvent_volume_ml} мл</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {composition.resulting_concentration && (
+                    <div className="flex justify-between pt-2 border-t text-sm">
+                      <span className="text-muted-foreground">Концентрация результата</span>
+                      <span className="font-semibold">{composition.resulting_concentration} {composition.resulting_concentration_unit || '×'}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Общий объём</span>
+                    <span className="font-semibold">{medium.volume_ml || '—'} мл</span>
+                  </div>
+                </div>
+
+              /* ---- ALIQUOT mode ---- */
+              ) : composition.mode === 'ALIQUOT' ? (
+                <div className="space-y-3">
+                  {composition.source_name && (
+                    <div className="flex items-center justify-between p-3 bg-cyan-50 dark:bg-cyan-950 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Beaker className="h-5 w-5 text-cyan-600" />
+                        <div>
+                          <p className="font-medium">{composition.source_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Источник ({composition.source_type === 'batch' ? 'со склада' : 'из приготовленных'})
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-between pt-2 border-t text-sm">
+                    <span className="text-muted-foreground">Объём аликвоты</span>
+                    <span className="font-semibold">{composition.aliquot_volume_ml || medium.volume_ml || '—'} мл</span>
+                  </div>
+                  {composition.aliquot_count && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Кол-во аликвот</span>
+                      <span className="font-semibold">{composition.aliquot_count} шт</span>
+                    </div>
+                  )}
+                  {medium.parent_medium_id && (
+                    <div className="pt-2">
+                      <Link href={`/ready-media/${medium.parent_medium_id}`} className="text-sm text-blue-600 hover:underline">
+                        → Перейти к исходной среде
+                      </Link>
+                    </div>
+                  )}
+                </div>
+
+              /* ---- DILUTION mode ---- */
+              ) : composition.mode === 'DILUTION' ? (
                 <div className="space-y-3">
                   {composition.source && (
                     <div className="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-950 rounded-lg">
@@ -371,7 +455,7 @@ export default function ReadyMediumDetailPage() {
                       <div className="flex items-center gap-3">
                         <Droplets className="h-4 w-4 text-blue-500" />
                         <div>
-                          <p className="font-medium">{composition.diluent.nomenclature || 'Разбавитель'}</p>
+                          <p className="font-medium">{composition.diluent.nomenclature || composition.diluent.name || 'Разбавитель'}</p>
                           <p className="text-xs text-muted-foreground">Разбавитель</p>
                         </div>
                       </div>
@@ -389,10 +473,33 @@ export default function ReadyMediumDetailPage() {
                     <span className="font-semibold">{composition.total_volume_ml || medium.volume_ml || '—'} мл</span>
                   </div>
                 </div>
-              ) : (composition.base || composition.components) ? (
+
+              /* ---- RECIPE mode (v1.28+ with solvent, or legacy with base) ---- */
+              ) : (composition.solvent || composition.base || composition.components) ? (
                 <div className="space-y-3">
-                  {/* Base */}
-                  {composition.base && (
+                  {/* Solvent (v1.28+ RECIPE format) */}
+                  {composition.solvent && (
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Beaker className="h-5 w-5 text-blue-500" />
+                        <div>
+                          <p className="font-medium">
+                            {composition.solvent.name || 'Растворитель'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Растворитель ({composition.solvent.source_type === 'batch' ? 'со склада' : 'приготовленный'})
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {composition.solvent.volume_ml != null && (
+                          <p className="font-semibold">{composition.solvent.volume_ml} мл</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* Legacy base (pre-v1.28 format) */}
+                  {!composition.solvent && composition.base && (
                     <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                       <div className="flex items-center gap-3">
                         <Beaker className="h-5 w-5 text-blue-500" />
@@ -420,7 +527,12 @@ export default function ReadyMediumDetailPage() {
                           <p className="font-medium">
                             {comp.nomenclature || comp.name || `Компонент ${i + 1}`}
                           </p>
-                          {comp.category && (
+                          {comp.source_type && (
+                            <p className="text-xs text-muted-foreground">
+                              {comp.source_type === 'batch' ? '📦 Со склада' : '🧪 Приготовленный'}
+                            </p>
+                          )}
+                          {!comp.source_type && comp.category && (
                             <p className="text-xs text-muted-foreground">{comp.category}</p>
                           )}
                         </div>
@@ -456,7 +568,12 @@ export default function ReadyMediumDetailPage() {
               <QRLabel
                 code={`RM:${medium.code}`}
                 title={medium.name || medium.code}
-                subtitle="Готовая среда"
+                subtitle={
+                  medium.physical_state === 'STOCK_SOLUTION' ? 'Стоковый раствор' :
+                  medium.physical_state === 'ALIQUOT' ? 'Аликвота' :
+                  medium.physical_state === 'WORKING_SOLUTION' ? 'Рабочий раствор' :
+                  'Готовая среда'
+                }
                 metadata={{
                   'Объём': `${medium.current_volume_ml ?? medium.volume_ml ?? 0} мл`,
                   'Статус': STATUS_LABEL[medium.status] || medium.status,

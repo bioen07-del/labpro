@@ -303,13 +303,13 @@ export default function InventoryPage() {
           <TestTubes className="h-4 w-4" />Контейнеры<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.consumable}</Badge>
         </Button>
         <Button variant={categoryTab === 'MEDIUM' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('MEDIUM')} className="gap-1.5">
-          <FlaskConical className="h-4 w-4" />Среды и реагенты<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.media}</Badge>
-        </Button>
-        <Button variant={categoryTab === 'ready_media' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('ready_media')} className="gap-1.5">
-          <Beaker className="h-4 w-4" />Готовые среды<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.readyMedia}</Badge>
+          <FlaskConical className="h-4 w-4" />Поступления<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.media}</Badge>
         </Button>
         <Button variant={categoryTab === 'stock_solutions' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('stock_solutions')} className="gap-1.5">
           <FlaskConical className="h-4 w-4" />Стоки<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.stocks}</Badge>
+        </Button>
+        <Button variant={categoryTab === 'ready_media' ? 'default' : 'outline'} size="sm" onClick={() => setCategoryTab('ready_media')} className="gap-1.5">
+          <Beaker className="h-4 w-4" />Готовые среды<Badge variant="secondary" className="ml-1 text-xs">{categoryStats.readyMedia}</Badge>
         </Button>
       </div>
 
@@ -432,7 +432,12 @@ export default function InventoryPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</span>
+                        {media.physical_state === 'ALIQUOT' && (
+                          <Badge variant="outline" className="text-xs bg-cyan-50 text-cyan-700 border-cyan-300">Аликвота</Badge>
+                        )}
+                      </div>
                       {media.notes && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{media.notes}</p>}
                     </TableCell>
                     {categoryTab === 'stock_solutions' && (
@@ -716,9 +721,9 @@ function getCategoryTitle(tab: CategoryTab): string {
   const titles: Record<string, string> = {
     all: 'Все позиции',
     CONSUMABLE: 'Контейнеры',
-    MEDIUM: 'Среды и реагенты',
+    MEDIUM: 'Поступления',
     ready_media: 'Готовые среды',
-    stock_solutions: 'Стоковые растворы',
+    stock_solutions: 'Стоки',
   }
   return titles[tab] || 'Позиции'
 }
