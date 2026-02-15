@@ -23,7 +23,7 @@ import {
   createReadyMedium, getBatches, getAvailableStocks, getAvailableReadyMedia,
   writeOffBatchVolume, writeOffReadyMediumVolume,
 } from "@/lib/api"
-import { CONCENTRATION_UNITS } from "@/lib/units"
+import { CONCENTRATION_UNITS, calcVolumeForMolarConc, calcMolarConc, toMoles } from "@/lib/units"
 
 // ==================== TYPES ====================
 
@@ -40,7 +40,7 @@ interface BatchOption {
   unit: string
   volume_per_unit?: number | null
   current_unit_volume?: number | null
-  nomenclature?: { id: string; name: string; category: string } | null
+  nomenclature?: { id: string; name: string; category: string; molecular_weight?: number | null } | null
   expiration_date?: string
 }
 
@@ -1024,6 +1024,82 @@ export default function NewReadyMediumPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Подсказка-калькулятор для молярных расчётов */}
+              {(() => {
+                const srcBatch = stockSourceBatchId ? batches.find((b: BatchOption) => b.id === stockSourceBatchId) : null
+                const mw = srcBatch?.nomenclature?.molecular_weight
+                const batchUnit = srcBatch?.unit || ''
+                const batchQtyPerUnit = srcBatch?.volume_per_unit ?? 0
+                const isMolarConc = stockConcUnit === 'мМ' || stockConcUnit === 'М'
+
+                // Кол-во вещества в одной единице (флаконе)
+                const amountPerUnit = batchQtyPerUnit > 0 ? batchQtyPerUnit : 1
+                const moles = toMoles(amountPerUnit, batchUnit, mw)
+
+                // Показываем подсказку если: (a) выбран реагент с MW или молярной единицей, (b) конц. молярная
+                if (!srcBatch || (!mw && !['мкмоль', 'ммоль', 'моль'].includes(batchUnit))) return null
+
+                const targetConcMM = stockConcUnit === 'М' ? stockConc * 1000 : stockConcUnit === 'мМ' ? stockConc : 0
+
+                return (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
+                    <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
+                      <FlaskRound className="h-4 w-4" />
+                      Подсказка: молярный расчёт
+                    </p>
+                    <div className="text-sm text-blue-700 space-y-1">
+                      {mw ? (
+                        <p>MW = <span className="font-semibold">{mw} г/моль</span> (из справочника)</p>
+                      ) : null}
+                      {moles != null ? (
+                        <p>В 1 ед. реагента ({amountPerUnit} {batchUnit}): <span className="font-semibold">
+                          {moles >= 0.001 ? `${(moles * 1000).toFixed(2)} ммоль` : `${(moles * 1e6).toFixed(1)} мкмоль`}
+                        </span></p>
+                      ) : mw ? (
+                        <p className="text-blue-500 italic">Укажите объём/массу на единицу в справочнике для расчёта</p>
+                      ) : null}
+
+                      {/* Рассчитываем объём или концентрацию */}
+                      {isMolarConc && moles != null && targetConcMM > 0 ? (
+                        <>
+                          {stockVolume > 0 ? (
+                            <p>При {stockVolume} мл растворителя → конц. = <span className="font-semibold">
+                              {(() => {
+                                const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
+                                if (c == null) return '—'
+                                return c >= 1 ? `${c.toFixed(2)} мМ` : `${(c * 1000).toFixed(1)} мкМ`
+                              })()}
+                            </span></p>
+                          ) : null}
+                          <p>Для {stockConc} {stockConcUnit} → нужно <span className="font-semibold">
+                            {(() => {
+                              const v = calcVolumeForMolarConc(amountPerUnit, batchUnit, targetConcMM, mw)
+                              if (v == null) return '—'
+                              return `${v.toFixed(2)} мл`
+                            })()}
+                          </span> растворителя</p>
+                        </>
+                      ) : isMolarConc && moles == null ? (
+                        <p className="text-amber-600">
+                          {!mw ? 'Укажите молекулярную массу (MW) в справочнике номенклатуры для пересчёта масса→моли' : 'Невозможно рассчитать — проверьте единицы реагента'}
+                        </p>
+                      ) : null}
+
+                      {/* Если конц. не молярная, но есть MW — показываем пересчёт */}
+                      {!isMolarConc && moles != null && stockVolume > 0 ? (
+                        <p>Молярная конц.: <span className="font-semibold">
+                          {(() => {
+                            const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
+                            if (c == null) return '—'
+                            return c >= 1 ? `${c.toFixed(2)} мМ` : `${(c * 1000).toFixed(1)} мкМ`
+                          })()}
+                        </span> (справочно)</p>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })()}
             </CardContent>
           </Card>
         )}

@@ -258,20 +258,22 @@ export interface CryoVial {
 
 // ==================== UNITS & MEASUREMENT ====================
 
-export type UnitType = 'MASS' | 'VOLUME' | 'COUNT' | 'ACTIVITY'
+export type UnitType = 'MASS' | 'VOLUME' | 'COUNT' | 'ACTIVITY' | 'MOLAR'
 
 export type MassUnit = 'мкг' | 'мг' | 'г' | 'кг'
 export type VolumeUnit = 'мкл' | 'мл' | 'л'
 export type CountUnit = 'шт' | 'уп'
 export type ActivityUnit = 'ЕД' | 'МЕ'
+export type MolarUnit = 'мкмоль' | 'ммоль' | 'моль'
 
-export type MeasurementUnit = MassUnit | VolumeUnit | CountUnit | ActivityUnit
+export type MeasurementUnit = MassUnit | VolumeUnit | CountUnit | ActivityUnit | MolarUnit
 
 export const UNIT_TYPE_LABELS: Record<UnitType, string> = {
   MASS: 'Масса',
   VOLUME: 'Объём',
   COUNT: 'Количество',
   ACTIVITY: 'Активность',
+  MOLAR: 'Моли',
 }
 
 // Physical state of prepared media / stocks

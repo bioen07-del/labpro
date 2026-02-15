@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.28.02"
+export const APP_VERSION = "1.29.00"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.29.00",
+    date: "15.02.2026",
+    changes: [
+      "Молярные единицы: моль, ммоль, мкмоль — в типах, справочнике, приёмке и калькуляторе",
+      "STOCK форма: подсказка-калькулятор молярных расчётов (MW из справочника → автоматический пересчёт объёма и концентрации)",
+      "Молярные функции: toMoles(), calcVolumeForMolarConc(), calcMolarConc() в units.ts",
+    ],
+  },
   {
     version: "1.28.02",
     date: "15.02.2026",

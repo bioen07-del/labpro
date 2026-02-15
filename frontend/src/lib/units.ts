@@ -10,6 +10,7 @@ import type {
   VolumeUnit,
   CountUnit,
   ActivityUnit,
+  MolarUnit,
   NomenclatureCategory,
 } from '@/types'
 
@@ -39,6 +40,12 @@ const ACTIVITY_FACTORS: Record<ActivityUnit, number> = {
   'МЕ': 1, // ЕД и МЕ эквивалентны (International Units)
 }
 
+const MOLAR_FACTORS: Record<MolarUnit, number> = {
+  'мкмоль': 1e-6,
+  'ммоль': 1e-3,
+  'моль': 1,
+}
+
 // ==================== МАППИНГ ЕДИНИЦ → ТИПЫ ====================
 
 const UNIT_TO_TYPE: Record<string, UnitType> = {
@@ -46,6 +53,7 @@ const UNIT_TO_TYPE: Record<string, UnitType> = {
   'мкл': 'VOLUME', 'мл': 'VOLUME', 'л': 'VOLUME',
   'шт': 'COUNT', 'уп': 'COUNT',
   'ЕД': 'ACTIVITY', 'МЕ': 'ACTIVITY',
+  'мкмоль': 'MOLAR', 'ммоль': 'MOLAR', 'моль': 'MOLAR',
 }
 
 // ==================== ЕДИНИЦЫ ПО ТИПУ ====================
@@ -55,6 +63,7 @@ const UNITS_BY_TYPE: Record<UnitType, MeasurementUnit[]> = {
   VOLUME: ['мкл', 'мл', 'л'],
   COUNT: ['шт', 'уп'],
   ACTIVITY: ['ЕД', 'МЕ'],
+  MOLAR: ['мкмоль', 'ммоль', 'моль'],
 }
 
 // ==================== ДЕФОЛТЫ ПО КАТЕГОРИИ НОМЕНКЛАТУРЫ ====================
@@ -123,6 +132,10 @@ export function convertUnit(value: number, from: string, to: string): number | n
       fromFactor = ACTIVITY_FACTORS[from as ActivityUnit]
       toFactor = ACTIVITY_FACTORS[to as ActivityUnit]
       break
+    case 'MOLAR':
+      fromFactor = MOLAR_FACTORS[from as MolarUnit]
+      toFactor = MOLAR_FACTORS[to as MolarUnit]
+      break
     default:
       return null
   }
@@ -142,6 +155,7 @@ export function toBaseUnit(value: number, unit: string): number | null {
     case 'VOLUME': return value * VOLUME_FACTORS[unit as VolumeUnit]
     case 'COUNT': return value * COUNT_FACTORS[unit as CountUnit]
     case 'ACTIVITY': return value * ACTIVITY_FACTORS[unit as ActivityUnit]
+    case 'MOLAR': return value * MOLAR_FACTORS[unit as MolarUnit]
     default: return null
   }
 }
@@ -159,7 +173,7 @@ export function formatWithUnit(value: number, unit: string): string {
     return `${value} ${unit}`
   }
 
-  const factors = type === 'MASS' ? MASS_FACTORS : VOLUME_FACTORS
+  const factors = type === 'MASS' ? MASS_FACTORS : type === 'MOLAR' ? MOLAR_FACTORS : type === 'VOLUME' ? VOLUME_FACTORS : VOLUME_FACTORS
   const units = UNITS_BY_TYPE[type]
 
   // Конвертируем в базовую единицу
@@ -208,6 +222,7 @@ export function inferUnitType(unit: string): UnitType | null {
   if (['мкл', 'мл', 'л', 'литр', 'миллилитр'].some(u => lower.includes(u))) return 'VOLUME'
   if (['шт', 'уп', 'штук', 'упаков'].some(u => lower.includes(u))) return 'COUNT'
   if (['ед', 'ме', 'единиц'].some(u => lower.includes(u))) return 'ACTIVITY'
+  if (['мкмоль', 'ммоль', 'моль', 'микромоль', 'миллимоль'].some(u => lower.includes(u))) return 'MOLAR'
 
   return null
 }
@@ -215,9 +230,64 @@ export function inferUnitType(unit: string): UnitType | null {
 /**
  * Все доступные единицы (flat list)
  */
+// ==================== МОЛЯРНЫЕ РАСЧЁТЫ ====================
+
+/**
+ * Конвертировать количество вещества в моль (базовая единица).
+ * Если unit — массовая (мг, г...), нужен molecularWeight (г/моль).
+ * Если unit — молярная (ммоль, мкмоль...), MW не нужен.
+ * Возвращает null если конвертация невозможна.
+ */
+export function toMoles(amount: number, unit: string, molecularWeight?: number | null): number | null {
+  const type = getUnitType(unit)
+  if (type === 'MOLAR') {
+    return amount * MOLAR_FACTORS[unit as MolarUnit]
+  }
+  if (type === 'MASS' && molecularWeight && molecularWeight > 0) {
+    const grams = amount * MASS_FACTORS[unit as MassUnit]
+    return grams / molecularWeight
+  }
+  return null
+}
+
+/**
+ * Рассчитать объём растворителя для целевой молярной концентрации.
+ * amount — кол-во вещества (в unit), concMM — целевая конц. (мМ)
+ * Возвращает объём в мл или null.
+ */
+export function calcVolumeForMolarConc(
+  amount: number,
+  unit: string,
+  targetConcMM: number,
+  molecularWeight?: number | null,
+): number | null {
+  const moles = toMoles(amount, unit, molecularWeight)
+  if (moles == null || targetConcMM <= 0) return null
+  // C(мМ) = n(ммоль) / V(мл) → V = n(ммоль) / C(мМ)
+  const mmol = moles * 1000
+  return mmol / targetConcMM
+}
+
+/**
+ * Рассчитать молярную концентрацию при заданном объёме растворителя.
+ * Возвращает конц. в мМ или null.
+ */
+export function calcMolarConc(
+  amount: number,
+  unit: string,
+  volumeMl: number,
+  molecularWeight?: number | null,
+): number | null {
+  const moles = toMoles(amount, unit, molecularWeight)
+  if (moles == null || volumeMl <= 0) return null
+  const mmol = moles * 1000
+  return mmol / volumeMl
+}
+
 export const ALL_UNITS: MeasurementUnit[] = [
   'мкг', 'мг', 'г', 'кг',
   'мкл', 'мл', 'л',
   'шт', 'уп',
   'ЕД', 'МЕ',
+  'мкмоль', 'ммоль', 'моль',
 ]
