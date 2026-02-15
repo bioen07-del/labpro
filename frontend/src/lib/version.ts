@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.28.01"
+export const APP_VERSION = "1.28.02"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,13 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.28.02",
+    date: "15.02.2026",
+    changes: [
+      "Сворачиваемые группы аликвот на складе — аликвоты из одного источника сгруппированы в складную строку (N из M, суммарный объём)",
+    ],
+  },
   {
     version: "1.28.01",
     date: "15.02.2026",

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -18,6 +18,8 @@ import {
   FlaskConical,
   TestTubes,
   Clock,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -123,6 +125,9 @@ export default function InventoryPage() {
   const [disposeNotes, setDisposeNotes] = useState('')
   const [disposeSaving, setDisposeSaving] = useState(false)
 
+  // Collapsible aliquot groups
+  const [expandedAliquotGroups, setExpandedAliquotGroups] = useState<Set<string>>(new Set())
+
   useEffect(() => {
     loadBatches()
   }, [])
@@ -201,6 +206,56 @@ export default function InventoryPage() {
     if (!bExp) return -1
     return aExp.getTime() - bExp.getTime()
   })
+
+  // Group ALIQUOTs by source for collapsible display
+  type AliquotGroup = { key: string; name: string; volumeMl: number; items: typeof filteredReadyMedia; activeCount: number }
+  const groupedMediaRows = useMemo(() => {
+    if (categoryTab === 'stock_solutions') return { groups: new Map<string, AliquotGroup>(), nonAliquots: filteredReadyMedia, aliquotIds: new Set<string>() }
+
+    const groups = new Map<string, AliquotGroup>()
+    const aliquotIds = new Set<string>()
+
+    for (const media of filteredReadyMedia) {
+      if (media.physical_state !== 'ALIQUOT') continue
+      const sourceId = media.composition?.source_id || media.parent_medium_id || ''
+      const vol = media.volume_ml ?? 0
+      const groupKey = `${media.name || ''}::${vol}::${sourceId}`
+      aliquotIds.add(media.id)
+      const existing = groups.get(groupKey)
+      if (existing) {
+        existing.items.push(media)
+        if (media.status === 'ACTIVE') existing.activeCount++
+      } else {
+        groups.set(groupKey, {
+          key: groupKey,
+          name: media.name || media.batch?.nomenclature?.name || '—',
+          volumeMl: vol,
+          items: [media],
+          activeCount: media.status === 'ACTIVE' ? 1 : 0,
+        })
+      }
+    }
+
+    // Only group if there are 2+ aliquots in a group; singles stay as regular rows
+    for (const [key, group] of groups) {
+      if (group.items.length < 2) {
+        group.items.forEach(m => aliquotIds.delete(m.id))
+        groups.delete(key)
+      }
+    }
+
+    const nonAliquots = filteredReadyMedia.filter(m => !aliquotIds.has(m.id))
+    return { groups, nonAliquots, aliquotIds }
+  }, [filteredReadyMedia, categoryTab])
+
+  const toggleAliquotGroup = (key: string) => {
+    setExpandedAliquotGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   // Stats for current category
   const isMediaTab = categoryTab === 'ready_media' || categoryTab === 'stock_solutions'
@@ -425,67 +480,144 @@ export default function InventoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredReadyMedia.map((media) => {
-                  const expInfo = getMediaExpiration(media)
-                  return (
-                  <TableRow key={media.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/ready-media/${media.id}`)}>
-                    <TableCell>
-                      <span className="font-medium">
-                        {media.code || media.id?.slice(0, 8)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</span>
-                        {media.physical_state === 'ALIQUOT' && (
-                          <Badge variant="outline" className="text-xs bg-cyan-50 text-cyan-700 border-cyan-300">Аликвота</Badge>
+                {(() => {
+                  const renderMediaRow = (media: any, indent = false) => {
+                    const expInfo = getMediaExpiration(media)
+                    return (
+                      <TableRow key={media.id} className={`cursor-pointer hover:bg-muted/50 ${indent ? 'bg-cyan-50/30' : ''}`} onClick={() => router.push(`/ready-media/${media.id}`)}>
+                        <TableCell className={indent ? 'pl-8' : ''}>
+                          <span className="font-medium">
+                            {media.code || media.id?.slice(0, 8)}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{media.name || media.batch?.nomenclature?.name || '—'}</span>
+                            {media.physical_state === 'ALIQUOT' && !indent && (
+                              <Badge variant="outline" className="text-xs bg-cyan-50 text-cyan-700 border-cyan-300">Аликвота</Badge>
+                            )}
+                          </div>
+                          {media.notes && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{media.notes}</p>}
+                        </TableCell>
+                        {categoryTab === 'stock_solutions' && (
+                          <TableCell className="text-center">
+                            {media.concentration ? (
+                              <span className="font-semibold">{media.concentration}{media.concentration_unit || '×'}</span>
+                            ) : '—'}
+                          </TableCell>
                         )}
-                      </div>
-                      {media.notes && <p className="text-xs text-muted-foreground truncate max-w-[200px]">{media.notes}</p>}
-                    </TableCell>
-                    {categoryTab === 'stock_solutions' && (
-                      <TableCell className="text-center">
-                        {media.concentration ? (
-                          <span className="font-semibold">{media.concentration}{media.concentration_unit || '×'}</span>
-                        ) : '—'}
+                        <TableCell className="text-center">
+                          <span className="font-semibold">{media.current_volume_ml ?? media.volume_ml ?? 0}</span>
+                          <span className="text-muted-foreground text-xs ml-1">мл</span>
+                        </TableCell>
+                        <TableCell>{media.created_at ? formatDate(media.created_at) : '—'}</TableCell>
+                        <TableCell>
+                          <div className={`flex items-center gap-1 text-sm ${
+                            expInfo.level === 'expired' ? 'text-red-600 font-medium' :
+                            expInfo.level === 'warning' ? 'text-amber-600' : 'text-green-600'
+                          }`}>
+                            <Clock className="h-3 w-3" />
+                            {expInfo.label}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getReadyMediaStatusColor(media.status)}>
+                            {getReadyMediaStatusLabel(media.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Link href={`/ready-media/${media.id}`} onClick={e => e.stopPropagation()}>
+                            <Eye className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  }
+
+                  const rows: React.ReactNode[] = []
+
+                  // Render non-aliquot items (and single aliquots not in groups)
+                  for (const media of groupedMediaRows.nonAliquots) {
+                    rows.push(renderMediaRow(media))
+                  }
+
+                  // Render aliquot groups
+                  for (const [, group] of groupedMediaRows.groups) {
+                    const isExpanded = expandedAliquotGroups.has(group.key)
+                    const totalVol = group.items.reduce((s, m) => s + (m.current_volume_ml ?? m.volume_ml ?? 0), 0)
+                    // Find earliest expiration among group items
+                    const earliestExp = group.items.reduce<{ level: string; label: string }>((best, m) => {
+                      const exp = getMediaExpiration(m)
+                      if (exp.level === 'expired') return exp
+                      if (exp.level === 'warning' && best.level !== 'expired') return exp
+                      return best
+                    }, getMediaExpiration(group.items[0]))
+
+                    rows.push(
+                      <TableRow
+                        key={`group-${group.key}`}
+                        className="cursor-pointer hover:bg-cyan-50/50 bg-cyan-50/20 border-l-2 border-l-cyan-400"
+                        onClick={() => toggleAliquotGroup(group.key)}
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {isExpanded
+                              ? <ChevronDown className="h-4 w-4 text-cyan-600 shrink-0" />
+                              : <ChevronRight className="h-4 w-4 text-cyan-600 shrink-0" />
+                            }
+                            <span className="text-xs text-muted-foreground">{group.items.length} шт</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{group.name}</span>
+                            <Badge variant="outline" className="text-xs bg-cyan-50 text-cyan-700 border-cyan-300">
+                              Аликвоты {group.activeCount}/{group.items.length}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground">по {group.volumeMl} мл</p>
+                        </TableCell>
+                        {categoryTab === 'stock_solutions' && <TableCell />}
+                        <TableCell className="text-center">
+                          <span className="font-semibold">{totalVol}</span>
+                          <span className="text-muted-foreground text-xs ml-1">мл</span>
+                        </TableCell>
+                        <TableCell>{group.items[0]?.created_at ? formatDate(group.items[0].created_at) : '—'}</TableCell>
+                        <TableCell>
+                          <div className={`flex items-center gap-1 text-sm ${
+                            earliestExp.level === 'expired' ? 'text-red-600 font-medium' :
+                            earliestExp.level === 'warning' ? 'text-amber-600' : 'text-green-600'
+                          }`}>
+                            <Clock className="h-3 w-3" />
+                            {earliestExp.label}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className="bg-cyan-100 text-cyan-800 border-cyan-300">
+                            {group.activeCount > 0 ? `${group.activeCount} актив.` : 'нет актив.'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell />
+                      </TableRow>
+                    )
+
+                    if (isExpanded) {
+                      for (const media of group.items) {
+                        rows.push(renderMediaRow(media, true))
+                      }
+                    }
+                  }
+
+                  return rows.length > 0 ? rows : (
+                    <TableRow>
+                      <TableCell colSpan={categoryTab === 'stock_solutions' ? 8 : 7} className="text-center py-8 text-muted-foreground">
+                        <Beaker className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                        <p>{categoryTab === 'stock_solutions' ? 'Стоковые растворы не найдены' : 'Готовые среды не найдены'}</p>
+                        <p className="mt-2 text-sm">{categoryTab === 'stock_solutions' ? 'Приготовьте сток через калькулятор' : 'Нет приготовленных сред'}</p>
                       </TableCell>
-                    )}
-                    <TableCell className="text-center">
-                      <span className="font-semibold">{media.current_volume_ml ?? media.volume_ml ?? 0}</span>
-                      <span className="text-muted-foreground text-xs ml-1">мл</span>
-                    </TableCell>
-                    <TableCell>{media.created_at ? formatDate(media.created_at) : '—'}</TableCell>
-                    <TableCell>
-                      <div className={`flex items-center gap-1 text-sm ${
-                        expInfo.level === 'expired' ? 'text-red-600 font-medium' :
-                        expInfo.level === 'warning' ? 'text-amber-600' : 'text-green-600'
-                      }`}>
-                        <Clock className="h-3 w-3" />
-                        {expInfo.label}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getReadyMediaStatusColor(media.status)}>
-                        {getReadyMediaStatusLabel(media.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/ready-media/${media.id}`} onClick={e => e.stopPropagation()}>
-                        <Eye className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
-                      </Link>
-                    </TableCell>
-                  </TableRow>
+                    </TableRow>
                   )
-                })}
-                {filteredReadyMedia.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={categoryTab === 'stock_solutions' ? 8 : 7} className="text-center py-8 text-muted-foreground">
-                      <Beaker className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                      <p>{categoryTab === 'stock_solutions' ? 'Стоковые растворы не найдены' : 'Готовые среды не найдены'}</p>
-                      <p className="mt-2 text-sm">{categoryTab === 'stock_solutions' ? 'Приготовьте сток через калькулятор' : 'Нет приготовленных сред'}</p>
-                    </TableCell>
-                  </TableRow>
-                )}
+                })()}
               </TableBody>
             </Table>
           ) : (
