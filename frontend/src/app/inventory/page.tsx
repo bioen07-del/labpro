@@ -661,7 +661,7 @@ export default function InventoryPage() {
                           </span>
                         ) : batch.volume_per_unit && batch.nomenclature?.category !== 'CONSUMABLE' ? (
                           <span className="text-muted-foreground text-xs ml-1">
-                            фл, тек: {batch.current_unit_volume ?? batch.volume_per_unit}/{batch.volume_per_unit} мл
+                            фл, тек: {batch.current_unit_volume ?? batch.volume_per_unit}/{batch.volume_per_unit} {batch.unit || batch.nomenclature?.unit || 'мл'}
                           </span>
                         ) : (
                           <span className="text-muted-foreground text-xs ml-1">{batch.unit || 'шт'}</span>

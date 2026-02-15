@@ -273,11 +273,34 @@ function NewBatchPageInner() {
             {(() => {
               const selNom = nomenclatures.find((n: any) => n.id === formData.nomenclature_id)
               const isConsumable = selNom?.category === 'CONSUMABLE'
+              const isMass = ['MASS'].includes(activeUnitType)
+              const packLabel = isConsumable ? 'Кол-во упаковок *' : 'Кол-во упаковок *'
+              const packHint = isConsumable
+                ? 'Сколько закрытых упаковок пришло'
+                : 'Сколько флаконов / банок / ампул пришло'
+              const sizeLabel = isConsumable
+                ? 'Штук в упаковке'
+                : isMass
+                  ? `Масса 1 упаковки (${effectiveUnit})`
+                  : `Объём 1 упаковки (${effectiveUnit})`
+              const sizePlaceholder = isConsumable
+                ? (selNom?.content_per_package ? String(selNom.content_per_package) : '20')
+                : (selNom?.content_per_package ? String(selNom.content_per_package) : '500')
+              const sizeHint = selNom?.content_per_package
+                ? `Из справочника: ${selNom.content_per_package} ${isConsumable ? 'шт/уп' : effectiveUnit}`
+                : isConsumable ? '' : `${isMass ? 'Масса' : 'Объём'} содержимого одного флакона`
               return (
                 <>
+                  {/* Блок «Упаковка» с визуальной подсказкой */}
+                  {selNom && !isConsumable && (
+                    <div className="rounded-md border border-blue-200 bg-blue-50/50 p-3 text-sm text-blue-800">
+                      <span className="font-medium">Пример:</span> Пришло <strong>10 флаконов</strong> по <strong>500 {effectiveUnit}</strong> каждый = 5000 {effectiveUnit} итого
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label>{isConsumable ? 'Кол-во упаковок *' : 'Количество (фл/банок) *'}</Label>
+                      <Label>{packLabel}</Label>
                       <Input
                         type="number"
                         min="0"
@@ -287,26 +310,19 @@ function NewBatchPageInner() {
                         placeholder="10"
                         required
                       />
-                      {isConsumable
-                        ? <p className="text-xs text-muted-foreground">Сколько закрытых упаковок</p>
-                        : <p className="text-xs text-muted-foreground">Сколько флаконов / банок / ампул</p>
-                      }
+                      <p className="text-xs text-muted-foreground">{packHint}</p>
                     </div>
                     <div className="space-y-2">
-                      <Label>{isConsumable ? 'Штук в упаковке' : `Фасовка (${effectiveUnit} на ед.)`}</Label>
+                      <Label>{sizeLabel}</Label>
                       <Input
                         type="number"
                         min="0"
                         step="any"
                         value={formData.volume_per_unit}
                         onChange={(e) => update('volume_per_unit', e.target.value)}
-                        placeholder={isConsumable ? (selNom?.content_per_package ? String(selNom.content_per_package) : '20') : (selNom?.content_per_package ? String(selNom.content_per_package) : '500')}
+                        placeholder={sizePlaceholder}
                       />
-                      {selNom?.content_per_package ? (
-                        <p className="text-xs text-muted-foreground">Из справочника: {selNom.content_per_package} {isConsumable ? 'шт/уп' : `${effectiveUnit}/ед.`}</p>
-                      ) : !isConsumable ? (
-                        <p className="text-xs text-muted-foreground">Объём/масса в одном флаконе</p>
-                      ) : null}
+                      {sizeHint && <p className="text-xs text-muted-foreground">{sizeHint}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label>Ед. измерения</Label>
@@ -325,12 +341,12 @@ function NewBatchPageInner() {
                     </div>
                   </div>
                   {formData.quantity && formData.volume_per_unit && (
-                    <p className="text-sm text-muted-foreground">
+                    <div className="rounded-md border border-green-200 bg-green-50/50 p-3 text-sm text-green-800">
                       {isConsumable
-                        ? <>Итого: {Number(formData.quantity)} уп × {Number(formData.volume_per_unit)} шт = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(0)} шт</strong></>
-                        : <>Итого: {Number(formData.quantity)} ед. × {Number(formData.volume_per_unit)} {formData.unit} = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(1)} {formData.unit}</strong></>
+                        ? <>Итого: {Number(formData.quantity)} уп &times; {Number(formData.volume_per_unit)} шт = <strong>{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(0)} шт</strong></>
+                        : <>Итого: <strong>{Number(formData.quantity)}</strong> уп &times; <strong>{Number(formData.volume_per_unit)} {effectiveUnit}</strong> = <strong className="text-base">{(Number(formData.quantity) * Number(formData.volume_per_unit)).toFixed(1)} {effectiveUnit}</strong></>
                       }
-                    </p>
+                    </div>
                   )}
 
                   {/* Expiration date */}

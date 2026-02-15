@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.30.00"
+export const APP_VERSION = "1.30.02"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,23 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.30.02",
+    date: "15.02.2026",
+    changes: [
+      "Справочник: убрано поле «Фасовка» из номенклатуры — фасовка указывается при приёмке конкретной партии",
+      "Fix: единица измерения в остатках — вместо hardcoded «мл» используется реальная единица из партии/номенклатуры (мг, г, ЕД и т.д.)",
+    ],
+  },
+  {
+    version: "1.30.01",
+    date: "15.02.2026",
+    changes: [
+      "Приёмка товара: переработаны лейблы — «Кол-во упаковок», «Объём/Масса 1 упаковки»",
+      "Визуальная подсказка-пример при выборе номенклатуры (синий блок)",
+      "Итого-блок выделен зелёным цветом для наглядности",
+    ],
+  },
   {
     version: "1.30.00",
     date: "15.02.2026",

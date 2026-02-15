@@ -3759,7 +3759,8 @@ export function buildMediaOptions(
     let qtyLabel: string
     if (b.volume_per_unit && b.volume_per_unit > 0) {
       const curVol = b.current_unit_volume ?? b.volume_per_unit
-      qtyLabel = `${b.quantity} фл × ${b.volume_per_unit} мл, тек: ${curVol} мл`
+      const u = b.unit || nom.unit || 'мл'
+      qtyLabel = `${b.quantity} фл × ${b.volume_per_unit} ${u}, тек: ${curVol} ${u}`
     } else {
       qtyLabel = `${b.quantity} ${b.unit || 'шт.'}`
     }

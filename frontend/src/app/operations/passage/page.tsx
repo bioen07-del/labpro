@@ -100,9 +100,10 @@ interface ReagentBatchItem {
   id: string
   batch_number: string
   quantity: number
+  unit?: string
   volume_per_unit?: number | null
   current_unit_volume?: number | null
-  nomenclature?: { name?: string; code?: string; category?: string } | null
+  nomenclature?: { name?: string; code?: string; category?: string; unit?: string } | null
   expiration_date?: string
 }
 
@@ -397,9 +398,10 @@ function PassagePageInner() {
       let qtyLabel: string
       if (b.volume_per_unit && b.volume_per_unit > 0) {
         const curVol = b.current_unit_volume ?? b.volume_per_unit
-        qtyLabel = `${b.quantity} фл × ${b.volume_per_unit} мл, тек: ${curVol} мл`
+        const u = b.unit || nom.unit || 'мл'
+        qtyLabel = `${b.quantity} фл × ${b.volume_per_unit} ${u}, тек: ${curVol} ${u}`
       } else {
-        qtyLabel = `${b.quantity} ${nom.category === 'MEDIUM' ? 'мл' : 'шт.'}`
+        qtyLabel = `${b.quantity} ${b.unit || (nom.category === 'MEDIUM' ? 'мл' : 'шт.')}`
       }
       options.push({
         id: `batch:${b.id}`,

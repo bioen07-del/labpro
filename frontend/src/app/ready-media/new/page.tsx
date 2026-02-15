@@ -40,7 +40,7 @@ interface BatchOption {
   unit: string
   volume_per_unit?: number | null
   current_unit_volume?: number | null
-  nomenclature?: { id: string; name: string; category: string; molecular_weight?: number | null; specific_activity?: number | null } | null
+  nomenclature?: { id: string; name: string; category: string; unit?: string; molecular_weight?: number | null; specific_activity?: number | null } | null
   expiration_date?: string
 }
 
@@ -85,7 +85,8 @@ interface RecipeComponent {
 
 function formatBatchStock(b: BatchOption): string {
   if (b.volume_per_unit && b.volume_per_unit > 0 && b.nomenclature?.category !== 'CONSUMABLE') {
-    return `${b.quantity} фл, тек: ${b.current_unit_volume ?? b.volume_per_unit}/${b.volume_per_unit} мл`
+    const u = b.unit || b.nomenclature?.unit || 'мл'
+    return `${b.quantity} фл, тек: ${b.current_unit_volume ?? b.volume_per_unit}/${b.volume_per_unit} ${u}`
   }
   return `${b.quantity} ${b.unit}`
 }
