@@ -284,6 +284,27 @@ export function calcMolarConc(
   return mmol / volumeMl
 }
 
+/**
+ * Рассчитать необходимую массу (г) для целевой молярной концентрации и объёма.
+ * targetConcMM — целевая конц. (мМ), volumeMl — объём растворителя (мл), mw — г/моль.
+ */
+export function calcMassForMolarConc(targetConcMM: number, volumeMl: number, mw: number): number | null {
+  if (targetConcMM <= 0 || volumeMl <= 0 || mw <= 0) return null
+  // n(ммоль) = C(мМ) × V(мл), n(моль) = n(ммоль)/1000, m(г) = n(моль) × MW
+  const mmol = targetConcMM * volumeMl
+  return (mmol / 1000) * mw
+}
+
+/**
+ * Рассчитать необходимую массу (мг) для целевой активности ЕД/мл и объёма.
+ * targetEUml — целевая ЕД/мл, volumeMl — объём (мл), sa — ЕД/мг.
+ */
+export function calcMassForActivityConc(targetEUml: number, volumeMl: number, sa: number): number | null {
+  if (targetEUml <= 0 || volumeMl <= 0 || sa <= 0) return null
+  // totalEU = targetEUml × volumeMl, mass(мг) = totalEU / sa
+  return (targetEUml * volumeMl) / sa
+}
+
 // ==================== РАСЧЁТЫ АКТИВНОСТИ ====================
 
 /**

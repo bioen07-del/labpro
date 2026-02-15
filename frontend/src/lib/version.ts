@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.30.02"
+export const APP_VERSION = "1.30.03"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.30.03",
+    date: "15.02.2026",
+    changes: [
+      "STOCK подсказка: переработана в пошаговую инструкцию — навеска (г/мг) + объём растворителя + итог",
+      "units.ts: calcMassForMolarConc(), calcMassForActivityConc() — обратный расчёт массы из концентрации",
+    ],
+  },
   {
     version: "1.30.02",
     date: "15.02.2026",
