@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, Menu, User, Search, LogOut, Settings, Loader2, X } from 'lucide-react'
+import { APP_VERSION } from '@/lib/version'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -122,6 +123,7 @@ export function Header() {
               <span className="text-white text-sm">LP</span>
             </div>
             <span className="hidden sm:inline">LabPro</span>
+            <span className="text-[10px] font-normal text-gray-400 hidden sm:inline">v{APP_VERSION}</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">

@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.29.00"
+export const APP_VERSION = "1.29.01"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,13 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.29.01",
+    date: "15.02.2026",
+    changes: [
+      "Версия приложения отображается в header рядом с логотипом (всегда видна)",
+    ],
+  },
   {
     version: "1.29.00",
     date: "15.02.2026",
