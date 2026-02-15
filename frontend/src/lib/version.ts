@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.29.01"
+export const APP_VERSION = "1.29.02"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.29.02",
+    date: "15.02.2026",
+    changes: [
+      "Справочник: поле «Фасовка» для media/reagents — объём/масса в 1 флаконе (content_per_package)",
+      "Приёмка: «Фасовка» автозаполняется из справочника для всех категорий, не только CONSUMABLE",
+      "Приёмка: улучшенные подписи — «Количество (фл/банок)», «Фасовка (мл на ед.)», hint из справочника",
+    ],
+  },
   {
     version: "1.29.01",
     date: "15.02.2026",

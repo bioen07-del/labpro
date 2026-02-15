@@ -157,10 +157,10 @@ function NewBatchPageInner() {
         updates.unit = defaults.unit
       }
 
-      // content_per_package → volume_per_unit для CONSUMABLE, сброс для остальных
-      if (nom.category === 'CONSUMABLE' && nom.content_per_package) {
+      // content_per_package → volume_per_unit (для всех категорий)
+      if (nom.content_per_package) {
         updates.volume_per_unit = String(nom.content_per_package)
-      } else if (nom.category === 'CONSUMABLE') {
+      } else {
         updates.volume_per_unit = ''
       }
     }
@@ -277,31 +277,36 @@ function NewBatchPageInner() {
                 <>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label>{isConsumable ? 'Кол-во упаковок *' : 'Количество *'}</Label>
+                      <Label>{isConsumable ? 'Кол-во упаковок *' : 'Количество (фл/банок) *'}</Label>
                       <Input
                         type="number"
                         min="0"
                         step="any"
                         value={formData.quantity}
                         onChange={(e) => update('quantity', e.target.value)}
-                        placeholder={isConsumable ? '5' : '5'}
+                        placeholder="10"
                         required
                       />
-                      {isConsumable && <p className="text-xs text-muted-foreground">Сколько закрытых упаковок</p>}
+                      {isConsumable
+                        ? <p className="text-xs text-muted-foreground">Сколько закрытых упаковок</p>
+                        : <p className="text-xs text-muted-foreground">Сколько флаконов / банок / ампул</p>
+                      }
                     </div>
                     <div className="space-y-2">
-                      <Label>{isConsumable ? 'Штук в упаковке' : 'Объём / масса на ед.'}</Label>
+                      <Label>{isConsumable ? 'Штук в упаковке' : `Фасовка (${effectiveUnit} на ед.)`}</Label>
                       <Input
                         type="number"
                         min="0"
                         step="any"
                         value={formData.volume_per_unit}
                         onChange={(e) => update('volume_per_unit', e.target.value)}
-                        placeholder={isConsumable ? (selNom?.content_per_package ? String(selNom.content_per_package) : '20') : '500'}
+                        placeholder={isConsumable ? (selNom?.content_per_package ? String(selNom.content_per_package) : '20') : (selNom?.content_per_package ? String(selNom.content_per_package) : '500')}
                       />
-                      {isConsumable && selNom?.content_per_package && (
-                        <p className="text-xs text-muted-foreground">В номенклатуре: {selNom.content_per_package} шт/уп</p>
-                      )}
+                      {selNom?.content_per_package ? (
+                        <p className="text-xs text-muted-foreground">Из справочника: {selNom.content_per_package} {isConsumable ? 'шт/уп' : `${effectiveUnit}/ед.`}</p>
+                      ) : !isConsumable ? (
+                        <p className="text-xs text-muted-foreground">Объём/масса в одном флаконе</p>
+                      ) : null}
                     </div>
                     <div className="space-y-2">
                       <Label>Ед. измерения</Label>
