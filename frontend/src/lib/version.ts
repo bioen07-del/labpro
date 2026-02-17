@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.32.01"
+export const APP_VERSION = "1.33.00"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.33.00",
+    date: "17.02.2026",
+    changes: [
+      "BLOCKER Fix: Пассаж без сплита (full) — обновляется passage_number в существующем лоте, а не создаётся новый (соответствие ТЗ)",
+      "CRITICAL Fix: Автозакрытие лота — статус USED теперь учитывается при проверке (DISPOSE + IN_BANK + ISSUED + USED → CLOSED)",
+      "HIGH Fix: Блокировка пассажа при нехватке среды — жёсткая валидация вместо мягкого предупреждения",
+      "Предупреждение (жёлтое) при открытии нового флакона среды, если суммарно достаточно",
+      "Журнал расхода расходников (CONSUMABLE): колонки «Культура» и «Операция» в карточке партии",
+      "Ссылка на культуру в журнале расхода — кликабельный переход на /cultures/{id}",
+    ],
+  },
   {
     version: "1.32.01",
     date: "17.02.2026",

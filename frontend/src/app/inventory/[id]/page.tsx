@@ -27,7 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { getBatchById, updateBatch, getInventoryMovements } from "@/lib/api"
+import { getBatchById, updateBatch, getInventoryMovementsWithContext } from "@/lib/api"
 import { formatDate, daysUntilExpiration, getExpirationWarningLevel } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ export default function BatchDetailPage({
     try {
       const [data, movData] = await Promise.all([
         getBatchById(id),
-        getInventoryMovements({ batch_id: id }).catch(() => []),
+        getInventoryMovementsWithContext(id).catch(() => []),
       ])
       setBatch(data)
       setMovements(movData || [])
@@ -624,29 +624,62 @@ export default function BatchDetailPage({
                   <TableHead>Дата</TableHead>
                   <TableHead>Тип</TableHead>
                   <TableHead>Кол-во</TableHead>
+                  <TableHead>Культура</TableHead>
+                  <TableHead>Операция</TableHead>
                   <TableHead>Примечание</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {movements.map((mv: any) => (
-                  <TableRow key={mv.id}>
-                    <TableCell className="text-sm whitespace-nowrap">
-                      {mv.moved_at ? formatDate(mv.moved_at) : '---'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={mv.movement_type === 'RECEIVE' ? 'default' : 'secondary'}
-                        className={mv.movement_type === 'CONSUME' ? 'bg-orange-100 text-orange-800' : mv.movement_type === 'RECEIVE' ? 'bg-green-100 text-green-800' : ''}>
-                        {mv.movement_type === 'CONSUME' ? 'Расход' : mv.movement_type === 'RECEIVE' ? 'Приход' : mv.movement_type === 'ADJUST' ? 'Корректировка' : mv.movement_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm font-mono">
-                      {mv.movement_type === 'CONSUME' ? '-' : '+'}{mv.quantity_change != null ? mv.quantity_change : mv.quantity || '---'} {batch.unit || ''}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                      {mv.notes || mv.reason || '---'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {movements.map((mv: any) => {
+                  const op = mv._operation
+                  const lot = op?.lots
+                  const culture = lot?.cultures
+                  const opTypeLabels: Record<string, string> = {
+                    PASSAGE: 'Пассаж', SEED: 'Посев', FEED: 'Кормление',
+                    FREEZE: 'Заморозка', THAW: 'Разморозка', OBSERVE: 'Осмотр',
+                    DISPOSE: 'Утилизация',
+                  }
+                  return (
+                    <TableRow key={mv.id}>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {mv.moved_at ? formatDate(mv.moved_at) : '---'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={mv.movement_type === 'RECEIVE' ? 'default' : 'secondary'}
+                          className={mv.movement_type === 'CONSUME' ? 'bg-orange-100 text-orange-800' : mv.movement_type === 'RECEIVE' ? 'bg-green-100 text-green-800' : ''}>
+                          {mv.movement_type === 'CONSUME' ? 'Расход' : mv.movement_type === 'RECEIVE' ? 'Приход' : mv.movement_type === 'ADJUST' ? 'Корректировка' : mv.movement_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm font-mono">
+                        {mv.movement_type === 'CONSUME' ? '-' : '+'}{mv.quantity_change != null ? mv.quantity_change : mv.quantity || '---'} {batch.unit || ''}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {culture ? (
+                          <Link href={`/cultures/${culture.id}`} className="text-primary hover:underline font-medium">
+                            {culture.code || culture.name}
+                          </Link>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {op ? (
+                          <span className="flex items-center gap-1.5">
+                            <Badge variant="outline" className="text-xs">
+                              {opTypeLabels[op.type] || op.type}
+                            </Badge>
+                            {lot && (
+                              <span className="text-muted-foreground text-xs">
+                                {lot.lot_number} P{lot.passage_number}
+                              </span>
+                            )}
+                          </span>
+                        ) : '—'}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
+                        {mv.notes || mv.reason || '---'}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </CardContent>

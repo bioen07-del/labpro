@@ -350,6 +350,39 @@ function PassagePageInner() {
     return batch != null && count > batch.quantity
   })
 
+  // Check media insufficiency (суммарно не хватает — блокер)
+  const hasSeedMediaInsufficient = (() => {
+    if (totalSeedVolume <= 0) return false
+    // Ready media: if overflow → block (no more volume available)
+    if (seedMediumOverflow) return true
+    // Batch: if totalAvailable < needed → block
+    if (seedBatchOverflow && seedBatchOverflow.totalAvailable < totalSeedVolume) return true
+    return false
+  })()
+  const hasDissocMediaInsufficient = (() => {
+    const vol = parseFloat(dissociationVolume) || 0
+    if (vol <= 0 || !dissociationMediumId) return false
+    const parsed = parseMediumId(dissociationMediumId)
+    if (parsed?.type === 'ready_medium') {
+      const rm = readyMedia.find(m => m.id === parsed.id)
+      return rm ? vol > (rm.current_volume_ml ?? 0) : false
+    }
+    if (dissocOverflow && dissocOverflow.totalAvailable < vol) return true
+    return false
+  })()
+  const hasWashMediaInsufficient = (() => {
+    const vol = parseFloat(washVolume) || 0
+    if (vol <= 0 || !washMediumId) return false
+    const parsed = parseMediumId(washMediumId)
+    if (parsed?.type === 'ready_medium') {
+      const rm = readyMedia.find(m => m.id === parsed.id)
+      return rm ? vol > (rm.current_volume_ml ?? 0) : false
+    }
+    if (washOverflow && washOverflow.totalAvailable < vol) return true
+    return false
+  })()
+  const hasAnyMediaInsufficient = hasSeedMediaInsufficient || hasDissocMediaInsufficient || hasWashMediaInsufficient
+
   // Non-cryo container types
   const filteredContainerTypes = useMemo(
     () => containerTypes.filter((t) => !t.is_cryo && t.is_active !== false),
@@ -425,6 +458,7 @@ function PassagePageInner() {
 
   const canProceedStep1 = selectedLotId !== '' && selectedContainerIds.size > 0
   const canProceedStep2 = dissociationMediumId !== '' && washMediumId !== ''
+    && !hasDissocMediaInsufficient && !hasWashMediaInsufficient
   const canProceedStep3 =
     concentrationNum > 0 && volumeNum > 0 && viabilityNum > 0 && viabilityNum <= 100
   const canProceedStep4 = resultRows.length > 0
@@ -434,6 +468,7 @@ function PassagePageInner() {
       ? resultRows.every(r => perRowMedia[r.id] && perRowMedia[r.id] !== '')
       : seedMediumId !== '')
     && !hasConsumableOverflow
+    && !hasSeedMediaInsufficient
 
   function canProceed(s: number): boolean {
     if (s === 1) return canProceedStep1
@@ -822,12 +857,19 @@ function PassagePageInner() {
                     onChange={(e) => setDissociationVolume(e.target.value)} />
                 </div>
               </div>
-              {dissocOverflow && (
+              {hasDissocMediaInsufficient && (
                 <Alert variant="destructive" className="mt-2">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    Недостаточно в текущем флаконе (осталось {dissocOverflow.currentVol} мл).
-                    Будет открыто <strong>{dissocOverflow.unitsNeeded}</strong> нов. ед.
+                    Недостаточно среды! Суммарно доступно {dissocOverflow?.totalAvailable?.toFixed(1) ?? '0'} мл, требуется {(parseFloat(dissociationVolume) || 0).toFixed(1)} мл.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {dissocOverflow && !hasDissocMediaInsufficient && (
+                <Alert className="mt-2 border-yellow-300 bg-yellow-50 text-yellow-800">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Текущий флакон: {dissocOverflow.currentVol} мл. Откроется <strong>{dissocOverflow.unitsNeeded}</strong> нов. ед.
                   </AlertDescription>
                 </Alert>
               )}
@@ -859,12 +901,19 @@ function PassagePageInner() {
                     onChange={(e) => setWashVolume(e.target.value)} />
                 </div>
               </div>
-              {washOverflow && (
+              {hasWashMediaInsufficient && (
                 <Alert variant="destructive" className="mt-2">
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    Недостаточно в текущем флаконе (осталось {washOverflow.currentVol} мл).
-                    Будет открыто <strong>{washOverflow.unitsNeeded}</strong> нов. ед.
+                    Недостаточно среды! Суммарно доступно {washOverflow?.totalAvailable?.toFixed(1) ?? '0'} мл, требуется {(parseFloat(washVolume) || 0).toFixed(1)} мл.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {washOverflow && !hasWashMediaInsufficient && (
+                <Alert className="mt-2 border-yellow-300 bg-yellow-50 text-yellow-800">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Текущий флакон: {washOverflow.currentVol} мл. Откроется <strong>{washOverflow.unitsNeeded}</strong> нов. ед.
                   </AlertDescription>
                 </Alert>
               )}
@@ -1186,17 +1235,22 @@ function PassagePageInner() {
                         Итого: <strong>{totalSeedVolume.toFixed(1)} мл</strong> ({totalNewContainers} шт. × {seedVolumePerContainer} мл)
                       </span>
                       {seedMediumOverflow && (
-                        <span className="flex items-center gap-1 text-yellow-600">
+                        <span className="flex items-center gap-1 text-red-600 font-medium">
                           <AlertTriangle className="h-4 w-4" />
-                          Превышает остаток ({seedMediumAvailable} мл)
+                          Недостаточно среды! Доступно {seedMediumAvailable} мл, нужно {totalSeedVolume.toFixed(1)} мл
                         </span>
                       )}
-                      {seedBatchOverflow && (
+                      {seedBatchOverflow && seedBatchOverflow.totalAvailable < totalSeedVolume ? (
+                        <span className="flex items-center gap-1 text-red-600 font-medium">
+                          <AlertTriangle className="h-4 w-4" />
+                          Недостаточно! Доступно {seedBatchOverflow.totalAvailable.toFixed(1)} мл, нужно {totalSeedVolume.toFixed(1)} мл
+                        </span>
+                      ) : seedBatchOverflow ? (
                         <span className="flex items-center gap-1 text-yellow-600">
                           <AlertTriangle className="h-4 w-4" />
-                          Нехватка во флаконе (ост. {seedBatchOverflow.currentVol} мл), откроется {seedBatchOverflow.unitsNeeded} нов. ед.
+                          Откроется {seedBatchOverflow.unitsNeeded} нов. ед. (ост. {seedBatchOverflow.currentVol} мл)
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   )}
                 </>

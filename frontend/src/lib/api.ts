@@ -2843,6 +2843,50 @@ export async function getInventoryMovements(filters?: { batch_id?: string; movem
   return data
 }
 
+/**
+ * Get inventory movements enriched with operation→lot→culture context.
+ * Used in batch detail page to show WHERE consumables were consumed.
+ */
+export async function getInventoryMovementsWithContext(batchId: string) {
+  // Step 1: Get movements
+  const { data: movements, error } = await supabase
+    .from('inventory_movements')
+    .select('*')
+    .eq('batch_id', batchId)
+    .order('moved_at', { ascending: false })
+
+  if (error) throw error
+  if (!movements || movements.length === 0) return []
+
+  // Step 2: Enrich OPERATION-referenced movements with lot/culture context
+  const opIds = movements
+    .filter((m: any) => m.reference_type === 'OPERATION' && m.reference_id)
+    .map((m: any) => m.reference_id as string)
+
+  let opsMap = new Map<string, any>()
+  if (opIds.length > 0) {
+    const uniqueOpIds = [...new Set(opIds)]
+    const { data: ops } = await supabase
+      .from('operations')
+      .select('id, type, lot_id, performed_at, completed_at, lots!inner(id, lot_number, passage_number, culture_id, cultures!inner(id, name, code))')
+      .in('id', uniqueOpIds)
+
+    if (ops) {
+      for (const op of ops) {
+        opsMap.set(op.id, op)
+      }
+    }
+  }
+
+  // Step 3: Merge
+  return movements.map((m: any) => ({
+    ...m,
+    _operation: m.reference_type === 'OPERATION' && m.reference_id
+      ? opsMap.get(m.reference_id) || null
+      : null,
+  }))
+}
+
 // ==================== BATCH RESERVATIONS ====================
 
 export async function createBatchReservation(reservation: Record<string, unknown>) {
@@ -3377,39 +3421,63 @@ export async function createOperationPassage(data: {
   
   if (opError) throw opError
   
-  // 3. Генерация lot_number с префиксом культуры
-  const { data: cultureForLot } = await supabase
-    .from('cultures')
-    .select('name')
-    .eq('id', sourceLot.culture_id)
-    .single()
-  const culturePrefix = cultureForLot?.name || sourceLot.culture_id.substring(0, 8)
-
-  const { count: lotCount } = await supabase
-    .from('lots')
-    .select('*', { count: 'exact', head: true })
-    .eq('culture_id', sourceLot.culture_id)
-
-  const lotNumber = `${culturePrefix}-L${(lotCount || 0) + 1}`
-
-  // 4. Создать новый лот для результатов
+  // 3. Определить целевой лот (full = обновить существующий, partial = создать новый)
   const totalCells = data.metrics.concentration * data.metrics.volume_ml
-  const { data: newLot, error: newLotError } = await supabase
-    .from('lots')
-    .insert({
-      lot_number: lotNumber,
-      culture_id: sourceLot.culture_id,
-      passage_number: newPassageNumber,
-      parent_lot_id: data.source_lot_id,
-      status: 'ACTIVE',
-      seeded_at: new Date().toISOString(),
-      initial_cells: totalCells,
-      viability: data.metrics.viability_percent,
-    })
-    .select()
-    .single()
-  
-  if (newLotError) throw newLotError
+  let targetLot: typeof sourceLot
+  let targetLotNumber: string
+
+  if (data.split_mode === 'full') {
+    // ТЗ: «Без split → новые контейнеры В ТОМ ЖЕ ЛОТЕ, passage_number увеличивается»
+    const { error: updateLotError } = await supabase
+      .from('lots')
+      .update({
+        passage_number: newPassageNumber,
+        seeded_at: new Date().toISOString(),
+        initial_cells: totalCells,
+        viability: data.metrics.viability_percent,
+      })
+      .eq('id', data.source_lot_id)
+
+    if (updateLotError) throw updateLotError
+
+    targetLot = { ...sourceLot, passage_number: newPassageNumber }
+    targetLotNumber = sourceLot.lot_number
+  } else {
+    // Partial: создать новый лот с parent_lot_id (как прежде)
+    const { data: cultureForLot } = await supabase
+      .from('cultures')
+      .select('name')
+      .eq('id', sourceLot.culture_id)
+      .single()
+    const culturePrefix = cultureForLot?.name || sourceLot.culture_id.substring(0, 8)
+
+    const { count: lotCount } = await supabase
+      .from('lots')
+      .select('*', { count: 'exact', head: true })
+      .eq('culture_id', sourceLot.culture_id)
+
+    const lotNumber = `${culturePrefix}-L${(lotCount || 0) + 1}`
+
+    const { data: newLot, error: newLotError } = await supabase
+      .from('lots')
+      .insert({
+        lot_number: lotNumber,
+        culture_id: sourceLot.culture_id,
+        passage_number: newPassageNumber,
+        parent_lot_id: data.source_lot_id,
+        status: 'ACTIVE',
+        seeded_at: new Date().toISOString(),
+        initial_cells: totalCells,
+        viability: data.metrics.viability_percent,
+      })
+      .select()
+      .single()
+
+    if (newLotError) throw newLotError
+
+    targetLot = newLot
+    targetLotNumber = lotNumber
+  }
   
   // 4. Записать SOURCE контейнеры в operation_containers
   const sourceOperationContainers = data.source_containers.map(container => ({
@@ -3426,21 +3494,19 @@ export async function createOperationPassage(data: {
   if (ocError) throw ocError
   
   // 5. Создать новые контейнеры-результаты (по группам типов)
-  const cultureName = culturePrefix
-
   // Считаем существующие контейнеры в этом лоте для уникальной нумерации
   const { count: existingInLot } = await supabase
     .from('containers')
     .select('*', { count: 'exact', head: true })
-    .eq('lot_id', newLot.id)
+    .eq('lot_id', targetLot.id)
 
   const resultContainers = []
   let globalIdx = (existingInLot || 0)
   for (const group of data.result.container_groups) {
     for (let i = 0; i < group.target_count; i++) {
       globalIdx++
-      // lotNumber уже содержит префикс культуры (CT-0001-L2), используем напрямую
-      let containerCode = `${lotNumber}-P${newPassageNumber}-${String(globalIdx).padStart(3, '0')}`
+      // targetLotNumber содержит префикс культуры (CT-0001-L1 или L2), используем напрямую
+      let containerCode = `${targetLotNumber}-P${newPassageNumber}-${String(globalIdx).padStart(3, '0')}`
 
       // Проверяем уникальность кода, при коллизии добавляем суффикс
       const { count: codeExists } = await supabase
@@ -3456,7 +3522,7 @@ export async function createOperationPassage(data: {
       const { data: newContainer, error: containerError } = await supabase
         .from('containers')
         .insert({
-          lot_id: newLot.id,
+          lot_id: targetLot.id,
           container_type_id: group.container_type_id,
           position_id: data.result.position_id || null,
           container_status: 'IN_CULTURE',
@@ -3684,7 +3750,7 @@ export async function createOperationPassage(data: {
   if (data.split_mode === 'partial') {
     await createAutoTask({
       type: 'PASSAGE',
-      target_id: newLot.id,
+      target_id: targetLot.id,
       target_type: 'LOT',
       due_days: 3
     })
@@ -3697,9 +3763,18 @@ export async function createOperationPassage(data: {
     console.error('Failed to update coefficient after passage:', err)
   }
 
+  // 13. При partial passage — проверить автозакрытие source лота
+  if (data.split_mode === 'partial') {
+    try {
+      await checkAndCloseLot(data.source_lot_id)
+    } catch (err) {
+      console.error('Failed to check/close source lot after partial passage:', err)
+    }
+  }
+
   return {
     operation,
-    newLot,
+    newLot: targetLot,
     resultContainers
   }
 }
@@ -4977,11 +5052,13 @@ export async function checkAndCloseLot(lotId: string) {
 
   if (!containers || containers.length === 0) return
 
-  const allDisposed = containers.every((c: { status: string }) =>
-    c.status === 'DISPOSE' || c.status === 'IN_BANK' || c.status === 'ISSUED'
+  // ТЗ: «лот закрывается автоматически, когда все контейнеры израсходованы или утилизированы»
+  // USED = израсходован пассажем, DISPOSE = утилизирован, IN_BANK = заморожен, ISSUED = выдан
+  const allFinished = containers.every((c: { status: string }) =>
+    c.status === 'DISPOSE' || c.status === 'IN_BANK' || c.status === 'ISSUED' || c.status === 'USED'
   )
 
-  if (allDisposed) {
+  if (allFinished) {
     await supabase
       .from('lots')
       .update({ status: 'CLOSED', harvest_at: new Date().toISOString() })
