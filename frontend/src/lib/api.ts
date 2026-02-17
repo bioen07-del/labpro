@@ -1240,7 +1240,8 @@ export async function getOrderById(id: string) {
     .select(`
       *,
       culture_type:culture_types(*),
-      bank:banks(*)
+      bank:banks(*),
+      order_items(*, cryo_vial:cryo_vials(*))
     `)
     .eq('id', id)
     .single()
@@ -1295,12 +1296,12 @@ export async function reserveBankForOrder(orderId: string, bankId: string, vialC
 
   if (bankErr) throw bankErr
 
-  // 2. Получить криовиалы из банка (AVAILABLE)
+  // 2. Получить криовиалы из банка (IN_STOCK)
   const { data: vials, error: vialsErr } = await supabase
     .from('cryo_vials')
     .select('id')
     .eq('bank_id', bankId)
-    .eq('status', 'AVAILABLE')
+    .eq('status', 'IN_STOCK')
     .limit(vialCount)
 
   if (vialsErr) throw vialsErr
@@ -1463,8 +1464,23 @@ export async function createBatch(batch: Record<string, unknown>) {
     .insert(batch)
     .select()
     .single()
-  
+
   if (error) throw error
+
+  // Создать движение RECEIVE при приёмке (INV-01)
+  try {
+    await supabase.from('inventory_movements').insert({
+      batch_id: data.id,
+      movement_type: 'RECEIVE',
+      quantity: data.quantity || 1,
+      unit: data.unit || 'шт',
+      moved_at: new Date().toISOString(),
+      notes: 'Приёмка на склад',
+    })
+  } catch {
+    // Non-critical — не блокируем приёмку при ошибке создания движения
+  }
+
   return data
 }
 
@@ -3384,7 +3400,7 @@ export async function createOperationPassage(data: {
       lot_number: lotNumber,
       culture_id: sourceLot.culture_id,
       passage_number: newPassageNumber,
-      parent_lot_id: data.split_mode === 'partial' ? data.source_lot_id : null,
+      parent_lot_id: data.source_lot_id,
       status: 'ACTIVE',
       seeded_at: new Date().toISOString(),
       initial_cells: totalCells,
@@ -4207,6 +4223,7 @@ export interface FreezeData {
   wash_volume_ml?: number
   cryo_batch_id?: string             // Партия криовиалов со склада
   additional_components?: AdditionalComponent[]  // Доп. компоненты (сыворотка, добавки)
+  freezing_method?: string                       // Метод заморозки (программная, -80°C и т.д.)
   viability_percent: number
   concentration: number
   volume_ml?: number                 // Общий объём суспензии (мл)
@@ -4430,7 +4447,8 @@ export async function createOperationFreeze(data: FreezeData) {
       concentration: data.concentration,
       viability_percent: data.viability_percent,
       total_cells: data.total_cells,
-      volume_ml: data.volume_ml || null
+      volume_ml: data.volume_ml || null,
+      freezing_method: data.freezing_method || null,
     })
   
   // 9. Создать QC-задачу и авто-тесты

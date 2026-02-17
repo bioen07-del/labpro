@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.31.01"
+export const APP_VERSION = "1.32.00"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,31 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.32.00",
+    date: "17.02.2026",
+    changes: [
+      "E2E аудит: исправлены 5 BLOCKER, 9 CRITICAL и 6 HIGH багов в банках, заявках, операциях и справочниках",
+      "BLOCKER Fix: reserveBankForOrder — фильтр 'IN_STOCK' вместо 'AVAILABLE' (резервирование теперь работает)",
+      "BLOCKER Fix: getOrderById — JOIN order_items (позиции заявки теперь отображаются)",
+      "BLOCKER Fix: UI смены статуса банка QUARANTINE → APPROVED → RELEASED (Select на карточке банка)",
+      "BLOCKER Fix: кнопка «Создать заказ» → ведёт на /orders/new",
+      "CRITICAL Fix: freezingMethod теперь сохраняется в operation_metrics",
+      "CRITICAL Fix: full passage parent_lot_id — lineage не разрывается",
+      "CRITICAL Fix: specific_activity парсится как число (NUMERIC_FIELDS)",
+      "CRITICAL Fix: status='RECEIVED' при создании донации",
+      "CRITICAL Fix: tissue_type_id обязательно при донации",
+      "Fix: Движение RECEIVE автоматически создаётся при приёмке партии",
+      "Fix: Контейнеры DISPOSED/USED/IN_BANK исключены из Feed и Freeze",
+      "Fix: getTotalVolume — guard для quantity=0 (больше нет отрицательных значений)",
+      "Fix: Per-container media mode скрыт (данные не обрабатываются при submit)",
+      "Fix: Форма заявки — label «Количество клеток (млн)» + подсказка",
+      "Fix: Кнопка «Создать банк» убрана (банки создаются при заморозке)",
+      "Fix: PENDING status color для заявок",
+      "Fix: Фильтрация донаций по donor_id из URL",
+      "QR-этикетки: убран статус, добавлены «Приготовлено» и «Годен до»",
+    ],
+  },
   {
     version: "1.31.01",
     date: "17.02.2026",

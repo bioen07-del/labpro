@@ -32,7 +32,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { getBankById, getQCTests } from '@/lib/api'
+import { getBankById, getQCTests, updateBankStatus } from '@/lib/api'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { QRLabel } from '@/components/qr-label'
 import { formatDate } from '@/lib/utils'
 import type { Bank, QCTest } from '@/types'
@@ -133,11 +140,31 @@ export default function BankDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <Edit className="mr-2 h-4 w-4" />
-            Редактировать
-          </Button>
+        <div className="flex gap-2 items-center">
+          <Select
+            value={bank.status}
+            onValueChange={async (newStatus) => {
+              try {
+                const qcPassed = newStatus === 'APPROVED' ? true : undefined
+                await updateBankStatus(bank.id, newStatus, qcPassed)
+                await loadData()
+              } catch (error) {
+                console.error('Error updating bank status:', error)
+                alert('Ошибка при смене статуса')
+              }
+            }}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="QUARANTINE">Карантин</SelectItem>
+              <SelectItem value="APPROVED">Одобрен</SelectItem>
+              <SelectItem value="RESERVED">Зарезервирован</SelectItem>
+              <SelectItem value="ISSUED">Выдан</SelectItem>
+              <SelectItem value="DISPOSE">Утилизирован</SelectItem>
+            </SelectContent>
+          </Select>
           {!bank.qc_passed && (
             <Button variant="outline">
               <FileText className="mr-2 h-4 w-4" />

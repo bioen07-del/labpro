@@ -186,8 +186,10 @@ function NewCultureForm() {
   useEffect(() => {
     async function load() {
       try {
+        const donationFilters: { statuses: string[]; donor_id?: string } = { statuses: ['APPROVED', 'QUARANTINE'] }
+        if (urlDonorId) donationFilters.donor_id = urlDonorId
         const [donationsData, containerTypesData, positionsData, seedMediaResult, allRM, allReagents, batchesData] = await Promise.all([
-          getDonations({ statuses: ['APPROVED', 'QUARANTINE'] }),
+          getDonations(donationFilters),
           getContainerTypes(),
           getPositions(),
           getAvailableMediaByUsage('SEED'),
@@ -709,8 +711,8 @@ function NewCultureForm() {
               <CardDescription>Среда для первичного посева (необязательно)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Mode toggle */}
-              <div className="flex items-center space-x-2">
+              {/* Mode toggle — скрыт: per-container data не обрабатывается при submit (DON-04) */}
+              <div className="flex items-center space-x-2 hidden">
                 <Checkbox
                   id="per-container-media-culture"
                   checked={perContainerMediaMode}

@@ -188,14 +188,15 @@ export default function NewOrderPage() {
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="cells">Количество клеток *</Label>
+                <Label htmlFor="cells">Количество клеток (млн) *</Label>
                 <Input
                   id="cells"
                   type="number"
-                  placeholder="Например: 1000000"
+                  placeholder="Например: 150"
                   value={formData.requested_cells}
                   onChange={(e) => setFormData({ ...formData, requested_cells: e.target.value })}
                 />
+                <p className="text-xs text-muted-foreground">Укажите количество в миллионах (например, 150 = 150 млн клеток)</p>
               </div>
 
               <div className="space-y-2">

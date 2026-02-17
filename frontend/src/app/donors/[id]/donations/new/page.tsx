@@ -104,6 +104,7 @@ export default function NewDonationPage() {
       const donation = {
         donor_id: donorId,
         collected_at: collectedAt,
+        status: 'RECEIVED',
         tissue_type_id: tissueTypeId || null,
         tissue_form: tissueForm,
         tissue_volume_ml: tissueVolumeMl || null,
@@ -452,7 +453,7 @@ export default function NewDonationPage() {
                 className="w-full"
                 size="lg"
                 onClick={handleSubmit}
-                disabled={!collectedAt || submitting}
+                disabled={!collectedAt || !tissueTypeId || submitting}
               >
                 {submitting ? (
                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Создание...</>

@@ -88,9 +88,11 @@ export default function OrdersPage() {
             Заказы на выдачу клеточного материала
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Создать заказ
+        <Button asChild>
+          <Link href="/orders/new">
+            <Plus className="mr-2 h-4 w-4" />
+            Создать заказ
+          </Link>
         </Button>
       </div>
 
@@ -201,7 +203,7 @@ export default function OrdersPage() {
                       </p>
                     </TableCell>
                     <TableCell>
-                      {order.quantity} × {order.volume_per_unit} мл
+                      {order.requested_cells ? `${order.requested_cells} млн` : '-'}
                     </TableCell>
                     <TableCell>
                       {order.requester_name || '-'}
@@ -269,6 +271,7 @@ export default function OrdersPage() {
 
 function getStatusColor(status: string): string {
   const colors: Record<string, string> = {
+    PENDING: 'bg-yellow-100 text-yellow-800',
     NEW: 'bg-yellow-100 text-yellow-800',
     IN_PROGRESS: 'bg-orange-100 text-orange-800',
     COMPLETED: 'bg-green-100 text-green-800',

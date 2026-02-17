@@ -89,7 +89,8 @@ function FeedPageInner() {
           setContainersLoading(true)
           try {
             const data = await getContainersByLot(paramLotId)
-            setContainers(data || [])
+            const active = (data || []).filter((c: any) => !['DISPOSED', 'USED', 'IN_BANK'].includes(c.container_status))
+            setContainers(active)
           } catch (err) {
             console.error('Error loading containers from URL param:', err)
           } finally {
@@ -111,7 +112,9 @@ function FeedPageInner() {
     setContainersLoading(true)
     try {
       const data = await getContainersByLot(lotId)
-      setContainers(data || [])
+      // Исключаем DISPOSED/USED/IN_BANK контейнеры (OPS-03)
+      const active = (data || []).filter((c: any) => !['DISPOSED', 'USED', 'IN_BANK'].includes(c.container_status))
+      setContainers(active)
       setSelectedContainers([])
     } catch (error) {
       console.error('Error loading containers:', error)

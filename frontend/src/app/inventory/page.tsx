@@ -72,6 +72,7 @@ const MEDIA_CATEGORIES = new Set(['MEDIUM', 'SERUM', 'BUFFER', 'SUPPLEMENT', 'EN
 /** Суммарный доступный объём (мл) для пофлаконных партий */
 function getTotalVolume(batch: any): number {
   if (!batch.volume_per_unit || batch.volume_per_unit <= 0) return 0
+  if (batch.quantity <= 0) return 0
   return (batch.quantity - 1) * batch.volume_per_unit
     + (batch.current_unit_volume ?? batch.volume_per_unit)
 }

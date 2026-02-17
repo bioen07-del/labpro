@@ -253,7 +253,8 @@ function FreezePageInner() {
           setContainersLoading(true)
           try {
             const data = await getContainersByLot(paramLotId)
-            setContainers(data || [])
+            const active = (data || []).filter((c: any) => !['DISPOSED', 'USED', 'IN_BANK'].includes(c.container_status))
+            setContainers(active)
           } catch (err) {
             console.error('Error loading containers from URL param:', err)
           } finally {
@@ -278,7 +279,9 @@ function FreezePageInner() {
     setContainersLoading(true)
     try {
       const data = await getContainersByLot(lotId)
-      setContainers(data || [])
+      // Исключаем DISPOSED/USED/IN_BANK контейнеры (OPS-04)
+      const active = (data || []).filter((c: any) => !['DISPOSED', 'USED', 'IN_BANK'].includes(c.container_status))
+      setContainers(active)
       setSelectedContainerIds([])
     } catch (error) {
       console.error('Error loading containers:', error)
@@ -433,6 +436,7 @@ function FreezePageInner() {
         wash_volume_ml: washVolume ? Number(washVolume) : undefined,
         cryo_batch_id: cryoBatchId || undefined,
         additional_components: validAdditionalComponents.length > 0 ? validAdditionalComponents : undefined,
+        freezing_method: freezingMethod || undefined,
         viability_percent: Number(viability),
         concentration: Number(concentration),
         volume_ml: Number(totalVolume) || undefined,

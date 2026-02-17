@@ -67,7 +67,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   SUPPLEMENT: 'Добавка', ENZYME: 'Фермент', REAGENT: 'Реагент',
 }
 
-const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'min_stock_threshold', 'molecular_weight', 'content_per_package'])
+const NUMERIC_FIELDS = new Set(['surface_area_cm2', 'volume_ml', 'optimal_confluent', 'observe_interval_days', 'feed_interval_days', 'min_stock_threshold', 'molecular_weight', 'content_per_package', 'specific_activity'])
 
 // ---- Component ----
 

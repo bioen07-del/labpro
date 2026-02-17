@@ -581,7 +581,13 @@ export default function ReadyMediumDetailPage() {
                 }
                 metadata={{
                   'Объём': `${medium.current_volume_ml ?? medium.volume_ml ?? 0} мл`,
-                  'Статус': STATUS_LABEL[medium.status] || medium.status,
+                  'Приготовлено': medium.prepared_at || medium.created_at
+                    ? new Date(medium.prepared_at || medium.created_at).toLocaleDateString('ru-RU')
+                    : '—',
+                  'Годен до': (() => {
+                    const exp = getExpiresAt(medium)
+                    return exp ? exp.toLocaleDateString('ru-RU') : '—'
+                  })(),
                 }}
               />
             </CardContent>

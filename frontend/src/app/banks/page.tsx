@@ -3,8 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { 
-  Archive, 
-  Plus, 
+  Archive,
   Search,
   MoreHorizontal,
   Eye,
@@ -88,10 +87,9 @@ export default function BanksPage() {
             Мастер-клеточные банки (MCB), рабочие (WCB) и резервные (RWB)
           </p>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Создать банк
-        </Button>
+        <p className="text-xs text-muted-foreground max-w-[200px] text-right">
+          Банки создаются автоматически при операции заморозки
+        </p>
       </div>
 
       {/* Stats */}
