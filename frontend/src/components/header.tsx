@@ -4,10 +4,17 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, Menu, User, Search, LogOut, Settings, Loader2, X } from 'lucide-react'
-import { APP_VERSION } from '@/lib/version'
+import { APP_VERSION, CHANGELOG } from '@/lib/version'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +60,7 @@ export function Header() {
   const [currentUser, setCurrentUser] = useState<UserData | null>(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [changelogOpen, setChangelogOpen] = useState(false)
 
   useEffect(() => {
     loadNotifications()
@@ -123,7 +131,13 @@ export function Header() {
               <span className="text-white text-sm">LP</span>
             </div>
             <span className="hidden sm:inline">LabPro</span>
-            <span className="text-[10px] font-normal text-gray-400 hidden sm:inline">v{APP_VERSION}</span>
+            <button
+              onClick={(e) => { e.preventDefault(); setChangelogOpen(true) }}
+              className="text-[10px] font-normal text-gray-400 hover:text-blue-500 transition-colors cursor-pointer hidden sm:inline"
+              title="Журнал изменений"
+            >
+              v{APP_VERSION}
+            </button>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
@@ -285,6 +299,40 @@ export function Header() {
           </nav>
         </SheetContent>
       </Sheet>
+
+      {/* Changelog Dialog */}
+      <Dialog open={changelogOpen} onOpenChange={setChangelogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Журнал изменений
+              <Badge variant="outline" className="text-xs">v{APP_VERSION}</Badge>
+            </DialogTitle>
+            <DialogDescription>
+              История обновлений LabPro
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1 pr-2 space-y-4">
+            {CHANGELOG.map((entry, idx) => (
+              <div key={entry.version} className={`space-y-1.5 ${idx > 0 ? 'border-t pt-4' : ''}`}>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm">v{entry.version}</span>
+                  <span className="text-xs text-muted-foreground">{entry.date}</span>
+                  {idx === 0 && <Badge className="text-[10px] h-4 bg-blue-100 text-blue-700 hover:bg-blue-100">текущая</Badge>}
+                </div>
+                <ul className="space-y-0.5 ml-1">
+                  {entry.changes.map((change, cIdx) => (
+                    <li key={cIdx} className="text-xs text-muted-foreground flex gap-1.5">
+                      <span className="text-blue-400 mt-0.5 shrink-0">&#x2022;</span>
+                      <span>{change}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }
