@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Loader2, Plus, Trash2, Calculator, Beaker, FlaskConical, FlaskRound, Pipette, Info } from "lucide-react"
+import { ArrowLeft, Loader2, Plus, Trash2, Calculator, Beaker, FlaskConical, FlaskRound, Pipette, Info, ArrowDownUp } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -207,6 +207,10 @@ export default function NewReadyMediumPage() {
   const [stockVolume, setStockVolume] = useState(0)
   const [stockConc, setStockConc] = useState(0)
   const [stockConcUnit, setStockConcUnit] = useState('×')
+  // STOCK reverse mode: "У меня есть X мг → какой объём/конц?"
+  const [stockCalcDir, setStockCalcDir] = useState<'forward' | 'reverse'>('forward')
+  const [stockMass, setStockMass] = useState(0)
+  const [stockMassUnit, setStockMassUnit] = useState<string>('мг')
 
   // DILUTION mode
   const [sourceStockId, setSourceStockId] = useState("")
@@ -280,6 +284,60 @@ export default function NewReadyMediumPage() {
   const solventVolume = totalVolume - totalComponentsVolume
   const solventPercent = totalVolume > 0 ? (solventVolume / totalVolume) * 100 : 0
 
+  // ==================== STOCK REVERSE CALCULATIONS ====================
+
+  /** Reverse STOCK: given mass + volume → compute concentration; given mass + conc → compute volume */
+  const stockReverse = useMemo(() => {
+    if (stockCalcDir !== 'reverse' || stockMass <= 0) return null
+    const srcBatch = stockSourceBatchId ? batches.find(b => b.id === stockSourceBatchId) : null
+    const mw = srcBatch?.nomenclature?.molecular_weight
+    const sa = srcBatch?.nomenclature?.specific_activity
+
+    // Convert user mass to grams
+    const massFactors: Record<string, number> = { 'мкг': 1e-6, 'мг': 1e-3, 'г': 1 }
+    const massGrams = stockMass * (massFactors[stockMassUnit] || 1e-3)
+    const massMg = massGrams * 1000
+
+    const isMolar = stockConcUnit === 'мМ' || stockConcUnit === 'М'
+    const isActivity = stockConcUnit === 'ЕД/мл'
+    const isMassConc = stockConcUnit === 'мг/мл' || stockConcUnit === 'мкг/мл'
+
+    // Case: have volume, compute concentration
+    if (stockVolume > 0 && stockConc === 0) {
+      let calcConc: number | null = null
+      if (isMolar && mw && mw > 0) {
+        // C(мМ) = (mass_g / MW) * 1000 / V_ml
+        calcConc = (massGrams / mw) * 1000 / stockVolume
+        if (stockConcUnit === 'М') calcConc = calcConc / 1000
+      } else if (isActivity && sa && sa > 0) {
+        // ЕД/мл = (mass_mg * sa) / V_ml
+        calcConc = (massMg * sa) / stockVolume
+      } else if (isMassConc) {
+        // мг/мл or мкг/мл
+        calcConc = stockConcUnit === 'мг/мл' ? massMg / stockVolume : (massMg * 1000) / stockVolume
+      }
+      return calcConc != null ? { type: 'conc' as const, value: calcConc } : null
+    }
+
+    // Case: have concentration, compute volume
+    if (stockConc > 0 && stockVolume === 0) {
+      let calcVol: number | null = null
+      if (isMolar && mw && mw > 0) {
+        const concMM = stockConcUnit === 'М' ? stockConc * 1000 : stockConc
+        // V(мл) = (mass_g / MW) * 1000 / C(мМ)
+        calcVol = (massGrams / mw) * 1000 / concMM
+      } else if (isActivity && sa && sa > 0) {
+        // V(мл) = (mass_mg * sa) / C(ЕД/мл)
+        calcVol = (massMg * sa) / stockConc
+      } else if (isMassConc) {
+        calcVol = stockConcUnit === 'мг/мл' ? massMg / stockConc : (massMg * 1000) / stockConc
+      }
+      return calcVol != null ? { type: 'vol' as const, value: calcVol } : null
+    }
+
+    return null
+  }, [stockCalcDir, stockMass, stockMassUnit, stockVolume, stockConc, stockConcUnit, stockSourceBatchId, batches])
+
   // ==================== DILUTION CALCULATIONS ====================
 
   const sourceStock = stocks.find(s => s.id === sourceStockId)
@@ -317,7 +375,9 @@ export default function NewReadyMediumPage() {
     if (formMode === 'STOCK') {
       const src = batches.find(b => b.id === stockSourceBatchId)
       if (!src?.nomenclature?.name) return ""
-      return `${src.nomenclature.name} ${stockConc}${stockConcUnit}`
+      const effectiveConc = stockCalcDir === 'reverse' && stockReverse?.type === 'conc' ? stockReverse.value : stockConc
+      const effectiveConcStr = effectiveConc > 0 ? `${Math.round(effectiveConc * 100) / 100}` : '?'
+      return `${src.nomenclature.name} ${effectiveConcStr}${stockConcUnit}`
     }
     if (formMode === 'ALIQUOT') {
       if (!aliquotSource) return ""
@@ -344,7 +404,7 @@ export default function NewReadyMediumPage() {
     }
     return parts.join(" + ")
   }, [formMode, solventSourceId, components, sourceStockId, targetConc, targetConcUnit,
-    stockSourceBatchId, stockConc, stockConcUnit,
+    stockSourceBatchId, stockConc, stockConcUnit, stockCalcDir, stockReverse,
     aliquotSourceType, aliquotSourceId, aliquotVolume, aliquotCount,
     batches, readyMedia, stocks, sourceStock, aliquotSource])
 
@@ -473,12 +533,22 @@ export default function NewReadyMediumPage() {
 
   async function submitStock() {
     if (!stockSourceBatchId) throw new Error("Выберите реагент")
-    if (stockVolume <= 0) throw new Error("Укажите объём стока")
-    if (stockConc <= 0) throw new Error("Укажите концентрацию")
+
+    // In reverse mode, apply computed values
+    const effectiveVol = stockCalcDir === 'reverse' && stockReverse?.type === 'vol'
+      ? stockReverse.value : stockVolume
+    const effectiveConc = stockCalcDir === 'reverse' && stockReverse?.type === 'conc'
+      ? stockReverse.value : stockConc
+
+    if (effectiveVol <= 0) throw new Error("Укажите объём стока")
+    if (effectiveConc <= 0) throw new Error("Укажите концентрацию")
 
     const srcBatch = batches.find(b => b.id === stockSourceBatchId)
     const hasSolvent = !!stockSolventBatchId && stockSolventBatchId !== '__none__'
     const solventBatch = hasSolvent ? batches.find(b => b.id === stockSolventBatchId) : null
+
+    const roundedConc = Math.round(effectiveConc * 1000) / 1000
+    const roundedVol = Math.round(effectiveVol * 100) / 100
 
     const composition = {
       mode: 'STOCK',
@@ -486,19 +556,20 @@ export default function NewReadyMediumPage() {
       source_name: srcBatch?.nomenclature?.name || '',
       solvent_batch_id: hasSolvent ? stockSolventBatchId : null,
       solvent_name: solventBatch?.nomenclature?.name || null,
-      solvent_volume_ml: hasSolvent ? stockVolume : null,
-      resulting_concentration: stockConc,
+      solvent_volume_ml: hasSolvent ? roundedVol : null,
+      resulting_concentration: roundedConc,
       resulting_concentration_unit: stockConcUnit,
+      ...(stockCalcDir === 'reverse' && { weighed_mass: stockMass, weighed_mass_unit: stockMassUnit }),
     }
 
     await createReadyMedium({
       name: name || autoName,
       batch_id: stockSourceBatchId,
       nomenclature_id: srcBatch?.nomenclature?.id || null,
-      volume_ml: stockVolume,
-      current_volume_ml: stockVolume,
+      volume_ml: roundedVol,
+      current_volume_ml: roundedVol,
       physical_state: 'STOCK_SOLUTION',
-      concentration: stockConc,
+      concentration: roundedConc,
       concentration_unit: stockConcUnit,
       composition,
       prepared_at: prepDate || null,
@@ -510,8 +581,8 @@ export default function NewReadyMediumPage() {
     // Списать 1 ед. реагента
     await writeOffBatchVolume(stockSourceBatchId, 1, null, 'Реагент для приготовления стока')
     // Списать растворитель
-    if (hasSolvent && stockVolume > 0) {
-      await writeOffBatchVolume(stockSolventBatchId, stockVolume, null, 'Растворитель для стока')
+    if (hasSolvent && roundedVol > 0) {
+      await writeOffBatchVolume(stockSolventBatchId, roundedVol, null, 'Растворитель для стока')
     }
   }
 
@@ -621,7 +692,12 @@ export default function NewReadyMediumPage() {
       return hasContent && totalVolume > 0 && solventVolume >= -0.01 && totalComponentsPercent <= 100
     }
     if (formMode === 'STOCK') {
-      return !!stockSourceBatchId && stockVolume > 0 && stockConc > 0
+      if (!stockSourceBatchId) return false
+      if (stockCalcDir === 'reverse') {
+        // Need mass + one of (vol or conc) and a valid computed result
+        return stockMass > 0 && stockReverse != null
+      }
+      return stockVolume > 0 && stockConc > 0
     }
     if (formMode === 'DILUTION') return !!sourceStockId && dilutionValid
     if (formMode === 'ALIQUOT') return !!aliquotSourceId && aliquotCount >= 1 && aliquotVolume > 0 && aliquotValid
@@ -1031,180 +1107,312 @@ export default function NewReadyMediumPage() {
                 </div>
               </div>
 
-              {/* Объём + Концентрация */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Объём стока (мл) *</Label>
-                  <Input type="number" min={0.001} step="any" value={stockVolume || ''} onChange={e => setStockVolume(parseFloat(e.target.value) || 0)} placeholder="1" required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Концентрация *</Label>
-                  <div className="flex gap-2">
-                    <Input type="number" min={0} step="any" value={stockConc || ''} onChange={e => setStockConc(parseFloat(e.target.value) || 0)} placeholder="100" className="flex-1" />
-                    <Select value={stockConcUnit} onValueChange={setStockConcUnit}>
-                      <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {CONCENTRATION_UNITS.map(u => (
-                          <SelectItem key={u} value={u}>{u}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+              {/* Переключатель направления расчёта */}
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant={stockCalcDir === 'forward' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setStockCalcDir('forward'); setStockMass(0) }}
+                >
+                  <Calculator className="mr-1 h-4 w-4" /> Прямой
+                </Button>
+                <Button
+                  type="button"
+                  variant={stockCalcDir === 'reverse' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setStockCalcDir('reverse'); setStockConc(0); setStockVolume(0) }}
+                >
+                  <ArrowDownUp className="mr-1 h-4 w-4" /> Обратный
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {stockCalcDir === 'forward'
+                    ? 'Объём + конц. → навеска'
+                    : 'Навеска → конц. / объём'}
+                </span>
               </div>
 
-              {/* Подсказка-калькулятор: инструкция для оператора */}
-              {(() => {
-                const srcBatch = stockSourceBatchId ? batches.find((b: BatchOption) => b.id === stockSourceBatchId) : null
-                if (!srcBatch) return null
-
-                const mw = srcBatch.nomenclature?.molecular_weight
-                const sa = srcBatch.nomenclature?.specific_activity // ЕД/мг
-                const batchUnit = srcBatch.unit || ''
-                const batchQtyPerUnit = srcBatch.volume_per_unit ?? 0
-                const amountPerUnit = batchQtyPerUnit > 0 ? batchQtyPerUnit : 1
-
-                const isMolarConc = stockConcUnit === 'мМ' || stockConcUnit === 'М'
-                const isActivityConc = stockConcUnit === 'ЕД/мл'
-                const isMassConc = stockConcUnit === 'мг/мл' || stockConcUnit === 'мкг/мл'
-
-                const hasMolarUnit = ['мкмоль', 'ммоль', 'моль'].includes(batchUnit)
-                if (!mw && !sa && !hasMolarUnit) return null
-
-                const targetConcMM = stockConcUnit === 'М' ? stockConc * 1000 : stockConcUnit === 'мМ' ? stockConc : 0
-
-                // Расчёт навески (сколько граммов/мг нужно)
-                const massGrams = isMolarConc && mw && targetConcMM > 0 && stockVolume > 0
-                  ? calcMassForMolarConc(targetConcMM, stockVolume, mw) : null
-                const massMg = isActivityConc && sa && stockConc > 0 && stockVolume > 0
-                  ? calcMassForActivityConc(stockConc, stockVolume, sa) : null
-
-                // Форматирование массы в удобные единицы
-                const fmtMass = (grams: number) => {
-                  if (grams >= 1) return `${grams.toFixed(2)} г`
-                  if (grams >= 0.001) return `${(grams * 1000).toFixed(1)} мг`
-                  return `${(grams * 1e6).toFixed(0)} мкг`
-                }
-                const fmtMassMg = (mg: number) => {
-                  if (mg >= 1000) return `${(mg / 1000).toFixed(2)} г`
-                  if (mg >= 1) return `${mg.toFixed(1)} мг`
-                  return `${(mg * 1000).toFixed(0)} мкг`
-                }
-
-                // Хватит ли 1 ед. на требуемый объём?
-                const moles = toMoles(amountPerUnit, batchUnit, mw)
-                const totalEU = sa ? calcTotalActivity(amountPerUnit, batchUnit, sa) : null
-                const maxVolMolar = isMolarConc && moles != null && targetConcMM > 0
-                  ? calcVolumeForMolarConc(amountPerUnit, batchUnit, targetConcMM, mw) : null
-                const maxVolActivity = isActivityConc && totalEU != null && stockConc > 0
-                  ? calcVolumeForActivityConc(amountPerUnit, batchUnit, sa!, stockConc) : null
-
-                const hasInstruction = massGrams != null || massMg != null
-                const hasRefOnly = !hasInstruction && (mw || sa)
-
-                return (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
-                    <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
-                      <FlaskRound className="h-4 w-4" />
-                      Инструкция для приготовления
-                    </p>
-
-                    {/* === ГЛАВНЫЙ БЛОК: навеска + растворитель === */}
-                    {hasInstruction ? (
-                      <div className="bg-white/70 rounded-md p-3 space-y-2">
-                        {massGrams != null ? (
-                          <>
-                            <p className="text-sm text-blue-900">
-                              <span className="font-bold text-base">1.</span> Навесить{' '}
-                              <span className="font-bold text-base text-blue-900">{fmtMass(massGrams)}</span>{' '}
-                              порошка
-                            </p>
-                            <p className="text-sm text-blue-900">
-                              <span className="font-bold text-base">2.</span> Растворить в{' '}
-                              <span className="font-bold text-base text-blue-900">{stockVolume} мл</span>{' '}
-                              растворителя
-                            </p>
-                            <p className="text-sm text-blue-900">
-                              <span className="font-bold text-base">3.</span> Итого:{' '}
-                              <span className="font-bold text-blue-900">{stockConc} {stockConcUnit}</span>{' '}
-                              × {stockVolume} мл
-                            </p>
-                          </>
-                        ) : massMg != null ? (
-                          <>
-                            <p className="text-sm text-blue-900">
-                              <span className="font-bold text-base">1.</span> Навесить{' '}
-                              <span className="font-bold text-base text-blue-900">{fmtMassMg(massMg)}</span>{' '}
-                              порошка
-                            </p>
-                            <p className="text-sm text-blue-900">
-                              <span className="font-bold text-base">2.</span> Растворить в{' '}
-                              <span className="font-bold text-base text-blue-900">{stockVolume} мл</span>{' '}
-                              растворителя
-                            </p>
-                            <p className="text-sm text-blue-900">
-                              <span className="font-bold text-base">3.</span> Итого:{' '}
-                              <span className="font-bold text-blue-900">{stockConc} {stockConcUnit}</span>{' '}
-                              × {stockVolume} мл
-                            </p>
-                          </>
-                        ) : null}
+              {/* ====== FORWARD: Объём + Концентрация ====== */}
+              {stockCalcDir === 'forward' && (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Объём стока (мл) *</Label>
+                      <Input type="number" min={0.001} step="any" value={stockVolume || ''} onChange={e => setStockVolume(parseFloat(e.target.value) || 0)} placeholder="1" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Концентрация *</Label>
+                      <div className="flex gap-2">
+                        <Input type="number" min={0} step="any" value={stockConc || ''} onChange={e => setStockConc(parseFloat(e.target.value) || 0)} placeholder="100" className="flex-1" />
+                        <Select value={stockConcUnit} onValueChange={setStockConcUnit}>
+                          <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {CONCENTRATION_UNITS.map(u => (
+                              <SelectItem key={u} value={u}>{u}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
-                    ) : (stockConc > 0 && stockVolume > 0) ? (
-                      <p className="text-sm text-amber-600">
-                        {isMolarConc && !mw ? 'Укажите MW в справочнике для расчёта навески' :
-                         isActivityConc && !sa ? 'Укажите удельную активность (ЕД/мг) в справочнике' :
-                         'Заполните концентрацию и объём для расчёта'}
-                      </p>
-                    ) : null}
-
-                    {/* === Справочная информация === */}
-                    <div className="text-xs text-blue-600 space-y-0.5 border-t border-blue-200 pt-2">
-                      {mw ? <p>MW = {mw} г/моль</p> : null}
-                      {sa ? <p>Уд. активность = {sa} ЕД/мг</p> : null}
-                      {maxVolMolar != null ? (
-                        <p>1 ед. ({amountPerUnit} {batchUnit}) хватит на{' '}
-                          <span className="font-medium">{maxVolMolar.toFixed(1)} мл</span>{' '}
-                          при {stockConc} {stockConcUnit}
-                        </p>
-                      ) : null}
-                      {maxVolActivity != null ? (
-                        <p>1 ед. ({amountPerUnit} {batchUnit}) хватит на{' '}
-                          <span className="font-medium">{maxVolActivity.toFixed(1)} мл</span>{' '}
-                          при {stockConc} {stockConcUnit}
-                        </p>
-                      ) : null}
-                      {/* Справочные пересчёты когда единица конц. другого типа */}
-                      {!isMolarConc && !isActivityConc && stockVolume > 0 ? (
-                        <>
-                          {moles != null ? (
-                            <p>Молярная конц.:{' '}
-                              <span className="font-medium">
-                                {(() => {
-                                  const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
-                                  if (c == null) return '—'
-                                  return c >= 1 ? `${c.toFixed(2)} мМ` : `${(c * 1000).toFixed(1)} мкМ`
-                                })()}
-                              </span> (справочно)
-                            </p>
-                          ) : null}
-                          {totalEU != null ? (
-                            <p>Активность:{' '}
-                              <span className="font-medium">
-                                {(() => {
-                                  const c = calcActivityConc(amountPerUnit, batchUnit, sa!, stockVolume)
-                                  if (c == null) return '—'
-                                  return `${c.toFixed(1)} ЕД/мл`
-                                })()}
-                              </span> (справочно)
-                            </p>
-                          ) : null}
-                        </>
-                      ) : null}
                     </div>
                   </div>
-                )
-              })()}
+
+                  {/* Подсказка-калькулятор: инструкция для оператора (forward) */}
+                  {(() => {
+                    const srcBatch = stockSourceBatchId ? batches.find((b: BatchOption) => b.id === stockSourceBatchId) : null
+                    if (!srcBatch) return null
+
+                    const mw = srcBatch.nomenclature?.molecular_weight
+                    const sa = srcBatch.nomenclature?.specific_activity
+                    const batchUnit = srcBatch.unit || ''
+                    const batchQtyPerUnit = srcBatch.volume_per_unit ?? 0
+                    const amountPerUnit = batchQtyPerUnit > 0 ? batchQtyPerUnit : 1
+
+                    const isMolarConc = stockConcUnit === 'мМ' || stockConcUnit === 'М'
+                    const isActivityConc = stockConcUnit === 'ЕД/мл'
+
+                    const hasMolarUnit = ['мкмоль', 'ммоль', 'моль'].includes(batchUnit)
+                    if (!mw && !sa && !hasMolarUnit) return null
+
+                    const targetConcMM = stockConcUnit === 'М' ? stockConc * 1000 : stockConcUnit === 'мМ' ? stockConc : 0
+
+                    const massGrams = isMolarConc && mw && targetConcMM > 0 && stockVolume > 0
+                      ? calcMassForMolarConc(targetConcMM, stockVolume, mw) : null
+                    const massMg = isActivityConc && sa && stockConc > 0 && stockVolume > 0
+                      ? calcMassForActivityConc(stockConc, stockVolume, sa) : null
+
+                    const fmtMass = (grams: number) => {
+                      if (grams >= 1) return `${grams.toFixed(2)} г`
+                      if (grams >= 0.001) return `${(grams * 1000).toFixed(1)} мг`
+                      return `${(grams * 1e6).toFixed(0)} мкг`
+                    }
+                    const fmtMassMg = (mg: number) => {
+                      if (mg >= 1000) return `${(mg / 1000).toFixed(2)} г`
+                      if (mg >= 1) return `${mg.toFixed(1)} мг`
+                      return `${(mg * 1000).toFixed(0)} мкг`
+                    }
+
+                    const moles = toMoles(amountPerUnit, batchUnit, mw)
+                    const totalEU = sa ? calcTotalActivity(amountPerUnit, batchUnit, sa) : null
+                    const maxVolMolar = isMolarConc && moles != null && targetConcMM > 0
+                      ? calcVolumeForMolarConc(amountPerUnit, batchUnit, targetConcMM, mw) : null
+                    const maxVolActivity = isActivityConc && totalEU != null && stockConc > 0
+                      ? calcVolumeForActivityConc(amountPerUnit, batchUnit, sa!, stockConc) : null
+
+                    const hasInstruction = massGrams != null || massMg != null
+
+                    return (
+                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                        <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
+                          <FlaskRound className="h-4 w-4" />
+                          Инструкция для приготовления
+                        </p>
+
+                        {hasInstruction ? (
+                          <div className="bg-white/70 rounded-md p-3 space-y-2">
+                            {massGrams != null ? (
+                              <>
+                                <p className="text-sm text-blue-900">
+                                  <span className="font-bold text-base">1.</span> Навесить{' '}
+                                  <span className="font-bold text-base text-blue-900">{fmtMass(massGrams)}</span>{' '}
+                                  порошка
+                                </p>
+                                <p className="text-sm text-blue-900">
+                                  <span className="font-bold text-base">2.</span> Растворить в{' '}
+                                  <span className="font-bold text-base text-blue-900">{stockVolume} мл</span>{' '}
+                                  растворителя
+                                </p>
+                                <p className="text-sm text-blue-900">
+                                  <span className="font-bold text-base">3.</span> Итого:{' '}
+                                  <span className="font-bold text-blue-900">{stockConc} {stockConcUnit}</span>{' '}
+                                  × {stockVolume} мл
+                                </p>
+                              </>
+                            ) : massMg != null ? (
+                              <>
+                                <p className="text-sm text-blue-900">
+                                  <span className="font-bold text-base">1.</span> Навесить{' '}
+                                  <span className="font-bold text-base text-blue-900">{fmtMassMg(massMg)}</span>{' '}
+                                  порошка
+                                </p>
+                                <p className="text-sm text-blue-900">
+                                  <span className="font-bold text-base">2.</span> Растворить в{' '}
+                                  <span className="font-bold text-base text-blue-900">{stockVolume} мл</span>{' '}
+                                  растворителя
+                                </p>
+                                <p className="text-sm text-blue-900">
+                                  <span className="font-bold text-base">3.</span> Итого:{' '}
+                                  <span className="font-bold text-blue-900">{stockConc} {stockConcUnit}</span>{' '}
+                                  × {stockVolume} мл
+                                </p>
+                              </>
+                            ) : null}
+                          </div>
+                        ) : (stockConc > 0 && stockVolume > 0) ? (
+                          <p className="text-sm text-amber-600">
+                            {isMolarConc && !mw ? 'Укажите MW в справочнике для расчёта навески' :
+                             isActivityConc && !sa ? 'Укажите удельную активность (ЕД/мг) в справочнике' :
+                             'Заполните концентрацию и объём для расчёта'}
+                          </p>
+                        ) : null}
+
+                        <div className="text-xs text-blue-600 space-y-0.5 border-t border-blue-200 pt-2">
+                          {mw ? <p>MW = {mw} г/моль</p> : null}
+                          {sa ? <p>Уд. активность = {sa} ЕД/мг</p> : null}
+                          {maxVolMolar != null ? (
+                            <p>1 ед. ({amountPerUnit} {batchUnit}) хватит на{' '}
+                              <span className="font-medium">{maxVolMolar.toFixed(1)} мл</span>{' '}
+                              при {stockConc} {stockConcUnit}
+                            </p>
+                          ) : null}
+                          {maxVolActivity != null ? (
+                            <p>1 ед. ({amountPerUnit} {batchUnit}) хватит на{' '}
+                              <span className="font-medium">{maxVolActivity.toFixed(1)} мл</span>{' '}
+                              при {stockConc} {stockConcUnit}
+                            </p>
+                          ) : null}
+                          {!isMolarConc && !isActivityConc && stockVolume > 0 ? (
+                            <>
+                              {moles != null ? (
+                                <p>Молярная конц.:{' '}
+                                  <span className="font-medium">
+                                    {(() => {
+                                      const c = calcMolarConc(amountPerUnit, batchUnit, stockVolume, mw)
+                                      if (c == null) return '—'
+                                      return c >= 1 ? `${c.toFixed(2)} мМ` : `${(c * 1000).toFixed(1)} мкМ`
+                                    })()}
+                                  </span> (справочно)
+                                </p>
+                              ) : null}
+                              {totalEU != null ? (
+                                <p>Активность:{' '}
+                                  <span className="font-medium">
+                                    {(() => {
+                                      const c = calcActivityConc(amountPerUnit, batchUnit, sa!, stockVolume)
+                                      if (c == null) return '—'
+                                      return `${c.toFixed(1)} ЕД/мл`
+                                    })()}
+                                  </span> (справочно)
+                                </p>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </>
+              )}
+
+              {/* ====== REVERSE: Масса → Конц. / Объём ====== */}
+              {stockCalcDir === 'reverse' && (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label>Навеска (масса) *</Label>
+                      <div className="flex gap-2">
+                        <Input type="number" min={0} step="any" value={stockMass || ''} onChange={e => setStockMass(parseFloat(e.target.value) || 0)} placeholder="10" className="flex-1" />
+                        <Select value={stockMassUnit} onValueChange={setStockMassUnit}>
+                          <SelectTrigger className="w-[70px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {MASS_UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Объём (мл){stockConc > 0 ? '' : ' *'}</Label>
+                      <Input type="number" min={0} step="any" value={stockVolume || ''} onChange={e => setStockVolume(parseFloat(e.target.value) || 0)} placeholder={stockConc > 0 ? 'авто' : '10'} />
+                      {stockReverse?.type === 'vol' && (
+                        <p className="text-xs text-green-600 font-medium">= {stockReverse.value.toFixed(2)} мл</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Концентрация{stockVolume > 0 ? '' : ' *'}</Label>
+                      <div className="flex gap-2">
+                        <Input type="number" min={0} step="any" value={stockConc || ''} onChange={e => setStockConc(parseFloat(e.target.value) || 0)} placeholder={stockVolume > 0 ? 'авто' : '100'} className="flex-1" />
+                        <Select value={stockConcUnit} onValueChange={setStockConcUnit}>
+                          <SelectTrigger className="w-[100px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {CONCENTRATION_UNITS.map(u => (
+                              <SelectItem key={u} value={u}>{u}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {stockReverse?.type === 'conc' && (
+                        <p className="text-xs text-green-600 font-medium">= {stockReverse.value.toFixed(4)} {stockConcUnit}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Заполните массу + один параметр (объём или концентрацию). Второй будет рассчитан автоматически.
+                  </p>
+
+                  {/* Инструкция для обратного расчёта */}
+                  {stockReverse != null && stockMass > 0 && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
+                      <p className="text-sm font-medium text-green-800 flex items-center gap-1.5">
+                        <FlaskRound className="h-4 w-4" />
+                        Инструкция для приготовления
+                      </p>
+                      <div className="bg-white/70 rounded-md p-3 space-y-2">
+                        <p className="text-sm text-green-900">
+                          <span className="font-bold text-base">1.</span> Навесить{' '}
+                          <span className="font-bold text-base text-green-900">{stockMass} {stockMassUnit}</span>{' '}
+                          порошка
+                        </p>
+                        <p className="text-sm text-green-900">
+                          <span className="font-bold text-base">2.</span> Растворить в{' '}
+                          <span className="font-bold text-base text-green-900">
+                            {stockReverse.type === 'vol'
+                              ? `${stockReverse.value.toFixed(2)} мл`
+                              : `${stockVolume} мл`}
+                          </span>{' '}
+                          растворителя
+                        </p>
+                        <p className="text-sm text-green-900">
+                          <span className="font-bold text-base">3.</span> Итого:{' '}
+                          <span className="font-bold text-green-900">
+                            {stockReverse.type === 'conc'
+                              ? `${(Math.round(stockReverse.value * 1000) / 1000)} ${stockConcUnit}`
+                              : `${stockConc} ${stockConcUnit}`}
+                          </span>{' '}
+                          × {stockReverse.type === 'vol'
+                              ? `${stockReverse.value.toFixed(2)}`
+                              : `${stockVolume}`} мл
+                        </p>
+                      </div>
+                      {(() => {
+                        const srcBatch = stockSourceBatchId ? batches.find((b: BatchOption) => b.id === stockSourceBatchId) : null
+                        const mw = srcBatch?.nomenclature?.molecular_weight
+                        const sa = srcBatch?.nomenclature?.specific_activity
+                        return (mw || sa) ? (
+                          <div className="text-xs text-green-600 space-y-0.5 border-t border-green-200 pt-2">
+                            {mw ? <p>MW = {mw} г/моль</p> : null}
+                            {sa ? <p>Уд. активность = {sa} ЕД/мг</p> : null}
+                          </div>
+                        ) : null
+                      })()}
+                    </div>
+                  )}
+
+                  {stockMass > 0 && !stockReverse && (stockVolume > 0 || stockConc > 0) && (
+                    <p className="text-sm text-amber-600">
+                      {(() => {
+                        const srcBatch = stockSourceBatchId ? batches.find((b: BatchOption) => b.id === stockSourceBatchId) : null
+                        const mw = srcBatch?.nomenclature?.molecular_weight
+                        const sa = srcBatch?.nomenclature?.specific_activity
+                        const isMolar = stockConcUnit === 'мМ' || stockConcUnit === 'М'
+                        const isAct = stockConcUnit === 'ЕД/мл'
+                        if (isMolar && !mw) return 'Укажите MW в справочнике для расчёта'
+                        if (isAct && !sa) return 'Укажите удельную активность (ЕД/мг) в справочнике'
+                        return 'Выберите единицу концентрации (мМ, М, ЕД/мл, мг/мл, мкг/мл) для расчёта'
+                      })()}
+                    </p>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         )}

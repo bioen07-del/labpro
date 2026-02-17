@@ -3,7 +3,7 @@
 // XX  — feature updates (big functionality changes)
 // XX  — bugfixes
 
-export const APP_VERSION = "1.32.00"
+export const APP_VERSION = "1.32.01"
 
 export interface ChangelogEntry {
   version: string
@@ -12,6 +12,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "1.32.01",
+    date: "17.02.2026",
+    changes: [
+      "USR-01: Калькулятор STOCK — обратный расчёт: навеска → концентрация/объём",
+      "Переключатель «Прямой / Обратный» для двунаправленного расчёта",
+      "Обратный режим: ввод массы + объём → авто-конц., или масса + конц. → авто-объём",
+      "Инструкция оператора адаптирована для обоих режимов",
+    ],
+  },
   {
     version: "1.32.00",
     date: "17.02.2026",
